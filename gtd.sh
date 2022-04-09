@@ -1,17 +1,27 @@
 set -eo pipefail
 
+# TBD: Make this configurable
+DATA_DIR="./gtdgraph"
 
-DATA_DIR="./data"
-NODE_DIR="${DATA_DIR}/nodes"
-EDGE_DIR="${DATA_DIR}/edges"
-ROOTS_DIR="${DATA_DIR}/roots"
-JOURNAL="${DATA_DIR}/journal"
-LASTCMD="${DATA_DIR}/lastcmd"
+# Database directories
+NODE_DIR="${DATA_DIR}/state/nodes"
+DEPS_DIR="${DATA_DIR}/state/dependencies"
+CTXT_DIR="${DATA_DIR}/state/contexts"
 
-# check whether we are initialized.
-if ! test -e "${DATA_DIR}"; then
-    echo "Nodegraph is not initialized. Please run $0 init"
+# These directories represent distinct sets of edges, which express
+# different relations between nodes. Hopefully the names are
+# self-explanatory.
+EDGE_DIRS=("${DEPS_DIR}" "${CTXT_DIR}")
+
+# Another missing dependency: uuid generation
+# TBD: just explicitly depend on uuid, but it's not installed on this
+#      offline machine.
+if which uuid; then
+    UUID="uuid -m"
+else
+    UUID="dbus-uuidgen"
 fi
+
 
 # Print error message and exit.
 function error {
@@ -19,155 +29,372 @@ function error {
     exit 1
 }
 
-# try to perform the given command, logging to the journal if it
-# succeeds.
-function log {
-    echo "$*" > "${LASTCMD}"
-    "$@"
-    echo "$*" >> "${JOURNAL}"
+# Subclass of error for umimplemented features.
+function not_implemented {
+    error "$1 is not implemented."
 }
 
 
-# On-disk Graph datastucture **************************************************
+# Database Management *********************************************************
 
 
-# initialize a node or an edge
-function graph_init {
-    local path="$1"
-    mkdir -p "${path}"
-    touch "${path}/contents"
-    ./props.py empty > "${path}/properties"
+# Initialize a GTD database relative to the current working directory.
+function database_init {
+    if ! test -e "${DATA_DIR}"; then
+	mkdir -p "${NODE_DIR}"
+	for dir in "${EDGE_DIRS[@]}"; do
+	    mkdir -p "${dir}"
+	done
+    else
+	echo "Already initialized"
+	return 1
+    fi
+}
+
+# Check whether the data directory has been initialized.
+function database_ensure_init {
+    # check whether we are initialized.
+    if ! test -e "${DATA_DIR}"; then
+	error "Nodegraph is not initialized. Please run: $0 init"
+    fi
+}
+
+# Clobber our GTD database; useful for tests.
+function database_clobber {
+    echo "This action cannot be undone. Really delete database (yes/no)?"
+    read -e confirm
+    case "${confirm}" in
+	yes) rm -rf "${DATA_DIR}";;
+	*)   echo "Not wiping database."; return 1;;
+    esac
 }
 
 
-# Abstract over platform UUID
-function graph_gen_id {
-    uuid -m
-}
+# Graph Database **************************************************************
 
-# print the full path to a given node
+
+# print the path to the contents directory of a given node id.
 function graph_node_path {
     local id="$1"
     echo "${NODE_DIR}/$1"
 }
 
+# print the path to the contents file the given node id on stdout
 function graph_node_contents_path {
-    echo "$(graph_node_path "$1")/contents"
+    echo "$(graph_node_path $1)/contents"
 }
 
-function graph_node_contents {
-    cat "$(graph_node_path "$1")/contents"
-}
+# generate a fresh UUID for a new node
+#
+# XXX: this function is more or less untestable
+function graph_node_gen_id {
+    database_ensure_init
 
-# generate a new uuid and initialize the directory
-function graph_node_create {
-    local id
-    local addroot=1
+    # generate fresh uuid
+    local id="$(${UUID})"
 
-    if test -z "$1"; then
-	id="$(graph_gen_id)"
+    # If by some freak of coincidence we have a collision, keep trying
+    # recursively.
+    #
+    # Ona given system, the odds that this ever happens are
+    # vanishingly small, and probably indicate some issue with the
+    # random number generator. However, moving between systems, the
+    # potential for collisions might increase?
+    #
+    # TBD: log if a collision occurs.
+    # TBD: what is a reasonable collision threshold before we throw up
+    #      our hands and ask the user to investigate?
+    if test -e "$(graph_node_path "${id}")"; then
+	graph_gen_id
     else
-	id="$1"
-	addroot=0
-    fi
-
-    if test -e "${id}"; then
-	error "${id} exists."
-    else
-	graph_init "$(graph_node_path ${id})"
-	if (return "${addroot}"); then
-	    touch "${ROOTS_DIR}/${id}"
-	fi
 	echo "${id}"
     fi
 }
 
-# print the path to the edge connecting nodes u and v
-function graph_edge_path {
+# initialize a node or an edge id.
+function graph_node_init {
+    database_ensure_init
+    mkdir -p "$(graph_node_path "$1")"
+}
+
+# print all graph nodes
+function graph_node_list {
+    database_ensure_init
+    ls -t "${NODE_DIR}"
+}
+
+# print the contents of the given node id on stdout
+function graph_node_contents {
+    database_ensure_init
+    local id="$1"
+    local path="$(graph_node_contents_path "${id}")"
+    if test -e "${path}"; then
+	cat "${path}"
+    else
+	echo "[no contents]"
+    fi
+}
+
+# get the first line of the node's contents
+function graph_node_gloss {
+    graph_node_contents "$1" | head -n 1
+}
+
+# initialize a new graph node, and print its id to stdout.
+function graph_node_create {
+    database_ensure_init
+    local id="$(graph_node_gen_id)"
+    mkdir -p "$(graph_node_path ${id})"
+    echo "${id}"
+}
+
+# print the set of child nodes for the given node to stdout.
+#
+# if predicate is given, then edges will be filtered according to this
+# command.
+function graph_node_adjacent {
+    database_ensure_init
+    local node="$1"
+    local edge_set="$2"
+    local direction="$3"
+
+    case "${edge_set}" in
+	dep)     local edge_dir="${DEPS_DIR}";;
+	context) local edge_dir="${CTXT_DIR}";;
+	*)       error "${edge_set} is not one of dep | context"
+    esac
+
+    case "${direction}" in
+	incoming) local self="graph_edge_v"; local linked="graph_edge_u";;
+	outgoing) local self="graph_edge_u"; local linked="graph_edge_v";;
+	*)        error "${direction} is not one of incoming | outgoing";;
+    esac
+    
+    for edge in $(ls -t "${edge_dir}"); do
+	if test "$("${self}" "${edge}")" = "${node}"; then
+	    echo "$("${linked}" ${edge})"
+	fi
+    done
+}
+
+# Print the internal edge representation for nodes u and v to stdout.
+function graph_edge {
     local u="$1"
     local v="$2"
-    test -e "$(graph_node_path "${u}")" || return 1
-    test -e "$(graph_node_path "${v}")" || return 1
-    echo "${EDGE_DIR}/${u}:${v}"
+    echo "${u}:${v}"
 }
 
-# link two nodes
-function graph_link {
-    graph_init "$(graph_edge_path "$1" "$2")"
+# For the given internal edge representation, print the source node
+function graph_edge_u {
+    echo "$1" | cut -d ':' -f 1
 }
 
-# break the link between two nodes
-function graph_unlink {
-    rm -rf "$(graph_edge_path "$1" "$2")"
+# For the given internal edge representatoin, print the target node
+function graph_edge_v {
+    echo "$1" | cut -d ':' -f 2
 }
 
-# get the outgoing edges for a given node
-function graph_node_children {
+# Print the path to the edge connecting nodes u and v, if it exists.
+function graph_edge_path {
+    database_ensure_init
     local u="$1"
-    for entry in $(ls -t "${EDGE_DIR}"); do
-	case "${entry}" in
-	    "${u}":*) basename "${entry}" | cut -f 2 -d ':';;
-        esac
-    done
+    local v="$2"
+    local edge_set="$3"
+
+    test -e "$(graph_node_path "${u}")" || error "invalid node id ${u}"
+    test -e "$(graph_node_path "${v}")" || error "invalid node id ${v}"
+
+    case "${edge_set}" in
+	dep)     echo  "${DEPS_DIR}/$(graph_edge "${u}" "${v}")";;
+	context) echo  "${CTXT_DIR}/$(graph_edge "${u}" "${v}")";;
+	*)       error "$3 not one of dep | context";;
+    esac
 }
 
-function graph_node_parents {
-    local v="$1"
-    for entry in $(ls -t "${EDGE_DIR}"); do
-	case "${entry}" in
-	    *:"${v}") basename "${entry}" | cut -f 1 -d ':';;
-        esac
-    done
+# Link two nodes in the graph.
+function graph_edge_create {
+    database_ensure_init
+    mkdir -p "$(graph_edge_path "$1" "$2" "$3")"
+}
+
+# Break the link between two nodes.
+#
+# also remove any related edge properties.
+function graph_edge_delete {
+    database_ensure_init
+    rm -rf "$(graph_edge_path "$1" "$2" "$3")"
 }
 
 # traverse the graph depth first, starting from `root`
+#
+# this is a text-book algorithm, implemented in bash.
+#
+# we parameterize on the same arguments as graph_adjacent
 function graph_traverse {
+    database_ensure_init
     local root="$1"
+    local edge_set="$2"
+    local direction="$3"
+
+    # our stack for DFS traversal
     local -a stack=("${root}")
+
+    # the set of nodes we have already visited
     local -A seen
 
+    # TBD: is there a more efficient way of testing for an empty array?
     while test -n "${stack}"; do
 	local cur="${stack[-1]}"
 	unset stack[-1]
 	if ! test -v seen["${cur}"]; then
 	    seen["${cur}"]="1"
-	    stack+=( $(graph_node_children "${cur}") )
+	    stack+=( $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}") )
 	    echo "${cur}"
 	fi
     done
-    
+}
+
+
+# Tasks ***********************************************************************
+
+
+# print the set of projects of which the given task is
+function task_get_ancestors {
+    graph_traverse "$1" dep incoming
+}
+
+# print the outgoing dependencies for the given node
+function task_get_dependencies {
+    graph_traverse "$1" dep outgoing
+}
+
+# print the contexts to which the given node is directly assigned
+function task_get_contexts {
+    graph_adjacent "$1" context outgoing
+}
+
+# returns true if a task is a next action
+function task_is_next_action {
+    # basically we check whether the task has any outgoing edges. if
+    # not, then by definition it is a next action.
+    test -z "$(graph_adjacent "$1" dep outgoing)"
+}
+
+# returns true if a task is the root of a project subgraph
+function task_is_project_root {
+    # basically check whether the task has any incoming edges.
+    test -z "$(graph_adjacent "$1" dep incoming)"
+}
+
+# returns true if a task is not assigned ot any context
+function task_is_unassigned {
+    test -z "$(graph_adjacent "$1" context outgoing)"
+}
+
+# returns true if a task is orphaned: i.e. has no incoming or outgoing
+# dependencies
+function task_is_orphan {
+    task_is_next_action && task_is_root_project
+}
+
+# assign the given task to a given context
+function task_add_to_context {
+    local node="$1"
+    local context="$2"
+    graph_edge_create "${node}" "${context}" context
+}
+
+# take the given task out of the given context
+function task_remove_from_context {
+    local node="$1"
+    local context="$2"
+    graph_edge_delete "${node}" "${context}" context
+}
+
+
+# Contexts *******************************************************************
+
+
+# print the set of tasks which are directly or indirectly assigned to
+# the given context.
+function context_get_assignees {
+    graph_traverse "$1" context incoming
+}
+
+# print the set of tasks which are directly assigned to the given context.
+function context_get_direct_assignees {
+    graph_adjacent "$1" context incoming
 }
 
 
 # Commands ********************************************************************
 
 
-# initialize our GTD data struture
+# Initialize the databaes
 function init {
-    mkdir -p "${NODE_DIR}"
-    mkdir -p "${EDGE_DIR}"
-    mkdir -p "${ROOTS_DIR}"
-
-    graph_node_create "inbox"
-    graph_node_create "projects"
-    graph_node_create "contexts"
-    graph_node_create "someday"
+    database_init
 }
 
+
+# Create a new task.
+#
+# If arguments are given, they are written as the node contents.
+#
+# If no arguments are given:
+# - and stdin is a tty, invokes $EDITOR to create the node contents.
+# - otherwise, stdin is written to the contents file.
 function capture {
     local node="$(graph_node_create)"
-    echo "$*" > "$(graph_node_contents_path "${node}")"
-    graph_link "inbox" "${node}"
+    local contents="$(graph_node_contents_path "${node}")"
+
+    if -z "$*"; then
+	if tty > /dev/null; then
+	    # TBD: set temporary file contents
+	    "${EDITOR}" "${contents}"
+	else
+	    log "Reading contents from stdin."
+	    cat > "${contents}"
+	fi
+    else
+	echo "$*" > "${contents}"
+    fi
 }
 
-function inbox {
-    for id in $(graph_traverse "inbox"); do
-	graph_node_contents "${id}"
+# Find or create a task
+function find {
+    if test -z "$2"; then
+	local input
+	echo "Searching for: $1"
+	read -e input
+    else
+	local input="$2"
+    fi
+
+    if graph_node_exists "${input}"; then
+	echo "${input}"
+    else
+	capture "${input}"
+    fi
+}
+
+# Add a dependency to an existing task
+#
+# u and v must exist.
+function depends {
+    local u="$(find u $1)"
+    local v="$(find v $2)"
+    graph_task_add_dependency "${u}" "${v}"
+}
+
+# List all nodes with their gloss
+function all {
+    for id in $(graph_node_list); do
+	echo "${id}" "$(graph_node_gloss ${id})"
     done
 }
 
-function triage {
-}
+
+# Main entry point ************************************************************
 
 
-log "$@"
+"$@"
