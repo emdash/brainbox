@@ -310,6 +310,9 @@ function graph_traverse {
 
 # Tasks ***********************************************************************
 
+function task_summary {
+    echo "$1" "$(graph_node_gloss $1)"
+}
 
 # print the set of projects of which the given task is
 function task_get_ancestors {
@@ -323,14 +326,14 @@ function task_get_dependencies {
 
 # print the contexts to which the given node is directly assigned
 function task_get_contexts {
-    graph_adjacent "$1" context outgoing
+    graph_node_adjacent "$1" context outgoing
 }
 
 # returns true if a task is a next action
 function task_is_next_action {
     # basically we check whether the task has any outgoing edges. if
     # not, then by definition it is a next action.
-    test -z "$(graph_adjacent "$1" dep outgoing)"
+    test -z "$(graph_node_adjacent "$1" dep outgoing)"
 }
 
 # returns true if a task is the root of a project subgraph
@@ -341,7 +344,7 @@ function task_is_project_root {
 
 # returns true if a task is not assigned ot any context
 function task_is_unassigned {
-    test -z "$(graph_adjacent "$1" context outgoing)"
+    test -z "$(graph_adjacent "$1" context incoming)"
 }
 
 # returns true if a task is orphaned: i.e. has no incoming or outgoing
@@ -354,14 +357,14 @@ function task_is_orphan {
 function task_add_to_context {
     local node="$1"
     local context="$2"
-    graph_edge_create "${node}" "${context}" context
+    graph_edge_create "${context}" "${task}" context
 }
 
 # take the given task out of the given context
 function task_remove_from_context {
     local node="$1"
     local context="$2"
-    graph_edge_delete "${node}" "${context}" context
+    graph_edge_delete "${context}" "${task}" context
 }
 
 
@@ -389,6 +392,12 @@ function init {
 }
 
 
+# Show only the next actions in the graph.
+function next {
+    graph_node_list | filter_lines task_is_next_action | map_lines task_summary
+}
+
+
 # Create a new task.
 #
 # If arguments are given, they are written as the node contents.
@@ -400,12 +409,11 @@ function capture {
     local node="$(graph_node_create)"
     local contents="$(graph_node_contents_path "${node}")"
 
-    if -z "$*"; then
+    if test -z "$*"; then
 	if tty > /dev/null; then
 	    # TBD: set temporary file contents
 	    "${EDITOR}" "${contents}"
 	else
-	    log "Reading contents from stdin."
 	    cat > "${contents}"
 	fi
     else
@@ -413,7 +421,7 @@ function capture {
     fi
 }
 
-# Find or create a task
+# Find or create a task by its gloss
 function find {
     if test -z "$2"; then
 	local input
@@ -441,9 +449,7 @@ function depends {
 
 # List all nodes with their gloss
 function all {
-    for id in $(graph_node_list); do
-	echo "${id}" "$(graph_node_gloss ${id})"
-    done
+    graph_node_list | map_lines task_summary
 }
 
 
