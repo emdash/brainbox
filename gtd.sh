@@ -23,6 +23,9 @@ else
 fi
 
 
+# Helpers *********************************************************************
+
+
 # Print error message and exit.
 function error {
     echo "$1" >&2
@@ -32,6 +35,56 @@ function error {
 # Subclass of error for umimplemented features.
 function not_implemented {
     error "$1 is not implemented."
+}
+
+# Filter each word of stdin according to the exit status of "$@"
+function filter_words {
+    local first="t";
+    while read input; do
+	for word in $input; do
+	    if "$@" "${word}"; then
+		if test -z "${first}"; then
+		    echo -n ' ';
+		else
+		    first=""
+		fi
+		echo -n "${word}"
+	    fi
+	done
+    done
+    echo
+}
+
+# Filter each line of stdin according to the exit status of "$@"
+function filter_lines {
+    while read input; do	
+	if "$@" "${input}"; then
+	    echo "${input}"
+	fi
+    done
+}
+
+# Apply "$@" to each word of stdin
+function map_words {
+    local first="t"
+    while read input; do
+	for word in $input; do
+	    if test -z "${first}"; then
+	       echo -n ' '
+	    else
+		first=''
+	    fi
+	    "$@" $word
+	done
+    done
+    echo
+}
+
+# Apply "$@" to each line of stdin.
+function map_lines {
+    while read input; do
+	"$@" "${input}"
+    done
 }
 
 

@@ -53,9 +53,56 @@ function make_test_node {
     sleep 0.01
 }
 
+# helper for testing filter_*
+function isYes {
+    case "$1" in
+	yes) return 0;;
+	*)   return 1;;
+    esac
+}
+
+# helper for testing map_words
+function yesToNo {
+    case "$1" in
+	yes) echo -n "no";;
+	no)  echo -n "yes";;
+    esac
+}
+
+# helper for testing map_lines
+function yesToNoLines {
+    case "$1" in
+	yes) echo "no";;
+	no)  echo "yes";;
+    esac
+}
+
 
 # Test cases ******************************************************************
 
+function test_filter_words {
+    local actual="$(echo yes no yes yes no no | gtd filter_words ../test.sh isYes)"
+    local expected="yes yes yes"
+    assert "${actual}" = "${expected}"
+}
+
+function test_filter_lines {
+    local actual="$(printf 'yes\nno\nyes\n\yes\no' | gtd filter_lines ../test.sh isYes)"
+    local expected="$(printf 'yes\nyes\nyes')"
+    assert "${actual}" = "${expected}"
+}
+
+function test_map_words {
+    local actual="$(echo yes no yes yes no no | gtd map_words ../test.sh yesToNo)"
+    local expected="no yes no no yes yes"
+    assert "${actual}" = "${expected}"
+}
+
+function test_map_lines {
+    local actual="$(printf 'yes\nno\nyes\nyes\nno\n' | gtd map_lines ../test.sh yesToNoLines)"
+    local expected="$(printf 'no\nyes\nno\nno\nyes')"
+    assert "${actual}" = "${expected}"
+}
 
 function test_database_init {
     gtd database_init || error "Should have succeeded."
@@ -270,7 +317,12 @@ function test_graph_traverse {
 # Entry Point *****************************************************************
 
 
-function run_all_tests { 
+function run_all_tests {
+    run_test test_filter_words
+    run_test test_filter_lines
+    run_test test_map_words
+    run_test test_map_lines
+
     run_test test_database_ensure_init
     run_test test_database_init
     run_test test_database_clobber
@@ -292,6 +344,7 @@ function run_all_tests {
 }
 
 case "$*" in
+    "")       run_all_tests;;
     test_*) run_test "$@";;
-    *)      run_all_tests;;
+    *)      "$@"
 esac
