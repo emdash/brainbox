@@ -8,45 +8,87 @@ afficionados of GTD. So here's my contribution to the space.
 This one is inspired by task warrior, but takes a graph-theoretic
 approach.
 
+## Motivation
+
+I started this project mainly as a vehicle for improving my knowledge
+of shell programming.
+
+I have a passing interest in "productivity tools". Recently, I
+discovered taskwarrior; so, I was inspired to write my own taskwarrior
+clone that is based on my particular interpretation of the GTD system
+plus a healthy dose of graph theory.
+
 ## Major Features
 
-### Automatic Detection of Next Actions and Projects
+### Intelligent Filtering of Next Actions, Projects, and Contexts
 
 Unlike other systems, which force you to explicitly designate
-"projects" and "next actions", in GtdGraph, this level of filtering is
+"projects" and "next actions", in GtdGraph, this level of reporting is
 completely automatic.
 
-#### How it Works.
+You only have to explicitly track the relationship between your tasks
+and contexts.
 
-Your tasks form a graph, whether or not you represent them as such. A
-task may depend on other tasks. A task with dependencies is a
-*project* in GTD parlance, while a task with no dependencies is a
-*next action*.
+Your tasks form what in computer science is called a *graph*. Certain
+concepts in GTD havea straight-forward expression in graph theoretic
+terms. This tool designed to exploit this, so you can easily automate
+your GTD discipline.
 
-A *next action* is corresponds to a "sink node" in graph theoretic
-terms.
+#### Task Dependency
 
-#### Rationale
- 
-A task with dependencies is by definition blocked, and therefore isn't
-actionable. It should not appear in the "next actions" list.
+For example: task A depends on task B. In graph theoretic terms, we
+say that there is a "directed edge" (visually drawn as an arrow)
+between "nodes" A and B.
 
-If I see a task in my next actions list and realize that it had some
-dependency I haven't captured yet, all I have to do is add a
-dependency -- to either a new or existing task. Boom, it's no longer a
-next action.
+#### Context Assignment
 
-While many tasks only belong to one supertask, I find just as often
-they belong to multiple. Moreover, even if my workload is largely
-tree-shaped, I still want a quick way to see only the leaves of a
-given subtree.
+For example: task A is assigned to context C. In graph theoretic
+terms, we say that there is "directed edge" from A to C.
 
-If you see a task in your next actions which actually has a
-dependency, you can easily:
-- link an existing task as a dependency, or
-- create a new task dependency
-- keep recursively subdividing and linking until your next
-  actions list is an accurate reflection of your true workload.
+#### Context Subsetting
+
+For example: context "Safeway" is a subset of context "Grocery
+Store". Every task assigned to "Safeway" is logically also assigned to
+"Grocery Store". The same context "Safeway" is also a subset of the
+geographic context "South Side", so every task assigned to "Safeway"
+is also logically assigned to "South Side". Both "South Side" and
+"Grocery Store" are subsets of "Errands".
+
+In graph theoretic terms:
+- "South Side"    -> "Safeway"
+- "Grocery Store" -> "Safeway"
+- "Errands"       -> "Grocery Store"
+- "Errands"       -> "South Side"
+
+We can easily filter tasks (and next actions) by context (and vice
+versa), even indirectly.
+
+#### Next Actions, Projects, and Project Roots
+
+Next actions are simply task nodes with no dependencies. Projects are
+simply task nodes with at least one dependency. A project root is a
+task which is not a dependency of any other task -- which if your
+database is well maintained, would ideally represent major life goals
+or core values.
+
+#### Justify Task
+
+We can get a sense for *why* a task exists by examining what depends
+on it.
+
+This is like Next Actions, Projects, and Project Roots in reverse.
+
+### Bringing it All together.
+
+The common thing between all these notions is that they are all
+representable in terms of graphs and basic operations on them:
+- nodes
+- edges
+- path to root
+- depth first traversal
+
+We classify edges by the type of relationship they represent, which is
+either a task dependency or a context relationship.
 
 ### Extremely Flexible Context Management
 
@@ -67,7 +109,7 @@ Stretch Goal:
 
 ### Automatic GTD Workflow
 
-Seamlessly shift between the following modalities:
+Seamlessly shift between the following ways of working.
 
 #### Capture
 
@@ -75,32 +117,36 @@ Quickly insert a new item in to the task system, before you forget about it.
 
 #### Triage
 
-Efficiently review your inbox for recently captured items.
+Review recently captured items, and refine them:
 
-Add time estimates, deadlines, tags.
-Refine task description.
-Move task into appropriate subproject.
-Promote task to subproject.
+- add metadata
+- edit task contents
+- assign to contexts
+- assign to parent task
+- group into parents
+
 
 #### Plan
 
-Efficiently review a project, or set of projects. Add new tasks,
-subdivide existing tasks, record progress on tasks. Adjust contexts.
+Restricting output to tasks reachable from given project node:
 
-Add notes, link other context.
+- split up existing tasks into subtasks
+- assign contexts to tasks
+- examine recently completed 
+- edit tsk metadata and notes
 
 #### Execute
 
-Generates todo lists from sequences of actions, grouped by context queries.
-Easily check off items:
-- done
-- drop
-- defer
-- promote to subproject
-  - item will show up in next project review
-- Your next actions are automatically computed from the graph structure
-- You can easily subdivide an unactionalble task
-- You can easily make a task depend on 
+Generate a todo list from next actions filtered for given context.
+
+Hot commands to handle the following common scenarios
+- drop task                   (deletes it and all edges from the graph)
+- delay task until date       (status: delayed(until: date))
+- defer task indefinitely     (status: defered)
+- blocked by existing task    (find; add dependency)
+- blocked by new task         (capture; add dependency)
+- complete task               (status: completed(on: date))
+- archive task                (move completed tasks to archive area)
 
 ### Time Tracking
 
