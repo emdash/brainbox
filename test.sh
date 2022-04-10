@@ -53,6 +53,12 @@ function make_test_node {
     sleep 0.01
 }
 
+function make_test_edge {
+    local id="$(gtd graph_edge_create "$1" "$2" "$3")" || error "couldn't create ${name}"
+    sleep 0.01
+}
+
+
 # helper for testing filter_*
 function isYes {
     case "$1" in
@@ -212,10 +218,10 @@ function test_graph_node_adjacent {
     local t4="$(make_test_node t4)"
     local t5="$(make_test_node t5)"
 
-    gtd graph_edge_create "${t1}" "${t2}" dep || error "couldn't create edge"
-    gtd graph_edge_create "${t1}" "${t3}" dep || error "couldn't create edge"
-    gtd graph_edge_create "${t2}" "${t4}" dep || error "couldn't create edge"
-    gtd graph_edge_create "${t3}" "${t4}" dep || error "couldn't create edge"
+    make_test_edge "${t1}" "${t2}" dep
+    make_test_edge "${t1}" "${t3}" dep
+    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t3}" "${t4}" dep
 
     # test outgoing edges for t1
     local -a actual=($(gtd graph_node_adjacent "${t1}" dep outgoing))
@@ -307,10 +313,19 @@ function test_graph_traverse {
     local t4="$(make_test_node t4)"
     local t5="$(make_test_node t5)"
 
-    gtd graph_edge_create "${t1}" "${t2}" dep || error "couldn't create edge"
-    gtd graph_edge_create "${t1}" "${t3}" dep || error "couldn't create edge"
-    gtd graph_edge_create "${t2}" "${t4}" dep || error "couldn't create edge"
-    gtd graph_edge_create "${t3}" "${t4}" dep || error "couldn't create edge"
+    make_test_edge "${t1}" "${t2}" dep
+    make_test_edge "${t1}" "${t3}" dep
+    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t3}" "${t4}" dep
+    make_test_edge "${t5}" "${t4}" dep
+
+    local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map_words graph_node_gloss ))
+    local -a expected=("t1" "t2" "t4" "t3")
+    assert "${actual[*]}" = "${expected[*]}"
+
+    actual=($(gtd graph_traverse "${t4}" dep incoming | gtd map_words graph_node_gloss ))
+    expected=("t4" "t2" "t1" "t3" "t5")
+    assert "${actual[*]}" = "${expected[*]}"
 }
 
 
