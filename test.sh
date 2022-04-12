@@ -357,6 +357,56 @@ function test_task_gloss {
     assert "$(gtd task_gloss fake-uuid)" = "foo"
 }
 
+function test_task_state {
+    local path="./gtdgraph/state/nodes/fake-uuid"
+
+    # create state file
+    mkdir -p "${path}"
+
+    echo "NEW" > "${path}/state"
+    assert "$(gtd task_state fake-uuid)" = "NEW"
+
+    echo "TODO" > "${path}/state"
+    assert "$(gtd task_state fake-uuid)" = "TODO"
+}
+
+function test_task_state {
+    local path="./gtdgraph/state/nodes/fake-uuid"
+
+    # create state file
+    mkdir -p "${path}"
+
+    echo "NEW" > "${path}/state"
+    assert "$(gtd task_state fake-uuid)" = "NEW"
+
+    echo "TODO" > "${path}/state"
+    assert "$(gtd task_state fake-uuid)" = "TODO"
+
+    echo "DONE $(date --iso)" > "${path}/state"
+    assert "$(gtd task_state fake-uuid)" = "DONE"
+}
+
+function test_task_is_active {
+    local path="./gtdgraph/state/nodes/fake-uuid"
+
+    # create state file
+    mkdir -p "${path}"
+
+    echo "NEW" > "${path}/state"
+    gtd task_is_active fake-uuid || echo "should be true"
+
+    echo "TODO" > "${path}/state"
+    gtd task_is_active fake-uuid || echo "should be true"
+
+    echo "DONE $(date --iso)" > "${path}/state"
+    gtd task_is_active fake-uuid && (echo "should be false"; return 1)
+}
+
+
+function test_task_summary {
+    return 0
+}
+
 
 # Entry Point *****************************************************************
 
@@ -390,6 +440,9 @@ function run_all_tests {
     run_test test_task_datum
     run_test test_task_contents
     run_test test_task_gloss
+    run_test test_task_state
+    run_test test_task_is_active
+    run_test test_task_summary
 }
 
 case "$*" in

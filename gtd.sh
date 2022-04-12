@@ -328,7 +328,16 @@ function task_gloss {
 
 # get the state of the given task
 function task_state {
-    return 0
+    task_datum "$1" state | cut -d ' ' -f 1
+}
+
+# returns true if the given task can be considered active
+function task_is_active {
+    case "$(task_state "$1")" in
+	NEW)  return 0;;
+	TODO) return 0;;
+	*)    return 1;;
+    esac
 }
 
 # summarize the current task.
