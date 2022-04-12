@@ -58,7 +58,6 @@ function make_test_edge {
     sleep 0.01
 }
 
-
 # helper for testing filter_*
 function isYes {
     case "$1" in
@@ -277,7 +276,6 @@ function test_graph_edge_delete {
     assert ! -d "./gtdgraph/state/dependencies/${u}:${v}"
 }
 
-
 function test_graph_traverse {
     gtd database_init || error "couldn't initialize test db"
 
@@ -401,7 +399,6 @@ function test_task_is_active {
     echo "DONE $(date --iso)" > "${path}/state"
     gtd task_is_active fake-uuid && (echo "should be false"; return 1)
 }
-
 
 function test_task_summary {
     return 0
