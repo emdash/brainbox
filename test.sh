@@ -41,6 +41,20 @@ function assert {
     (test "$@") || error "Assertion failed: $*"
 }
 
+function assert_false {
+    if "$@"; then
+	error "'$*' should be false"
+    fi
+}
+
+function assert_true {
+    if "$@"; then
+	return 0;
+    else
+	error "'$*' should be true"
+    fi
+}
+
 function gtd {
     "${GTD}" "$@"
 }
@@ -392,14 +406,37 @@ function test_task_is_active {
     mkdir -p "${path}"
 
     echo "NEW" > "${path}/state"
-    gtd task_is_active fake-uuid || error "should be true"
-
-    echo "DONE $(date --iso)" > "${path}/state"
-    gtd task_is_active fake-uuid && error "should be false"
+    assert_true gtd task_is_active fake-uuid
 
     echo "TODO" > "${path}/state"
-    gtd task_is_active fake-uuid || error "should be true"
+    assert_true gtd task_is_active fake-uuid
+
+    echo "DONE $(date --iso)" > "${path}/state"
+    assert_false gtd task_is_active fake-uuid
+
+    echo "WAIT" > "${path}/state"
+    assert_true gtd task_is_active fake-uuid
 }
+
+function test_task_is_actionable {
+    local path="./gtdgraph/state/nodes/fake-uuid"
+
+    # create state file
+    mkdir -p "${path}"
+
+    echo "NEW" > "${path}/state"
+    assert_true gtd task_is_actionable fake-uuid
+
+    echo "TODO" > "${path}/state"
+    assert_true gtd task_is_actionable fake-uuid
+
+    echo "DONE $(date --iso)" > "${path}/state"
+    assert_false gtd task_is_actionable fake-uuid
+
+    echo "WAIT" > "${path}/state"
+    assert_false gtd task_is_actionable fake-uuid
+}
+
 
 function test_task_summary {
     return 0
@@ -440,11 +477,12 @@ function run_all_tests {
     run_test test_task_gloss
     run_test test_task_state
     run_test test_task_is_active
+    run_test test_task_is_actionable
     run_test test_task_summary
 }
 
 case "$*" in
-    "")       run_all_tests;;
+    "")     run_all_tests;;
     test_*) run_test "$@";;
     *)      "$@"
 esac
