@@ -320,12 +320,32 @@ function test_graph_traverse {
     make_test_edge "${t5}" "${t4}" dep
 
     local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map_words graph_node_gloss ))
-    local -a expected=("t1" "t2" "t4" "t3")
+    local -a expected=("t1" "t3" "t4" "t2")
     assert "${actual[*]}" = "${expected[*]}"
 
     actual=($(gtd graph_traverse "${t4}" dep incoming | gtd map_words graph_node_gloss ))
-    expected=("t4" "t2" "t1" "t3" "t5")
+    expected=("t4" "t5" "t3" "t1" "t2")
     assert "${actual[*]}" = "${expected[*]}"
+}
+
+function test_graph_traverse_with_cycle {
+    gtd database_init || error "couldn't initialize test db"
+
+    local t1="$(make_test_node t1)"
+    local t2="$(make_test_node t2)"
+    local t3="$(make_test_node t3)"
+    local t4="$(make_test_node t4)"
+
+    # create a cycle 
+    make_test_edge "${t1}" "${t2}" dep
+    make_test_edge "${t1}" "${t3}" dep
+    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t4}" "${t1}" dep
+
+    if gtd graph_traverse "${t1}" dep outgoing &> /dev/null; then
+	error "should fail"
+	return 1
+    fi
 }
 
 
@@ -358,6 +378,7 @@ function run_all_tests {
     run_test test_graph_edge_delete
 
     run_test test_graph_traverse
+    run_test test_graph_traverse_with_cycle
 }
 
 case "$*" in

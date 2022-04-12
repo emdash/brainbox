@@ -95,8 +95,8 @@ Right now it's eary days. This is the TODO list for v1.0
   - [X] Tasks
   - [X] Contexts
   - [ ] Task State (new, done, delayed, deferred, waiting)
-  - [ ] cycle detection
-	- [ ] separate for dependencies and contexts.
+  - [X] cycle detection
+	- [X] separate for dependencies and contexts.
 - [ ] Task Management UI
   - [X] Capture new item
   - [X] List all nodes

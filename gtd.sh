@@ -269,33 +269,46 @@ function graph_edge_delete {
     rm -rf "$(graph_edge_path "$1" "$2" "$3")"
 }
 
-# traverse the graph depth first, starting from `root`
+# traverse the graph depth first, starting from `root`, with cycle checking.
 #
-# this is a text-book algorithm, implemented in bash.
+# this is a text-book algorithm, implemented in bash. we parameterize
+# on the same arguments as graph_adjacent.
 #
-# we parameterize on the same arguments as graph_adjacent
+# if a cycle is detected, the algorithm terminates early with nonzero
+# status.
 function graph_traverse {
     database_ensure_init
     local root="$1"
     local edge_set="$2"
     local direction="$3"
 
-    # our stack for DFS traversal
-    local -a stack=("${root}")
-
-    # the set of nodes we have already visited
+    # set for cycle checking and visited set
+    local -A sstack
     local -A seen
 
-    # TBD: is there a more efficient way of testing for an empty array?
-    while test -n "${stack}"; do
-	local cur="${stack[-1]}"
-	unset stack[-1]
-	if ! test -v seen["${cur}"]; then
-	    seen["${cur}"]="1"
-	    stack+=( $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}") )
-	    echo "${cur}"
-	fi
-    done
+    __graph_traverse_rec "${root}"
+}
+
+function __graph_traverse_rec {
+    local cur="$1"
+
+    if test -v sstack["${cur}"]; then
+	error "Graph contains a cycle"
+	return 1
+    fi
+
+    sstack["${cur}"]=""
+
+    if test ! -v seen["${cur}"]; then
+	echo "${cur}"
+	seen["${cur}"]="1"
+
+	for a in $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}"); do
+	    __graph_traverse_rec "${a}"
+	done
+    fi
+
+    unset sstack["${cur}"]
 }
 
 
