@@ -48,7 +48,7 @@ function gtd {
 function make_test_node {
     local name="$1"
     local id="$(gtd graph_node_create)" || error "couldn't create ${name}"
-    echo "${name}" > "$(gtd graph_node_contents_path "${id}")"
+    echo "${name}" > "$(gtd task_datum_path "${id}" contents)"
     echo "${id}"
     sleep 0.01
 }
@@ -146,12 +146,6 @@ function test_graph_node_path {
     assert "$(gtd graph_node_path ${id})" = "${dir}"
 }
 
-function test_graph_node_contents_path {
-    local id="fake-uuid"
-    local dir="./gtdgraph/state/nodes/fake-uuid/contents"
-    assert "$(gtd graph_node_contents_path "${id}")" = "${dir}"
-}
-
 function test_graph_node_gen_id {
     gtd database_init
     local id1="$(gtd graph_node_gen_id)" || error "Should have generated an id"
@@ -181,26 +175,6 @@ function test_graph_node_list {
     local -a expected=(fake-uuid-3 fake-uuid-2 fake-uuid-1)
 
     assert "${actual[*]}" = "${expected[*]}"
-}
-
-function test_graph_node_contents {
-    mkdir -p "gtdgraph/state/nodes/fake-uuid-1"
-    mkdir -p "gtdgraph/state/nodes/fake-uuid-2"
-    echo "lulululu" > "gtdgraph/state/nodes/fake-uuid-1/contents"
-    assert "$(gtd graph_node_contents fake-uuid-1)" = "lulululu"
-    assert "$(gtd graph_node_contents fake-uuid-2)" = "[no contents]"
-}
-
-function test_graph_node_gloss {
-    local path="./gtdgraph/state/nodes/fake-uuid"
-
-    # create a node with multi-line contents file
-    mkdir -p "${path}"
-    echo "foo" >> "${path}/contents"
-    echo "bar" >> "${path}/contents"
-
-    # check that gloss is only the first line
-    assert "$(gtd graph_node_gloss fake-uuid)" = "foo"
 }
 
 function test_graph_node_create {
@@ -319,11 +293,11 @@ function test_graph_traverse {
     make_test_edge "${t3}" "${t4}" dep
     make_test_edge "${t5}" "${t4}" dep
 
-    local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map_words graph_node_gloss ))
+    local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map_words task_gloss ))
     local -a expected=("t1" "t3" "t4" "t2")
     assert "${actual[*]}" = "${expected[*]}"
 
-    actual=($(gtd graph_traverse "${t4}" dep incoming | gtd map_words graph_node_gloss ))
+    actual=($(gtd graph_traverse "${t4}" dep incoming | gtd map_words task_gloss ))
     expected=("t4" "t5" "t3" "t1" "t2")
     assert "${actual[*]}" = "${expected[*]}"
 }
@@ -348,6 +322,41 @@ function test_graph_traverse_with_cycle {
     fi
 }
 
+function test_task_datum_path {
+    local id="fake-uuid"
+    local dir="./gtdgraph/state/nodes/fake-uuid/contents"
+    assert "$(gtd task_datum_path "${id}" contents)" = "${dir}"
+}
+
+function test_task_datum {
+    mkdir -p "gtdgraph/state/nodes/fake-uuid-1"
+    mkdir -p "gtdgraph/state/nodes/fake-uuid-2"
+    echo "lulululu" > "gtdgraph/state/nodes/fake-uuid-1/contents"
+    assert    "$(gtd task_datum fake-uuid-1 contents)" = "lulululu"
+    assert -z "$(gtd task_datum fake-uuid-2 contents)"
+    gtd task_datum fake-uuid-1 unpossible && error "should fail"
+}
+
+function test_task_contents {
+    mkdir -p "gtdgraph/state/nodes/fake-uuid-1"
+    mkdir -p "gtdgraph/state/nodes/fake-uuid-2"
+    echo "lulululu" > "gtdgraph/state/nodes/fake-uuid-1/contents"
+    assert "$(gtd task_contents fake-uuid-1)" = "lulululu"
+    assert "$(gtd task_contents fake-uuid-2)" = "[no contents]"
+}
+
+function test_task_gloss {
+    local path="./gtdgraph/state/nodes/fake-uuid"
+
+    # create a node with multi-line contents file
+    mkdir -p "${path}"
+    echo "foo" >> "${path}/contents"
+    echo "bar" >> "${path}/contents"
+
+    # check that gloss is only the first line
+    assert "$(gtd task_gloss fake-uuid)" = "foo"
+}
+
 
 # Entry Point *****************************************************************
 
@@ -363,12 +372,9 @@ function run_all_tests {
     run_test test_database_clobber
 
     run_test test_graph_node_path
-    run_test test_graph_node_contents_path
     run_test test_graph_node_gen_id
     run_test test_graph_node_init
     run_test test_graph_node_list
-    run_test test_graph_node_contents
-    run_test test_graph_node_gloss
     run_test test_graph_node_create
     run_test test_graph_node_adjacent
 
@@ -379,6 +385,11 @@ function run_all_tests {
 
     run_test test_graph_traverse
     run_test test_graph_traverse_with_cycle
+
+    run_test test_task_datum_path
+    run_test test_task_datum
+    run_test test_task_contents
+    run_test test_task_gloss
 }
 
 case "$*" in

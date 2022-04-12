@@ -123,11 +123,6 @@ function graph_node_path {
     echo "${NODE_DIR}/$1"
 }
 
-# print the path to the contents file the given node id on stdout
-function graph_node_contents_path {
-    echo "$(graph_node_path $1)/contents"
-}
-
 # generate a fresh UUID for a new node
 #
 # XXX: this function is more or less untestable
@@ -165,23 +160,6 @@ function graph_node_init {
 function graph_node_list {
     database_ensure_init
     ls -t "${NODE_DIR}"
-}
-
-# print the contents of the given node id on stdout
-function graph_node_contents {
-    database_ensure_init
-    local id="$1"
-    local path="$(graph_node_contents_path "${id}")"
-    if test -e "${path}"; then
-	cat "${path}"
-    else
-	echo "[no contents]"
-    fi
-}
-
-# get the first line of the node's contents
-function graph_node_gloss {
-    graph_node_contents "$1" | head -n 1
 }
 
 # initialize a new graph node, and print its id to stdout.
@@ -314,8 +292,48 @@ function __graph_traverse_rec {
 
 # Tasks ***********************************************************************
 
+# The graph datastructure is generic. The logic in below here is
+# increasingly GTD-specific.
+ 
+
+# print the path to the the given datum of the given task.
+function task_datum_path {
+    echo "$(graph_node_path $1)/$2"
+}
+
+# get the datum for the given task.
+#
+# prints nothing, and returns nonzero if datum file does not exist.
+function task_datum {
+    database_ensure_init
+    local id="$1"
+    local datum="$2"
+    local path="$(task_datum_path "${id}" "${datum}")"
+    if test -e "${path}"; then
+	cat "${path}"
+    else
+	return 1
+    fi
+}
+
+# print the contents of the given node id on stdout
+function task_contents {
+    task_datum "$1" contents || echo "[no contents]"
+}
+
+# get the first line of the node's contents
+function task_gloss {
+    task_contents "$1" | head -n 1
+}
+
+# get the state of the given task
+function task_state {
+    return 0
+}
+
+# summarize the current task.
 function task_summary {
-    echo "$1" "$(graph_node_gloss $1)"
+    echo "$1" "$(task_gloss $1)"
 }
 
 # print the set of projects of which the given task is
@@ -411,7 +429,7 @@ function next {
 # - otherwise, stdin is written to the contents file.
 function capture {
     local node="$(graph_node_create)"
-    local contents="$(graph_node_contents_path "${node}")"
+    local contents="$(task_datum_path "${node}" contents)"
 
     if test -z "$*"; then
 	if tty > /dev/null; then
