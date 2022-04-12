@@ -135,7 +135,7 @@ function graph_node_gen_id {
     # If by some freak of coincidence we have a collision, keep trying
     # recursively.
     #
-    # Ona given system, the odds that this ever happens are
+    # On a given system, the odds that this ever happens are
     # vanishingly small, and probably indicate some issue with the
     # random number generator. However, moving between systems, the
     # potential for collisions might increase?
@@ -294,6 +294,7 @@ function __graph_traverse_rec {
 
 # Tasks ***********************************************************************
 
+
 # The graph datastructure is generic. The logic in below here is
 # increasingly GTD-specific.
  
@@ -343,40 +344,33 @@ function task_is_active {
     esac
 }
 
+# returns true if the given task can be executed
+function task_is_actionable {
+    case "$(task_state "$1")" in
+	WAIT) return 1;;
+	*)    task_is_active "$1";;
+    esac
+}
+
 # summarize the current task.
 function task_summary {
-    echo "$1" "$(task_gloss $1)"
-}
-
-# print the set of projects of which the given task is
-function task_get_ancestors {
-    graph_traverse "$1" dep incoming
-}
-
-# print the outgoing dependencies for the given node
-function task_get_dependencies {
-    graph_traverse "$1" dep outgoing
-}
-
-# print the contexts to which the given node is directly assigned
-function task_get_contexts {
-    graph_node_adjacent "$1" context outgoing
+    echo "$1" "$(task_state "$1")" "$(task_gloss "$1")"
 }
 
 # returns true if a task is a next action
 function task_is_next_action {
     # basically we check whether the task has any outgoing edges. if
     # not, then by definition it is a next action.
-    test -z "$(graph_node_adjacent "$1" dep outgoing)"
+    task_is_actionable "$1" && test -z "$(graph_node_adjacent "$1" dep outgoing)"
 }
 
 # returns true if a task is the root of a project subgraph
 function task_is_project_root {
     # basically check whether the task has any incoming edges.
-    test -z "$(graph_adjacent "$1" dep incoming)"
+    test -z "$(graph_node_adjacent "$1" dep incoming)"
 }
 
-# returns true if a task is not assigned ot any context
+# returns true if a task is not assigned to any context
 function task_is_unassigned {
     test -z "$(graph_adjacent "$1" context incoming)"
 }
@@ -387,50 +381,80 @@ function task_is_orphan {
     task_is_next_action && task_is_root_project
 }
 
-# assign the given task to a given context
-function task_add_to_context {
-    local node="$1"
-    local context="$2"
-    graph_edge_create "${context}" "${task}" context
-}
 
-# take the given task out of the given context
-function task_remove_from_context {
-    local node="$1"
-    local context="$2"
-    graph_edge_delete "${context}" "${task}" context
+# Output formatters ***********************************************************
+
+
+# summarize each taskid written to stdin.
+function summarize {
+    map_lines task_summary
 }
 
 
-# Contexts *******************************************************************
+# Finding and selecting nodes *************************************************
 
 
-# print the set of tasks which are directly or indirectly assigned to
-# the given context.
-function context_get_assignees {
-    graph_traverse "$1" context incoming
+# Prompt the user to select a node from the set passed on stdin.
+#
+# uses fzf for the match, all arguments are forwared to fzf.
+function select_node {
+    summarize | fzf "$@" | cut -d ' ' -f 1
 }
 
-# print the set of tasks which are directly assigned to the given context.
-function context_get_direct_assignees {
-    graph_adjacent "$1" context incoming
+# Prompt the user to select a node if no nodeid is given.
+function select_if_null {
+    if test -z "$1"; then
+	select_node
+    else
+	echo "$1"
+    fi
 }
 
 
-# Commands ********************************************************************
+# Queries *********************************************************************
+
+
+# List all projects
+function all {
+    graph_node_list
+}
+
+# List all subtasks for the given node
+function subtasks {
+    graph_traverse "$(all | select_if_null $1)" dep outgoing
+}
+
+# List all tasks assigned to a context
+function assigned {
+    graph_traverse "$(all | select_if_null $1)" context incoming
+}
+
+
+# Filters *********************************************************************
+
+
+# Keep only active tasks.
+function active {
+    filter_lines task_is_active
+}
+
+# Keep only actionable tasks.
+function actionable {
+    filter_lines task_is_active
+}
+
+# Keep only next actions
+function next {
+    filter_lines task_is_next_action
+}
+
+# Operations ******************************************************************
 
 
 # Initialize the databaes
 function init {
     database_init
 }
-
-
-# Show only the next actions in the graph.
-function next {
-    graph_node_list | filter_lines task_is_next_action | map_lines task_summary
-}
-
 
 # Create a new task.
 #
@@ -442,6 +466,8 @@ function next {
 function capture {
     local node="$(graph_node_create)"
     local contents="$(task_datum_path "${node}" contents)"
+
+    echo "NEW" > "$(task_datum_path "${node}" state)"
 
     if test -z "$*"; then
 	if tty > /dev/null; then
@@ -455,35 +481,19 @@ function capture {
     fi
 }
 
-# Find or create a task by its gloss
-function find {
-    if test -z "$2"; then
-	local input
-	echo "Searching for: $1"
-	read -e input
-    else
-	local input="$2"
-    fi
-
-    if graph_node_exists "${input}"; then
-	echo "${input}"
-    else
-	capture "${input}"
-    fi
-}
-
 # Add a dependency to an existing task
 #
-# u and v must exist.
+# $1: the parent task
+# $2: the 
 function depends {
-    local u="$(find u $1)"
-    local v="$(find v $2)"
-    graph_task_add_dependency "${u}" "${v}"
+    graph_edge_create "$(active | search "$1")" "$(require "$2")" dep
 }
 
-# List all nodes with their gloss
-function all {
-    graph_node_list | map_lines task_summary
+# Like above, but links a ta
+function assign {
+    local task="$1"
+    local context="$2"
+    graph_edge_create "$(active | search "${task}")" "$(require "${context}")" context
 }
 
 

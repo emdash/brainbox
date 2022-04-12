@@ -66,14 +66,15 @@ Quickly insert a new item in to the task system, before you forget about it.
 Easily filter entries by context, task, project, state, GTD category,
 or some combination.
 
-#### Triage and Plan
+#### Triage and Project Planning
 
-Review recently captured items, and refine them:
+Review items according to various criteria, and refine them:
+
+- examine and visualize project structure
 - add metadata
 - edit task contents
 - assign tasks to contexts
 - assign tasks to project
-- group into parents
 - break up complex tasks into manageable subtasks
 
 #### Execute
@@ -94,7 +95,12 @@ Right now it's eary days. This is the TODO list for v1.0
   - [X] Filtering functions
   - [X] Tasks
   - [X] Contexts
-  - [ ] Task State (new, done, delayed, deferred, waiting)
+  - [ ] Task State
+    - [X] NEW
+	- [X] DONE
+	- [ ] DELAY
+	- [ ] DEFER
+	- [X] WAIT
   - [X] cycle detection
 	- [X] separate for dependencies and contexts.
 - [ ] Task Management UI
