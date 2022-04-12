@@ -338,6 +338,7 @@ function task_is_active {
     case "$(task_state "$1")" in
 	NEW)  return 0;;
 	TODO) return 0;;
+	WAIT) return 0;;
 	*)    return 1;;
     esac
 }
