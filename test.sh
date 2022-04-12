@@ -316,7 +316,6 @@ function test_graph_traverse_with_cycle {
 
     if gtd graph_traverse "${t1}" dep outgoing &> /dev/null; then
 	error "should fail"
-	return 1
     fi
 }
 
@@ -332,7 +331,9 @@ function test_task_datum {
     echo "lulululu" > "gtdgraph/state/nodes/fake-uuid-1/contents"
     assert    "$(gtd task_datum fake-uuid-1 contents)" = "lulululu"
     assert -z "$(gtd task_datum fake-uuid-2 contents)"
-    gtd task_datum fake-uuid-1 unpossible && error "should fail"
+    if gtd task_datum fake-uuid-1 unpossible; then
+	error "should fail"
+    fi
 }
 
 function test_task_contents {
@@ -391,13 +392,13 @@ function test_task_is_active {
     mkdir -p "${path}"
 
     echo "NEW" > "${path}/state"
-    gtd task_is_active fake-uuid || echo "should be true"
-
-    echo "TODO" > "${path}/state"
-    gtd task_is_active fake-uuid || echo "should be true"
+    gtd task_is_active fake-uuid || error "should be true"
 
     echo "DONE $(date --iso)" > "${path}/state"
-    gtd task_is_active fake-uuid && (echo "should be false"; return 1)
+    gtd task_is_active fake-uuid && error "should be false"
+
+    echo "TODO" > "${path}/state"
+    gtd task_is_active fake-uuid || error "should be true"
 }
 
 function test_task_summary {

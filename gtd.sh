@@ -256,37 +256,39 @@ function graph_edge_delete {
 # status.
 function graph_traverse {
     database_ensure_init
+
     local root="$1"
     local edge_set="$2"
     local direction="$3"
-
-    # set for cycle checking and visited set
-    local -A sstack
+    local -A nodes_on_stack
     local -A seen
 
+    # would be a closure if bash scope was lexical.
     __graph_traverse_rec "${root}"
 }
 
 function __graph_traverse_rec {
     local cur="$1"
 
-    if test -v sstack["${cur}"]; then
+    if test -v nodes_on_stack["${cur}"]; then
 	error "Graph contains a cycle"
 	return 1
     fi
 
-    sstack["${cur}"]=""
+    # add this node to the cycle checking set
+    nodes_on_stack["${cur}"]=""
 
     if test ! -v seen["${cur}"]; then
 	echo "${cur}"
 	seen["${cur}"]="1"
 
 	for a in $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}"); do
-	    __graph_traverse_rec "${a}"
+	    __graph_traverse_rec "${a}" || return 1
 	done
     fi
 
-    unset sstack["${cur}"]
+    # remove node from cycle checking set
+    unset nodes_on_stack["${cur}"]
 }
 
 
