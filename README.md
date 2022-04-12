@@ -125,3 +125,13 @@ Right now it's eary days. This is the TODO list for v1.0
   - [ ] interactively select multiple tasks
   - [ ] interactive task explorer
 - [ ] Shellcheck all the things.
+
+## Dependencies (debian packages)
+
+- uuid
+- fzf
+- dialog
+
+### Dev-Only
+
+- shellcheck

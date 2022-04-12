@@ -356,6 +356,8 @@ function run_all_tests {
     run_test test_graph_edge_path
     run_test test_graph_edge_create
     run_test test_graph_edge_delete
+
+    run_test test_graph_traverse
 }
 
 case "$*" in

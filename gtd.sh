@@ -13,15 +13,6 @@ CTXT_DIR="${DATA_DIR}/state/contexts"
 # self-explanatory.
 EDGE_DIRS=("${DEPS_DIR}" "${CTXT_DIR}")
 
-# Another missing dependency: uuid generation
-# TBD: just explicitly depend on uuid, but it's not installed on this
-#      offline machine.
-if which uuid; then
-    UUID="uuid -m"
-else
-    UUID="dbus-uuidgen"
-fi
-
 
 # Helpers *********************************************************************
 
@@ -144,7 +135,7 @@ function graph_node_gen_id {
     database_ensure_init
 
     # generate fresh uuid
-    local id="$(${UUID})"
+    local id="$(uuid -m)"
 
     # If by some freak of coincidence we have a collision, keep trying
     # recursively.
