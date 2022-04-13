@@ -43,12 +43,12 @@ In addition to the contents file, there is also a "status" file. This
 contains a short string which identifies the node's status:
 - `NEW`
 - `TODO`
-- `COMPLETED` *date*
+- `COMPLETE` *date*
 - `WAITING`
 - `DELAYED` *date*
 - `SOMEDAY`
-- `DROPPED` [*excuse*]
-- `REPEATS` [*pattern*]
+- `DROPPED` *date* [*excuse*]
+- `REPEATS` [*date pattern*]
 
 `NEW` and `TODO` indicate active nodes. The `capture` command creates
 nodes with status `NEW` in order to easily filter them for later
@@ -237,4 +237,3 @@ Another way to think about it is with history management. If every
 state is preserved, then maybe we can just delete nodes to mark them
 as done. This complicates reporting, in that we have to inspect the
 history to determine when a node disappeared.
-
