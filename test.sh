@@ -1,4 +1,7 @@
-set -eo pipefail
+#/usr/bin/env bash
+
+set -o pipefail
+set -o errexit
 
 
 GTD="../gtd.sh"
