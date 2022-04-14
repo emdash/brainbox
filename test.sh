@@ -21,27 +21,79 @@ function tear_down {
     popd > /dev/null
 }
 
-function run_test {
+# print message to stderr and exit.
+function error {
+    echo "$*" >&2
+    exit 1
+}
+
+
+# bash error handling is kindof broken. set -e appears not to have
+# any effect within a shell function? I was expecting that if line
+# in a shell function "fails" with set -e in place, that it would
+# trigger early return from the function with the last exit
+# code. But it doesn't.
+#
+# I want `assert_*` to reliably "fail fast" *within* a given test, but
+# not stop other tests.
+#
+# The simplest way to get this behavior is to recursively re-invoke
+# ourselves.
+#
+# This way, `error` can simply `exit 1`, and we can easily catch
+# this in the parent shell.
+
+# run a test and report its error status.
+function should_pass {
     local test_name="$1"
+    tests=$((tests + 1))
 
     setup
-    
-    if "$@"; then
+
+    # setup prepares the test directory and cds into it for us, so
+    # that's why I'm using a relative path here, but there's probably
+    # a less brittle way to arrange this.
+    if ../test.sh "$@"; then
 	echo "${test_name}... ok"
     else
 	echo "${test_name}... failed"
+	failures=$((failures + 1))
     fi
 
     tear_down
 }
 
-function error {
-    echo "$*" >&2
-    return 1
+function should_fail {
+    local test_name="$1"
+    tests=$((tests + 1))
+
+    setup
+    
+    # setup prepares the test directory and cds into it for us, so
+    # that's why I'm using a relative path here, but there's probably
+    # a less brittle way to arrange this.
+    if ../test.sh "$@"; then
+	echo "${test_name}... failed"
+	failures=$((failures + 1))
+    else
+	echo "${test_name}... ok"
+    fi
+
+    tear_down
+}
+
+
+function print_summary {
+    echo "Failed: ${failures}"
+    echo "Total:  ${tests}"
+
+    if test "${failures}" -gt 0; then
+	exit 1
+    fi
 }
 
 function assert {
-    (test "$@") || error "Assertion failed: $*"
+    test "$@"|| error "Assertion failed: $*"
 }
 
 function assert_false {
@@ -65,13 +117,15 @@ function gtd {
 function make_test_node {
     local name="$1"
     local id="$(gtd graph_node_create)" || error "couldn't create ${name}"
-    echo "${name}" > "$(gtd task_datum_path "${id}" contents)"
+    echo "${name}" | gtd graph_datum contents write "${id}"
     echo "${id}"
+    # sleep just long enough that each node gets a distinct timestamp.
+    # this causes ls -t to produce a stable sorting order
     sleep 0.01
 }
 
 function make_test_edge {
-    local id="$(gtd graph_edge_create "$1" "$2" "$3")" || error "couldn't create ${name}"
+    local id="$(gtd graph_edge_create "$1" "$2" "$3")" || error "couldn't create $*}"
     sleep 0.01
 }
 
@@ -101,6 +155,28 @@ function yesToNoLines {
 
 
 # Test cases ******************************************************************
+
+
+function test_error_handling {
+    error "force failure" &> /dev/null
+    echo "if you see this, something is broken"
+}
+
+function test_assert_true_false {
+    assert_true false &> /dev/null
+}
+
+function test_assert_true_true {
+    assert_true true
+}
+
+function test_assert_false_false {
+    assert_false false
+}
+
+function test_assert_false_true {
+    assert_false true &> /dev/null
+}
 
 function test_filter_words {
     local actual="$(echo yes no yes yes no no | gtd filter_words ../test.sh isYes)"
@@ -169,14 +245,6 @@ function test_graph_node_gen_id {
     test "${id1}" != "${id2}"            || error "Ids should be different"
 }
 
-function test_graph_node_init {
-    local id="fake-uuid"
-    local dir="gtdgraph/state/nodes/${id}"
-    gtd database_init
-    gtd graph_node_init fake-uuid || error "Node init failed."
-    assert -e "$(gtd graph_node_path ${id})"
-}
-
 function test_graph_node_list {
     # sleeps inserted here to make sure each node gets a distinct timestamp
     # default ordering is most recent first.
@@ -195,8 +263,35 @@ function test_graph_node_list {
 
 function test_graph_node_create {
     gtd database_init
-    local id="$(gtd graph_node_create)"      || error "Should have created a node."
-    test -e "$(gtd graph_node_path "${id}")" || error "Path to the node should exist."    
+
+    # test creating with a user-supplied ID
+    local id="fake-uuid"
+    local dir="gtdgraph/state/nodes/${id}"
+    assert_true gtd graph_node_create fake-uuid > /dev/null
+    assert -e "$(gtd graph_node_path ${id})"
+
+    # test node generation
+    local id="$(gtd graph_node_create)" || error "Should have generated a node."
+    assert -e "$(gtd graph_node_path "${id}")"
+}
+
+function test_graph_datum {
+    gtd init
+    local id="fake-uuid"
+    assert "$(gtd graph_node_create "${id}")" = "${id}"
+
+    # subcommand: path
+    local path="./gtdgraph/state/nodes/fake-uuid/contents"
+    assert "$(gtd graph_datum contents path "${id}")" = "${path}"
+
+    # subcommand: write
+    echo FOO | gtd graph_datum contents write "${id}"
+    assert "$(cat "${path}")" = "FOO"
+    
+    echo "lulululu" > "gtdgraph/state/nodes/fake-uuid/contents"
+    assert    "$(gtd graph_datum contents read fake-uuid)" = "lulululu"
+    assert -z "$(gtd graph_datum contents read does-not-exist)"
+    assert_false gtd graph_datum unpossible read uuid-1
 }
 
 function test_graph_node_adjacent {
@@ -336,32 +431,15 @@ function test_graph_traverse_with_cycle {
     fi
 }
 
-function test_task_datum_path {
-    local id="fake-uuid"
-    local dir="./gtdgraph/state/nodes/fake-uuid/contents"
-    assert "$(gtd task_datum_path "${id}" contents)" = "${dir}"
-}
-
-function test_task_datum {
-    mkdir -p "gtdgraph/state/nodes/fake-uuid-1"
-    mkdir -p "gtdgraph/state/nodes/fake-uuid-2"
-    echo "lulululu" > "gtdgraph/state/nodes/fake-uuid-1/contents"
-    assert    "$(gtd task_datum fake-uuid-1 contents)" = "lulululu"
-    assert -z "$(gtd task_datum fake-uuid-2 contents)"
-    if gtd task_datum fake-uuid-1 unpossible; then
-	error "should fail"
-    fi
-}
-
 function test_task_contents {
     mkdir -p "gtdgraph/state/nodes/fake-uuid-1"
     mkdir -p "gtdgraph/state/nodes/fake-uuid-2"
     echo "lulululu" > "gtdgraph/state/nodes/fake-uuid-1/contents"
-    assert "$(gtd task_contents fake-uuid-1)" = "lulululu"
-    assert "$(gtd task_contents fake-uuid-2)" = "[no contents]"
+    assert "$(gtd task_contents read fake-uuid-1)" = "lulululu"
 }
 
 function test_task_gloss {
+    gtd init
     local path="./gtdgraph/state/nodes/fake-uuid"
 
     # create a node with multi-line contents file
@@ -374,69 +452,52 @@ function test_task_gloss {
 }
 
 function test_task_state {
-    local path="./gtdgraph/state/nodes/fake-uuid"
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
 
-    # create state file
-    mkdir -p "${path}"
+    assert "$(gtd task_state path fake-uuid)" = "./gtdgraph/state/nodes/fake-uuid/state"
 
-    echo "NEW" > "${path}/state"
-    assert "$(gtd task_state fake-uuid)" = "NEW"
+    echo "NEW" | gtd task_state write fake-uuid
+    assert "$(gtd task_state read fake-uuid)" = "NEW"
 
-    echo "TODO" > "${path}/state"
-    assert "$(gtd task_state fake-uuid)" = "TODO"
-}
+    echo "TODO" | gtd task_state write fake-uuid
+    assert "$(gtd task_state read fake-uuid)" = "TODO"
 
-function test_task_state {
-    local path="./gtdgraph/state/nodes/fake-uuid"
-
-    # create state file
-    mkdir -p "${path}"
-
-    echo "NEW" > "${path}/state"
-    assert "$(gtd task_state fake-uuid)" = "NEW"
-
-    echo "TODO" > "${path}/state"
-    assert "$(gtd task_state fake-uuid)" = "TODO"
-
-    echo "DONE $(date --iso)" > "${path}/state"
-    assert "$(gtd task_state fake-uuid)" = "DONE"
+    echo "COMPLETE" | gtd task_state write fake-uuid
+    assert "$(gtd task_state read fake-uuid)" = "COMPLETE"
 }
 
 function test_task_is_active {
-    local path="./gtdgraph/state/nodes/fake-uuid"
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
 
-    # create state file
-    mkdir -p "${path}"
-
-    echo "NEW" > "${path}/state"
+    echo "NEW" | gtd task_state write fake-uuid
     assert_true gtd task_is_active fake-uuid
 
-    echo "TODO" > "${path}/state"
+    echo "TODO" | gtd task_state write fake-uuid
     assert_true gtd task_is_active fake-uuid
 
-    echo "DONE $(date --iso)" > "${path}/state"
+    echo "COMPLETE" | gtd task_state write fake-uuid
     assert_false gtd task_is_active fake-uuid
 
-    echo "WAIT" > "${path}/state"
+    echo "WAITING" | gtd task_state write fake-uuid
     assert_true gtd task_is_active fake-uuid
 }
 
 function test_task_is_actionable {
-    local path="./gtdgraph/state/nodes/fake-uuid"
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
 
-    # create state file
-    mkdir -p "${path}"
-
-    echo "NEW" > "${path}/state"
+    echo "NEW" | gtd task_state write fake-uuid
     assert_true gtd task_is_actionable fake-uuid
 
-    echo "TODO" > "${path}/state"
+    echo "TODO" | gtd task_state write fake-uuid
     assert_true gtd task_is_actionable fake-uuid
 
-    echo "DONE $(date --iso)" > "${path}/state"
+    echo "COMPLETE" | gtd task_state write fake-uuid
     assert_false gtd task_is_actionable fake-uuid
 
-    echo "WAIT" > "${path}/state"
+    echo "WAITING" | gtd task_state write fake-uuid
     assert_false gtd task_is_actionable fake-uuid
 }
 
@@ -450,42 +511,50 @@ function test_task_summary {
 
 
 function run_all_tests {
-    run_test test_filter_words
-    run_test test_filter_lines
-    run_test test_map_words
-    run_test test_map_lines
+    should_fail test_error_handling
+    should_fail test_assert_true_false
+    should_pass test_assert_true_true
+    should_pass test_assert_false_false
+    should_fail test_assert_false_true
+    
+    should_pass test_filter_words
+    should_pass test_filter_lines
+    should_pass test_map_words
+    should_pass test_map_lines
 
-    run_test test_database_ensure_init
-    run_test test_database_init
-    run_test test_database_clobber
+    should_pass test_database_ensure_init
+    should_pass test_database_init
+    should_pass test_database_clobber
 
-    run_test test_graph_node_path
-    run_test test_graph_node_gen_id
-    run_test test_graph_node_init
-    run_test test_graph_node_list
-    run_test test_graph_node_create
-    run_test test_graph_node_adjacent
+    should_pass test_graph_node_path
+    should_pass test_graph_node_gen_id
+    should_pass test_graph_node_list
+    should_pass test_graph_node_create
+    should_pass test_graph_node_adjacent
 
-    run_test test_graph_edge
-    run_test test_graph_edge_path
-    run_test test_graph_edge_create
-    run_test test_graph_edge_delete
+    should_pass test_graph_edge
+    should_pass test_graph_edge_path
+    should_pass test_graph_edge_create
+    should_pass test_graph_edge_delete
 
-    run_test test_graph_traverse
-    run_test test_graph_traverse_with_cycle
+    should_pass test_graph_datum
+    should_pass test_graph_traverse
+    should_pass test_graph_traverse_with_cycle
 
-    run_test test_task_datum_path
-    run_test test_task_datum
-    run_test test_task_contents
-    run_test test_task_gloss
-    run_test test_task_state
-    run_test test_task_is_active
-    run_test test_task_is_actionable
-    run_test test_task_summary
+    should_pass test_task_contents
+    should_pass test_task_gloss
+    should_pass test_task_state
+    should_pass test_task_is_active
+    should_pass test_task_is_actionable
+    should_pass test_task_summary
+
+    print_summary
 }
+
+declare -i tests=0
+declare -i failures=0
 
 case "$*" in
     "")     run_all_tests;;
-    test_*) run_test "$@";;
     *)      "$@"
 esac

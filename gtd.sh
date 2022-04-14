@@ -117,7 +117,10 @@ function database_clobber {
 # Graph Database **************************************************************
 
 
-# print the path to the contents directory of a given node id.
+# print the path to the data directory of a given node id.
+#
+# graph nodes are just directories, and may contain arbitrary user
+# data.
 function graph_node_path {
     local id="$1"
     echo "${NODE_DIR}/$1"
@@ -150,11 +153,47 @@ function graph_node_gen_id {
     fi
 }
 
-# initialize a node or an edge id.
-function graph_node_init {
+# inspect or modify graph node data
+#
+# graph nodes are just directories
+#
+# valid operations are:
+# - path:   prints the path to the dataum file
+# - read:   print the datum file contents to stdout
+# - write:  overwrite the datum file path with stdin
+# - value:  print the last line of the datum file
+# - append: append remaining arguments to datum file.
+# - mkdir:  create datum as a directory
+# - cd:     move into datum directory (uses pushd).
+# - cp:     copy remaining arguments to datum directory
+# - mv:     move remaining arguments to datum directory.
+function graph_datum {
     database_ensure_init
-    mkdir -p "$(graph_node_path "$1")"
+
+    local datum="$1"
+    local command="$2"
+    local id="$3"
+    shift 3
+
+    local path="$(graph_node_path ${id})/${datum}"
+
+    case "${command}" in
+	exists) test -e       "${path}";;
+	path)   echo          "${path}";;
+	read)   __datum_read           ;;
+	write)  cat >         "${path}";;
+	append) cat >>        "${path}";;
+	mkdir)  mkdir -p      "${path}";;
+	cd)     pushd         "${path}";;
+	cp)     cp "$@"       "${path}";;
+	mv)     mv "$@"       "${path}";;
+    esac
 }
+
+function __datum_read {
+    test -f "${path}" && cat "${path}"
+}
+
 
 # print all graph nodes
 function graph_node_list {
@@ -163,11 +202,25 @@ function graph_node_list {
 }
 
 # initialize a new graph node, and print its id to stdout.
+#
+# if id is given, this ID is used. otherwise a fresh ID is generated.
 function graph_node_create {
     database_ensure_init
-    local id="$(graph_node_gen_id)"
-    mkdir -p "$(graph_node_path ${id})"
-    echo "${id}"
+
+    if test -z "$1"; then
+	local id="$(graph_node_gen_id)"
+    else
+	local id="$1"
+    fi
+
+    local path="$(graph_node_path "${id}")"
+
+    if test -e "${path}"; then
+	error "A node with ${id} already exists."
+    else
+    	mkdir -p "$(graph_node_path ${id})"
+	echo "${id}"
+    fi
 }
 
 # print the set of child nodes for the given node to stdout.
@@ -295,79 +348,91 @@ function __graph_traverse_rec {
 # Tasks ***********************************************************************
 
 
-# The graph datastructure is generic. The logic in below here is
-# increasingly GTD-specific.
- 
-
-# print the path to the the given datum of the given task.
-function task_datum_path {
-    echo "$(graph_node_path $1)/$2"
-}
-
-# get the datum for the given task.
+# In GTD, A task is anything that needs to be done.
 #
-# prints nothing, and returns nonzero if datum file does not exist.
-function task_datum {
-    database_ensure_init
-    local id="$1"
-    local datum="$2"
-    local path="$(task_datum_path "${id}" "${datum}")"
-    if test -e "${path}"; then
-	cat "${path}"
-    else
-	return 1
-    fi
+# Some aspects of task state are tracked explicitly, while others are
+# inferred from graph edges.
+#
+# this section defines functions for working at the task level.
+#
+# a task is implemented as a node using the generic graph logic
+# defined in the previous section.
+
+## task state helper functions ************************************************
+
+# return true if the given task state is a valid one.
+function task_state_is_valid {
+    case "$1" in
+	NEW)      return 0;;
+	TODO)     return 0;;
+	COMPLETE) return 0;;
+	DROPPED)  return 0;;
+	WAITING)  return 0;;
+	*)        return 1;;
+    esac
 }
 
-# print the contents of the given node id on stdout
-function task_contents {
-    task_datum "$1" contents || echo "[no contents]"
+# returns true if the given task state can be considered active
+function task_state_is_active {
+    case "$1" in
+	NEW)     return 0;;
+	TODO)    return 0;;
+	WAITING) return 0;;
+	*)       return 1;;
+    esac
 }
+
+# returns true if the given task state can be acted on
+function task_state_is_actionable {
+    case "$1" in
+	WAITING) return 1;;
+	*)    task_state_is_active "$1";;
+    esac
+}
+
+## define task data ***********************************************************
+
+function task_contents { graph_datum contents "$@"; }
+function task_state    { graph_datum state "$@"; }
+
+## read-only task properties **************************************************
 
 # get the first line of the node's contents
 function task_gloss {
-    task_contents "$1" | head -n 1
-}
-
-# get the state of the given task
-function task_state {
-    task_datum "$1" state | cut -d ' ' -f 1
-}
-
-# returns true if the given task can be considered active
-function task_is_active {
-    case "$(task_state "$1")" in
-	NEW)  return 0;;
-	TODO) return 0;;
-	WAIT) return 0;;
-	*)    return 1;;
-    esac
-}
-
-# returns true if the given task can be executed
-function task_is_actionable {
-    case "$(task_state "$1")" in
-	WAIT) return 1;;
-	*)    task_is_active "$1";;
-    esac
-}
-
-# summarize the current task.
-function task_summary {
-    echo "$1" "$(task_state "$1")" "$(task_gloss "$1")"
-}
-
-# returns true if a task is a next action
-function task_is_next_action {
-    # basically we check whether the task has any outgoing edges. if
-    # not, then by definition it is a next action.
-    task_is_actionable "$1" && test -z "$(graph_node_adjacent "$1" dep outgoing)"
+    # tbd: truncate length to "$2"
+    task_contents read "$1" | head -n 1 || echo "[no contents]"
 }
 
 # returns true if a task is the root of a project subgraph
-function task_is_project_root {
-    # basically check whether the task has any incoming edges.
+function task_is_root {
     test -z "$(graph_node_adjacent "$1" dep incoming)"
+}
+
+# returns true if a task is a leaf node
+function task_is_leaf {
+    test -z "$(graph_node_adjacent "$1" dep outgoing)"
+}
+
+# returns true if a task is orphaned: is a root with no dependencies
+function task_is_orphan {
+    task_is_root "$1" && task_is_root "$1"
+}
+
+# return true if the given task is active
+function task_is_active {
+    task_state_is_active "$(task_state read $1)"
+}
+
+# return true if the given task is actionable
+function task_is_actionable {
+    task_state_is_actionable "$(task_state read $1)"
+}
+
+# returns true if the given task is a "next action"
+function task_is_next_action {
+    # basically we check whether the task has any outgoing edges. if
+    # not, then by definition it is a next action.
+    task_is_actionable "$1" && task_is_leaf "$1"
 }
 
 # returns true if a task is not assigned to any context
@@ -375,33 +440,37 @@ function task_is_unassigned {
     test -z "$(graph_adjacent "$1" context incoming)"
 }
 
-# returns true if a task is orphaned: i.e. has no incoming or outgoing
-# dependencies
-function task_is_orphan {
-    task_is_next_action && task_is_root_project
+# returns true if a task is marked as waiting
+function task_is_waiting {
+    test "$(task_state read "$1")" = "WAITING"
+}
+
+# summarize the current task: id, status, and gloss
+function task_summary {
+    echo "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
 }
 
 
-# Output formatters ***********************************************************
+# Subcommands (high level, used directly from shell) **************************
 
+
+## Output formatters **********************************************************
 
 # summarize each taskid written to stdin.
 function summarize {
     map_lines task_summary
 }
 
-
-# Finding and selecting nodes *************************************************
-
+## Finding and selecting nodes ************************************************
 
 # Prompt the user to select a node from the set passed on stdin.
 #
 # uses fzf for the match, all arguments are forwared to fzf.
 function select_node {
-    summarize | fzf "$@" | cut -d ' ' -f 1
+    "$@" | summarize | fzf | cut -d ' ' -f 1
 }
 
-# Prompt the user to select a node if no nodeid is given.
+# helper used by a few other high-level commands
 function select_if_null {
     if test -z "$1"; then
 	select_node
@@ -410,9 +479,7 @@ function select_if_null {
     fi
 }
 
-
-# Queries *********************************************************************
-
+## Queries ********************************************************************
 
 # List all projects
 function all {
@@ -429,9 +496,21 @@ function assigned {
     graph_traverse "$(all | select_if_null $1)" context incoming
 }
 
+# List all tasks with no reverse dependencies
+function roots {
+    all | filter_lines task_is_root
+}
 
-# Filters *********************************************************************
+# List all tasks with no dependency connections to other tasks
+function orphans {
+    all | filter_lines task_is_orphan
+}
 
+function new {
+    all | filter_lines task_is_new
+}
+
+## Filters ********************************************************************
 
 # Keep only active tasks.
 function active {
@@ -440,7 +519,7 @@ function active {
 
 # Keep only actionable tasks.
 function actionable {
-    filter_lines task_is_active
+    filter_lines task_is_actionable
 }
 
 # Keep only next actions
@@ -448,8 +527,12 @@ function next {
     filter_lines task_is_next_action
 }
 
-# Operations ******************************************************************
+# Keep only waiting tasks
+function waiting {
+    filter_lines task_is_waiting
+}
 
+## Operations *****************************************************************
 
 # Initialize the databaes
 function init {
@@ -465,19 +548,13 @@ function init {
 # - otherwise, stdin is written to the contents file.
 function capture {
     local node="$(graph_node_create)"
-    local contents="$(task_datum_path "${node}" contents)"
 
-    echo "NEW" > "$(task_datum_path "${node}" state)"
+    echo "NEW" | graph_datum write "${node}" state
 
     if test -z "$*"; then
-	if tty > /dev/null; then
-	    # TBD: set temporary file contents
-	    "${EDITOR}" "${contents}"
-	else
-	    cat > "${contents}"
-	fi
+	graph_datum edit "${node}" contents
     else
-	echo "$*" > "${contents}"
+	echo "$*" | graph_datum write "${node}" contents
     fi
 }
 
@@ -486,18 +563,37 @@ function capture {
 # $1: the parent task
 # $2: the 
 function depends {
-    graph_edge_create "$(active | search "$1")" "$(require "$2")" dep
+    graph_edge_create "$(select_if_null "$1")" "$(select_if_null "$2")" dep
 }
 
-# Like above, but links a ta
+# Assign task to the given context
 function assign {
-    local task="$1"
-    local context="$2"
-    graph_edge_create "$(active | search "${task}")" "$(require "${context}")" context
+    graph_edge_create \
+	"$(select_if_null "$1")" \
+	"$(require "${context}")" \
+	context
+}
+
+# Drop the given task
+function drop {
+    echo "DROPPED" | task_status write "$(select_if_null "$1")" 
 }
 
 
 # Main entry point ************************************************************
 
 
-"$@"
+case "$1" in
+    # special case to handle conflict with `select` shell builtin
+    "select")  select_node "$@";;
+
+    # these queries are summarized when invoked externally
+    inbox)    "$@" | summarize;;
+    all)      "$@" | summarize;;
+    subtasks) "$@" | summarize;;
+    roots)    "$@" | summarize;;
+    orphans)  "$@" | summarize;;
+    assigned)  all | "$@" | summarize;;
+    next)      all | "$@" | summarize;;
+    *)         "$@";;
+esac

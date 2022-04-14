@@ -97,16 +97,17 @@ Right now it's eary days. This is the TODO list for v1.0
   - [X] Contexts
   - [ ] Task State
     - [X] NEW
-	- [X] DONE
-	- [ ] DELAY
-	- [ ] DEFER
-	- [X] WAIT
+	- [X] TODO
+	- [X] COMPLETE
+	- [X] WAITING
+	- [ ] DELAYED
+	- [ ] SOMEDAY
+	- [ ] REPEATING
   - [X] cycle detection
 	- [X] separate for dependencies and contexts.
 - [ ] Task Management UI
   - [X] Capture new item
-  - [X] List all nodes
-  - [ ] List all tasks
+  - [X] List all tasks
   - [ ] Filter tasks by context
   - [ ] Filter tasks by project
   - [X] List next actions
