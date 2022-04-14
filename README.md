@@ -90,6 +90,7 @@ meaningful reports.
 
 Right now it's eary days. This is the TODO list for v1.0
 
+- [ ] Shellcheck all the things.
 - [X] Database v1.0
   - [X] Basic graph algorithms
   - [X] Filtering functions
@@ -105,35 +106,38 @@ Right now it's eary days. This is the TODO list for v1.0
 	- [ ] REPEATING
   - [X] cycle detection
 	- [X] separate for dependencies and contexts.
-- [ ] Task Management UI
+- [ ] Task Management
   - [X] Capture new item
   - [X] List all tasks
   - [X] List new tasks
   - [ ] List someday tasks
-  - [ ] Filter tasks by context
-  - [ ] Filter tasks by project
-  - [X] List next actions
-  - [ ] Someday / Maybe
+  - [X] Filter next actions
+  - [X] Filter tasks by context
+  - [X] Filter tasks by project
+  - [X] Defer task
+  - [X] Drop task
+  - [X] Complete task
+- [ ] Task Data (need tests untested)
   - [ ] Move files under task dir
   - [ ] Copy files under task dir
   - [ ] pushd into task directory
-- [ ] Visualization API
-  - [ ] Visualize entire DB
+- [ ] Visualization
+  - [ ] tree expand starting at root
+  - [ ] dotfile conversion of entire db
   - [ ] Visualize subgraph rooted at given node or set of nodes.
   - [ ] --context: include only context edges
   - [ ] --dep: include only dependency edges
   - [ ] visualize last operation
-	- [ ] blink test
-- [ ] History Management UI
+	- some kind of blink test
+- [ ] History Management
   - [ ] back up db before destructive operations
   - [ ] revert state if command fails
   - [ ] undo
   - [ ] redo
 - [ ] Visual UI
-  - [ ] interactively select single task
-  - [ ] interactively select multiple tasks
+  - [X] interactively select single task
+  - [X] interactively select multiple tasks
   - [ ] interactive task explorer
-- [ ] Shellcheck all the things.
 
 ## Dependencies (debian packages)
 

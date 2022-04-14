@@ -178,6 +178,16 @@ function test_assert_false_true {
     assert_false true &> /dev/null
 }
 
+
+# There should be a test function here for each function in gtd.sh, in
+# the same order, so it's easy to spot functions which do not have
+# tests.
+#
+# exception: functions which start with __, which are an
+# implementation detail of some other function, usually a recursion
+# helper. these do not need to be tested separately.
+
+
 function test_filter_words {
     local actual="$(echo yes no yes yes no no | gtd filter_words ../test.sh isYes)"
     local expected="yes yes yes"
@@ -245,6 +255,60 @@ function test_graph_node_gen_id {
     test "${id1}" != "${id2}"            || error "Ids should be different"
 }
 
+function test_graph_datum {
+    gtd init
+    local id="fake-uuid"
+    assert "$(gtd graph_node_create "${id}")" = "${id}"
+
+    # subcommand: path
+    local path="./gtdgraph/state/nodes/fake-uuid/contents"
+    assert "$(gtd graph_datum contents path "${id}")" = "${path}"
+
+    # subcommand: write
+    echo FOO | gtd graph_datum contents write "${id}"
+    assert "$(cat "${path}")" = "FOO"
+
+    # subcommand: read
+    echo "lulululu" > "gtdgraph/state/nodes/fake-uuid/contents"
+    assert    "$(gtd graph_datum contents read fake-uuid)" = "lulululu"
+    assert -z "$(gtd graph_datum contents read does-not-exist)"
+    assert_false gtd graph_datum unpossible read uuid-1
+
+    # subcommand: write
+    echo "foo" | gtd graph_datum contents write fake-uuid
+    assert "$(gtd graph_datum contents read fake-uuid)" = "foo"
+
+    # subcommand: append
+    echo "bar" | gtd graph_datum contents append fake-uuid
+    assert "$(gtd graph_datum contents read fake-uuid)" = "$(echo -e 'foo\nbar')"
+
+    # subcommand: mkdir / exists
+    gtd graph_datum some_user_dir mkdir fake-uuid
+    assert -e "$(gtd graph_datum some_user_dir path fake-uuid)"
+    assert_true gtd graph_datum some_user_dir exists fake-uuid
+
+    # subcommand: cp
+    touch {foo,bar,baz}.txt
+    assert -e foo.txt
+    assert -e bar.txt
+    assert -e baz.txt
+    gtd graph_datum some_user_dir cp fake-uuid {foo,bar,baz}.txt
+    assert -e "$(gtd graph_datum some_user_dir path fake-uuid)/foo.txt"
+    assert -e "$(gtd graph_datum some_user_dir path fake-uuid)/bar.txt"
+    assert -e "$(gtd graph_datum some_user_dir path fake-uuid)/baz.txt"
+
+    # subcommand: mv
+    touch {foo,bar,baz}.txt
+    assert -e foo.txt
+    assert -e bar.txt
+    assert -e baz.txt
+    gtd graph_datum other_user_dir mkdir fake-uuid
+    gtd graph_datum other_user_dir mv fake-uuid {foo,bar,baz}.txt
+    assert -e "$(gtd graph_datum other_user_dir path fake-uuid)/foo.txt"
+    assert -e "$(gtd graph_datum other_user_dir path fake-uuid)/bar.txt"
+    assert -e "$(gtd graph_datum other_user_dir path fake-uuid)/baz.txt"
+}
+
 function test_graph_node_list {
     # sleeps inserted here to make sure each node gets a distinct timestamp
     # default ordering is most recent first.
@@ -273,25 +337,6 @@ function test_graph_node_create {
     # test node generation
     local id="$(gtd graph_node_create)" || error "Should have generated a node."
     assert -e "$(gtd graph_node_path "${id}")"
-}
-
-function test_graph_datum {
-    gtd init
-    local id="fake-uuid"
-    assert "$(gtd graph_node_create "${id}")" = "${id}"
-
-    # subcommand: path
-    local path="./gtdgraph/state/nodes/fake-uuid/contents"
-    assert "$(gtd graph_datum contents path "${id}")" = "${path}"
-
-    # subcommand: write
-    echo FOO | gtd graph_datum contents write "${id}"
-    assert "$(cat "${path}")" = "FOO"
-    
-    echo "lulululu" > "gtdgraph/state/nodes/fake-uuid/contents"
-    assert    "$(gtd graph_datum contents read fake-uuid)" = "lulululu"
-    assert -z "$(gtd graph_datum contents read does-not-exist)"
-    assert_false gtd graph_datum unpossible read uuid-1
 }
 
 function test_graph_node_adjacent {
@@ -430,6 +475,37 @@ function test_graph_traverse_with_cycle {
     fi
 }
 
+function test_task_state_is_valid {
+    assert_true  gtd task_state_is_valid NEW
+    assert_true  gtd task_state_is_valid TODO
+    assert_true  gtd task_state_is_valid COMPLETE
+    assert_true  gtd task_state_is_valid DROPPED
+    assert_true  gtd task_state_is_valid WAITING
+    assert_true  gtd task_state_is_valid SOMEDAY
+    assert_false gtd task_state_is_valid WAIT
+    assert_false gtd task_state_is_valid DONE
+    assert_false gtd task_state_is_valid DEFERRED
+    assert_false gtd task_state_is_valid FOOBAR
+}
+
+function test_task_state_is_active {
+    assert_true  gtd task_state_is_active NEW
+    assert_true  gtd task_state_is_active TODO
+    assert_false gtd task_state_is_active COMPLETE
+    assert_false gtd task_state_is_active DROPPED
+    assert_true  gtd task_state_is_active WAITING
+    assert_false gtd task_state_is_active SOMEDAY
+}
+
+function test_task_state_is_actionable {
+    assert_true  gtd task_state_is_actionable NEW
+    assert_true  gtd task_state_is_actionable TODO
+    assert_false gtd task_state_is_actionable COMPLETE
+    assert_false gtd task_state_is_actionable DROPPED
+    assert_false gtd task_state_is_actionable WAITING
+    assert_false gtd task_state_is_actionable SOMEDAY
+}
+
 function test_task_contents {
     mkdir -p "gtdgraph/state/nodes/fake-uuid-1"
     mkdir -p "gtdgraph/state/nodes/fake-uuid-2"
@@ -507,6 +583,24 @@ function test_task_is_actionable {
     assert_false gtd task_is_active fake-uuid
 }
 
+function test_task_is_new {
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
+
+    echo "NEW" | gtd task_state write fake-uuid
+    assert_true gtd task_is_new fake-uuid
+
+    echo "TODO" | gtd task_state write fake-uuid
+    assert_false gtd task_is_new fake-uuid
+
+    echo "COMPLETE" | gtd task_state write fake-uuid
+    assert_false gtd task_is_new fake-uuid
+
+    echo "WAITING" | gtd task_state write fake-uuid
+    assert_false gtd task_is_new fake-uuid
+
+    echo "SOMEDAY" | gtd task_state write fake-uuid
+    assert_false gtd task_is_new fake-uuid
 }
 
 function test_task_summary {
@@ -516,6 +610,42 @@ function test_task_summary {
 
     echo "foo bar baz" | gtd task_contents write fake-uuid
     assert "$(gtd task_summary fake-uuid)" = "fake-uuid NEW foo bar baz"
+}
+
+function test_task_activate {
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
+    echo "DROPPED" | gtd task_state write fake-uuid
+    assert_false gtd task_is_active fake-uuid
+    gtd task_activate fake-uuid
+    assert_true gtd task_is_active fake-uuid
+}
+
+function test_task_drop {
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
+    echo "NEW" | gtd task_state write fake-uuid
+    assert_true gtd task_is_new fake-uuid
+    gtd task_drop fake-uuid
+    assert "$(gtd task_state read fake-uuid)" = "DROPPED"
+}
+
+function test_task_complete {
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
+    echo "NEW" | gtd task_state write fake-uuid
+    assert_true gtd task_is_new fake-uuid
+    gtd task_complete fake-uuid
+    assert "$(gtd task_state read fake-uuid)" = "COMPLETED"
+}
+
+function test_task_defer {
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
+    echo "NEW" | gtd task_state write fake-uuid
+    assert_true gtd task_is_new fake-uuid
+    gtd task_defer fake-uuid
+    assert "$(gtd task_state read fake-uuid)" = "SOMEDAY"
 }
 
 
@@ -556,9 +686,17 @@ function run_all_tests {
     should_pass test_task_contents
     should_pass test_task_gloss
     should_pass test_task_state
+    should_pass test_task_state_is_valid
+    should_pass test_task_state_is_active
+    should_pass test_task_state_is_actionable
     should_pass test_task_is_active
     should_pass test_task_is_actionable
+    should_pass test_task_is_new
     should_pass test_task_summary
+    should_pass test_task_drop
+    should_pass test_task_activate
+    should_pass test_task_complete
+    should_pass test_task_defer
 
     print_summary
 }

@@ -178,15 +178,17 @@ function graph_datum {
     local path="$(graph_node_path ${id})/${datum}"
 
     case "${command}" in
-	exists) test -e       "${path}";;
-	path)   echo          "${path}";;
-	read)   __datum_read           ;;
-	write)  cat >         "${path}";;
-	append) cat >>        "${path}";;
-	mkdir)  mkdir -p      "${path}";;
-	cd)     pushd         "${path}";;
-	cp)     cp "$@"       "${path}";;
-	mv)     mv "$@"       "${path}";;
+	exists) test -e        "${path}";;
+	path)   echo           "${path}";;
+	read)   __datum_read            ;;
+	write)  cat >          "${path}";;
+	append) cat >>         "${path}";;
+	edit)   "${EDITOR}"    "${path}";;
+	mkdir)  mkdir -p       "${path}";;
+	cp)     cp "$@"        "${path}";;
+	mv)     mv "$@"        "${path}";;
+
+	*) error "invalid subcommand: ${command}";;
     esac
 }
 
@@ -456,90 +458,196 @@ function task_summary {
     echo "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
 }
 
-
-# Subcommands (high level, used directly from shell) **************************
-
-
-## Output formatters **********************************************************
-
-# summarize each taskid written to stdin.
-function summarize {
-    map_lines task_summary
-}
-
-## Finding and selecting nodes ************************************************
-
-# Prompt the user to select a node from the set passed on stdin.
+# Add a dependency to an existing task
 #
-# uses fzf for the match, all arguments are forwared to fzf.
-function select_node {
-    "$@" | summarize | fzf | cut -d ' ' -f 1
+# $1: the existing task
+# $2: the dependency
+function task_depends {
+    graph_edge_create "$1" "$2" dep
 }
 
-# helper used by a few other high-level commands
-function select_if_null {
-    if test -z "$1"; then
-	select_node
+# Assign task to the given context
+#
+# $1: the existing task
+# $2: the context
+function task_assign {
+    graph_edge_create "$2" "$1" context
+}
+
+# mark the given task as TODO
+function task_activate {
+    echo "TODO" | task_state write "$1"
+}
+
+# mark the given task as dropped
+function task_drop {
+    echo "DROPPED" | task_state write "$1"
+}
+
+# mark the given task as completed
+function task_complete {
+    echo "COMPLETED" | task_state write "$1"
+}
+
+# mark the given task as someday
+function task_defer {
+    echo "SOMEDAY" | task_state write "$1"
+}
+
+
+# An Embedded DSL for Queries *************************************************
+
+
+# returns true if "$@" is recognized as a valid filter keyword
+function filter_is_valid {
+    case "$1" in
+	new)             return 0;;
+	active)          return 0;;
+	actionable)      return 0;;
+	next)            return 0;;
+	waiting)         return 0;;
+	roots)           return 0;;
+	orphans)         return 0;;
+	select_one)      return 0;;
+	select_multiple) return 0;;
+	summarize)       return 0;;
+	activate)        return 0;;
+	drop)            return 0;;
+	complete)        return 0;;
+	defer)           return 0;;
+	*)               return 1;;
+    esac
+}
+
+# allow further chaining of filters for commands which support it
+#
+# if args are given, and a valid filter, then fold the given command
+# into the pipeline.
+#
+# if no args are given, forward stdin to stdout
+function chain_filters {
+    if test -n "$*"; then
+	if filter_is_valid "$1"; then
+	    "$@"
+	else
+	    error "$1 is not a valid query filter"
+	fi
     else
-	echo "$1"
+	cat
     fi
 }
 
-## Queries ********************************************************************
-
-# List all projects
-function all {
-    graph_node_list
+# forbid further chaining of filters
+function end_filter_chain {
+    if test -n "$*"; then
+	error "${name} does not allow further filtering"
+    fi
 }
 
-# List all subtasks for the given node
+## Query Producers ************************************************************
+
+# These may appear at the start of a filter chain, but are not
+# themselves filters.
+
+# all tasks
+function all {
+    graph_node_list | chain_filters "$@"
+}
+
+# all subtasks of the given node
 function subtasks {
-    graph_traverse "$(all | select_if_null $1)" dep outgoing
+    local id="$1"
+    shift
+    graph_traverse "$(all | select_if_null ${id})" dep outgoing | chain_filters "$@"
 }
 
 # List all tasks assigned to a context
 function assigned {
-    graph_traverse "$(all | select_if_null $1)" context incoming
+    graph_traverse "$(all | select_if_null $1)" context incoming | chain_filters "$@"
 }
 
-# List all tasks with no reverse dependencies
-function roots {
-    all | filter_lines task_is_root
-}
-
-# List all tasks with no dependency connections to other tasks
-function orphans {
-    all | filter_lines task_is_orphan
-}
-
-## Filters ********************************************************************
+## Query Filters **************************************************************
 
 # keep only new tasks
 function new {
-    filter_lines task_is_new
+    filter_lines task_is_new | chain_filters "$@"
 }
 
 # Keep only active tasks.
 function active {
-    filter_lines task_is_active
+    filter_lines task_is_active | chain_filters "$@"
 }
 
 # Keep only actionable tasks.
 function actionable {
-    filter_lines task_is_actionable
+    filter_lines task_is_actionable | chain_filters "$@"
 }
 
 # Keep only next actions
 function next {
-    filter_lines task_is_next_action
+    filter_lines task_is_next_action | chain_filters "$@"
 }
 
 # Keep only waiting tasks
 function waiting {
-    filter_lines task_is_waiting
+    filter_lines task_is_waiting | chain_filters "$@"
 }
 
-## Operations *****************************************************************
+# Keep only tasks which are the root of a subgraph
+function roots {
+    filter_lines task_is_root | chain_filters "$@"
+}
+
+# Keep only tasks which are not connected to any other tasks
+function orphans {
+    filter_lines task_is_orphan | chain_filters "$@"
+}
+
+# keep only the node selected by the user
+function select_one {
+    summarize | fzf | cut -d ' ' -f 1 | chain_filters "$@"
+}
+
+# keep only the nodes selected by the user
+function select_multiple {
+    summarize | fzf -m | cut -d ' ' -f 1 | chain_filters "$@"
+}
+
+## Query Consumers ************************************************************
+
+# Print a one-line summary for each task id
+function summarize {
+    end_filter_chain "$@"
+    map_lines task_summary
+}
+
+# Reactivate each task id
+function activate {
+    end_filter_chain "$@"
+    map_lines task_activate
+}
+
+# Drop each task id
+function drop {
+    end_filter_chain "$@"
+    map_lines task_drop
+}
+
+# Complete each task id
+function complete {
+    end_filter_chain "$@"
+    map_lines task_complete
+}
+
+# Defer each task id
+function defer {
+    end_filter_chain "$@"
+    map_lines task_defer
+}
+
+
+# GTD Commands DSL ************************************************************
+
 
 # Initialize the databaes
 function init {
@@ -565,42 +673,12 @@ function capture {
     fi
 }
 
-# Add a dependency to an existing task
-#
-# $1: the parent task
-# $2: the 
-function depends {
-    graph_edge_create "$(select_if_null "$1")" "$(select_if_null "$2")" dep
-}
-
-# Assign task to the given context
-function assign {
-    graph_edge_create \
-	"$(select_if_null "$1")" \
-	"$(require "${context}")" \
-	context
-}
-
-# Drop the given task
-function drop {
-    echo "DROPPED" | task_status write "$(select_if_null "$1")" 
-}
-
 
 # Main entry point ************************************************************
 
+# We special-case some verbs when they're the only argument given.
 
-case "$1" in
-    # special case to handle conflict with `select` shell builtin
-    "select")  select_node "$@";;
-
-    # these queries are summarized when invoked externally
-    inbox)    all | new | summarize;;
-    all)      "$@" | summarize;;
-    subtasks) "$@" | summarize;;
-    roots)    "$@" | summarize;;
-    orphans)  "$@" | summarize;;
-    assigned)  all | "$@" | summarize;;
-    next)      all | "$@" | summarize;;
-    *)         "$@";;
+case "$*" in
+    inbox) all new;;
+    *)     "$@";;
 esac
