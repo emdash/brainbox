@@ -346,6 +346,60 @@ function __graph_traverse_rec {
     unset nodes_on_stack["${cur}"]
 }
 
+# similar to above, but performing a "tree expansion"
+#
+# the difference is that shared nodes will be duplicated in the output.
+#
+# if --depth is given, then the second field will be an integer
+# representing the tree depth of the given node.
+#
+# this is a text-book algorithm, implemented in bash. we parameterize
+# on the same arguments as graph_adjacent.
+#
+# if a cycle is detected, the algorithm terminates early with nonzero
+# status.
+function graph_expand {
+    database_ensure_init
+
+    case "$1" in
+	-d|--depth) shift; local print_depth="";;
+    esac
+
+    local root="$1"
+    local edge_set="$2"
+    local direction="$3"
+    local -A nodes_on_stack
+
+    # would be a closure if bash scope was lexical.
+    __graph_expand_rec "${root}" 0
+}
+
+function __graph_expand_rec {
+    local cur="$1"
+    local depth="$2"
+
+    if test -v nodes_on_stack["${cur}"]; then
+	error "Graph contains a cycle"
+	return 1
+    fi
+
+    # add this node to the cycle checking set
+    nodes_on_stack["${cur}"]=""
+
+    if test -v print_depth; then
+	echo "${cur}" "${depth}"
+    else
+	echo "${cur}"
+    fi
+
+    for a in $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}"); do
+	__graph_expand_rec "${a}" "$((depth + 1))" || return 1
+    done
+
+    # remove node from cycle checking set
+    unset nodes_on_stack["${cur}"]
+}
+
 
 # Tasks ***********************************************************************
 
@@ -499,7 +553,7 @@ function task_defer {
 
 
 # returns true if "$@" is recognized as a valid filter keyword
-function filter_is_valid {
+function graph_filter_is_valid {
     case "$1" in
 	new)             return 0;;
 	active)          return 0;;
@@ -519,18 +573,44 @@ function filter_is_valid {
     esac
 }
 
-# allow further chaining of filters for commands which support it
+# returns true if "$@" is recognized as a valid filter keyword
+function tree_filter_is_valid {
+    case "$1" in
+	indent) return 0;;
+	*)      return 1;;
+    esac
+}
+
+# allow further chaining of graph query filters.
 #
 # if args are given, and a valid filter, then fold the given command
 # into the pipeline.
 #
 # if no args are given, forward stdin to stdout
-function chain_filters {
+function graph_filter_chain {
     if test -n "$*"; then
-	if filter_is_valid "$1"; then
+	if graph_filter_is_valid "$1"; then
 	    "$@"
 	else
-	    error "$1 is not a valid query filter"
+	    error "$1 is not a valid graph query filter"
+	fi
+    else
+	cat
+    fi
+}
+
+# allow further chaining of tree query filters.
+#
+# if args are given, and a valid filter, then fold the given command
+# into the pipeline.
+#
+# if no args are given, forward stdin to stdout
+function tree_filter_chain {
+    if test -n "$*"; then
+	if tree_filter_is_valid "$1"; then
+	    "$@"
+	else
+	    error "$1 is not a valid tree query filter"
 	fi
     else
 	cat
@@ -546,8 +626,7 @@ function end_filter_chain {
 
 ## Query Producers ************************************************************
 
-# These may appear at the start of a filter chain, but are not
-# themselves filters.
+# These appear at the start of a filter chain, but are not themselves filters.
 
 # all tasks
 function all {
@@ -558,59 +637,73 @@ function all {
 function subtasks {
     local id="$1"
     shift
-    graph_traverse "$(all | select_if_null ${id})" dep outgoing | chain_filters "$@"
+    graph_traverse "$(all | select_if_null ${id})" dep outgoing | graph_filter_chain "$@"
 }
 
-# List all tasks assigned to a context
+# all tasks assigned to a context
 function assigned {
-    graph_traverse "$(all | select_if_null $1)" context incoming | chain_filters "$@"
+    graph_traverse "$(all | select_if_null $1)" context incoming | graph_filter_chain "$@"
+}
+
+# tree expansion of project rooted at the given node
+function project_tree {
+    local root="$1"
+    shift
+    graph_expand --depth "${root}" dep outgoing | tree_filter_chain "$@"
+}
+
+# like project_tree, but going upwards
+function owner_tree {
+    local root="$1"
+    shift
+    graph_expand --depth "${root}" dep incoming  | tree_filter_chain "$@"
 }
 
 ## Query Filters **************************************************************
 
 # keep only new tasks
 function new {
-    filter_lines task_is_new | chain_filters "$@"
+    filter_lines task_is_new | graph_filter_chain "$@"
 }
 
 # Keep only active tasks.
 function active {
-    filter_lines task_is_active | chain_filters "$@"
+    filter_lines task_is_active | graph_filter_chain "$@"
 }
 
 # Keep only actionable tasks.
 function actionable {
-    filter_lines task_is_actionable | chain_filters "$@"
+    filter_lines task_is_actionable | graph_filter_chain "$@"
 }
 
 # Keep only next actions
 function next {
-    filter_lines task_is_next_action | chain_filters "$@"
+    filter_lines task_is_next_action | graph_filter_chain "$@"
 }
 
 # Keep only waiting tasks
 function waiting {
-    filter_lines task_is_waiting | chain_filters "$@"
+    filter_lines task_is_waiting | graph_filter_chain "$@"
 }
 
 # Keep only tasks which are the root of a subgraph
 function roots {
-    filter_lines task_is_root | chain_filters "$@"
+    filter_lines task_is_root | graph_filter_chain "$@"
 }
 
 # Keep only tasks which are not connected to any other tasks
 function orphans {
-    filter_lines task_is_orphan | chain_filters "$@"
+    filter_lines task_is_orphan | graph_filter_chain "$@"
 }
 
 # keep only the node selected by the user
 function select_one {
-    summarize | fzf | cut -d ' ' -f 1 | chain_filters "$@"
+    summarize | fzf | cut -d ' ' -f 1 | graph_filter_chain "$@"
 }
 
 # keep only the nodes selected by the user
 function select_multiple {
-    summarize | fzf -m | cut -d ' ' -f 1 | chain_filters "$@"
+    summarize | fzf -m | cut -d ' ' -f 1 | graph_filter_chain "$@"
 }
 
 ## Query Consumers ************************************************************
@@ -673,6 +766,30 @@ function capture {
     fi
 }
 
+# pretty-print a nested tree expansion rooted at noded.
+#
+# you can customize the characters used for indentation.
+function indent {
+    if test -n "$2"; then
+	local marker="$2"
+	shift
+    else
+	local marker=' '
+    fi
+
+    end_filter_chain "$@"
+
+    while read id depth; do
+	# indent the line.
+	for i in $(seq $(("${depth}" + 1))); do
+	    echo -n "${marker}"
+	done
+	
+	test ! "${marker}" = ' ' && echo -n ' '
+	
+	printf "%-8s %s\n" "$(task_state read "${id}")" "$(task_gloss "${id}")"
+    done
+}
 
 # Main entry point ************************************************************
 

@@ -90,7 +90,10 @@ meaningful reports.
 
 Right now it's eary days. This is the TODO list for v1.0
 
-- [ ] Shellcheck all the things.
+- [ ] Testing and Linting
+  - [ ] Shellcheck all the things.
+  - [ ] Every function has a unit test
+  - [ ] Write integration tests for major commands
 - [X] Database v1.0
   - [X] Basic graph algorithms
   - [X] Filtering functions
@@ -117,12 +120,11 @@ Right now it's eary days. This is the TODO list for v1.0
   - [X] Defer task
   - [X] Drop task
   - [X] Complete task
-- [ ] Task Data (need tests untested)
-  - [ ] Move files under task dir
-  - [ ] Copy files under task dir
-  - [ ] pushd into task directory
+- [X] Task Data (need tests untested)
+  - [X] Move files under task dir
+  - [X] Copy files under task dir
 - [ ] Visualization
-  - [ ] tree expand starting at root
+  - [X] tree expand starting at root
   - [ ] dotfile conversion of entire db
   - [ ] Visualize subgraph rooted at given node or set of nodes.
   - [ ] --context: include only context edges
