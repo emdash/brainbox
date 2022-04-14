@@ -420,7 +420,6 @@ function test_graph_traverse_with_cycle {
     local t3="$(make_test_node t3)"
     local t4="$(make_test_node t4)"
 
-    # create a cycle 
     make_test_edge "${t1}" "${t2}" dep
     make_test_edge "${t1}" "${t3}" dep
     make_test_edge "${t2}" "${t4}" dep
@@ -482,6 +481,10 @@ function test_task_is_active {
 
     echo "WAITING" | gtd task_state write fake-uuid
     assert_true gtd task_is_active fake-uuid
+
+    echo "SOMEDAY" | gtd task_state write fake-uuid
+    assert_false gtd task_is_active fake-uuid
+
 }
 
 function test_task_is_actionable {
@@ -499,6 +502,11 @@ function test_task_is_actionable {
 
     echo "WAITING" | gtd task_state write fake-uuid
     assert_false gtd task_is_actionable fake-uuid
+
+    echo "SOMEDAY" | gtd task_state write fake-uuid
+    assert_false gtd task_is_active fake-uuid
+}
+
 }
 
 function test_task_summary {

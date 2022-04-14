@@ -368,6 +368,7 @@ function task_state_is_valid {
 	COMPLETE) return 0;;
 	DROPPED)  return 0;;
 	WAITING)  return 0;;
+	SOMEDAY)  return 0;;
 	*)        return 1;;
     esac
 }

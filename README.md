@@ -100,8 +100,8 @@ Right now it's eary days. This is the TODO list for v1.0
 	- [X] TODO
 	- [X] COMPLETE
 	- [X] WAITING
+	- [X] SOMEDAY
 	- [ ] DELAYED
-	- [ ] SOMEDAY
 	- [ ] REPEATING
   - [X] cycle detection
 	- [X] separate for dependencies and contexts.
