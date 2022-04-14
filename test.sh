@@ -501,9 +501,13 @@ function test_task_is_actionable {
     assert_false gtd task_is_actionable fake-uuid
 }
 
-
 function test_task_summary {
-    return 0
+    gtd init
+    gtd graph_node_create fake-uuid > /dev/null
+    echo "NEW" | gtd task_state write fake-uuid
+
+    echo "foo bar baz" | gtd task_contents write fake-uuid
+    assert "$(gtd task_summary fake-uuid)" = "fake-uuid NEW foo bar baz"
 }
 
 
