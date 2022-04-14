@@ -419,6 +419,11 @@ function task_is_orphan {
     task_is_root "$1" && task_is_root "$1"
 }
 
+# returns true if task has state NEW
+function task_is_new {
+    test "$(task_state read "$1")" = "NEW"
+}
+
 # return true if the given task is active
 function task_is_active {
     task_state_is_active "$(task_state read $1)"
@@ -507,11 +512,12 @@ function orphans {
     all | filter_lines task_is_orphan
 }
 
-function new {
-    all | filter_lines task_is_new
-}
-
 ## Filters ********************************************************************
+
+# keep only new tasks
+function new {
+    filter_lines task_is_new
+}
 
 # Keep only active tasks.
 function active {
@@ -589,7 +595,7 @@ case "$1" in
     "select")  select_node "$@";;
 
     # these queries are summarized when invoked externally
-    inbox)    "$@" | summarize;;
+    inbox)    all | new | summarize;;
     all)      "$@" | summarize;;
     subtasks) "$@" | summarize;;
     roots)    "$@" | summarize;;

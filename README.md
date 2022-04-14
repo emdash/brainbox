@@ -108,6 +108,8 @@ Right now it's eary days. This is the TODO list for v1.0
 - [ ] Task Management UI
   - [X] Capture new item
   - [X] List all tasks
+  - [X] List new tasks
+  - [ ] List someday tasks
   - [ ] Filter tasks by context
   - [ ] Filter tasks by project
   - [X] List next actions
