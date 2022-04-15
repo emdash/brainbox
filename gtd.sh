@@ -271,6 +271,33 @@ function graph_edge_v {
     echo "$1" | cut -d ':' -f 2
 }
 
+# Print all graph edges to stdout
+function graph_edge_list {
+    case "$1" in
+	dep)     local -a dirs=("${DEPS_DIR}");;
+	context) local -a dirs=("${CTXT_DIR}");;
+	all)     local -a dirs=("${DEPS_DIR}" "${CTXT_DIR}");;
+
+	*) error "$1 not one of dep | context | all"
+    esac
+    ls -t "${dirs[@]}"
+}
+
+# Return true if the given edge touches the given set of nodes
+function graph_edge_touches {
+    declare -A nodes
+    for node in "$@"; do
+	nodes["${node}"]=""
+    done
+
+    while read edge; do
+	if test -v nodes["$(graph_edge_u "$1")"] || test -v nodes["$(graph_edge_v "$1")"]
+	then
+	    echo "${edge}"
+	fi
+    done
+}
+
 # Print the path to the edge connecting nodes u and v, if it exists.
 function graph_edge_path {
     database_ensure_init
@@ -516,8 +543,16 @@ function task_summary {
 #
 # $1: the existing task
 # $2: the dependency
-function task_depends {
+function task_add_subtask {
     graph_edge_create "$1" "$2" dep
+}
+
+# Add a dependency to an existing task
+#
+# $1: the existing task
+# $2: the parent task to add
+function task_add_supertask {
+    graph_edge_create "$2" "$1" dep
 }
 
 # Assign task to the given context
@@ -555,21 +590,24 @@ function task_defer {
 # returns true if "$@" is recognized as a valid filter keyword
 function graph_filter_is_valid {
     case "$1" in
-	new)             return 0;;
-	active)          return 0;;
-	actionable)      return 0;;
-	next)            return 0;;
-	waiting)         return 0;;
-	roots)           return 0;;
-	orphans)         return 0;;
-	select_one)      return 0;;
-	select_multiple) return 0;;
-	summarize)       return 0;;
-	activate)        return 0;;
-	drop)            return 0;;
-	complete)        return 0;;
-	defer)           return 0;;
-	*)               return 1;;
+	new)               return 0;;
+	active)            return 0;;
+	actionable)        return 0;;
+	next)              return 0;;
+	waiting)           return 0;;
+	roots)             return 0;;
+	orphans)           return 0;;
+	select_one)        return 0;;
+	select_multiple)   return 0;;
+	summarize)         return 0;;
+	activate)          return 0;;
+	drop)              return 0;;
+	complete)          return 0;;
+	defer)             return 0;;
+	make_subtask_of)   return 0;;
+	make_supertask_of) return 0;;
+	dot)               return 0;;
+	*)                 return 1;;
     esac
 }
 
@@ -630,19 +668,19 @@ function end_filter_chain {
 
 # all tasks
 function all {
-    graph_node_list | chain_filters "$@"
+    graph_node_list | graph_filter_chain "$@"
 }
 
 # all subtasks of the given node
 function subtasks {
-    local id="$1"
-    shift
-    graph_traverse "$(all | select_if_null ${id})" dep outgoing | graph_filter_chain "$@"
+    local id="$1"; shift
+    graph_traverse "${id}" dep outgoing | graph_filter_chain "$@"
 }
 
 # all tasks assigned to a context
 function assigned {
-    graph_traverse "$(all | select_if_null $1)" context incoming | graph_filter_chain "$@"
+    local id="$1"; shift
+    graph_traverse "${id}" context incoming | graph_filter_chain "$@"
 }
 
 # tree expansion of project rooted at the given node
@@ -738,35 +776,51 @@ function defer {
     map_lines task_defer
 }
 
-
-# GTD Commands DSL ************************************************************
-
-
-# Initialize the databaes
-function init {
-    database_init
+# Make each task id a supertask of the given subtask.
+#
+# The *subtask* to add is given by $1.
+# All *parent* tasks are read
+function make_supertask_of {
+    local subtask="$1"; shift
+    end_filter_chain "$@"
+    map_lines task_add_supertask "${subtask}"
 }
 
-# Create a new task.
-#
-# If arguments are given, they are written as the node contents.
-#
-# If no arguments are given:
-# - and stdin is a tty, invokes $EDITOR to create the node contents.
-# - otherwise, stdin is written to the contents file.
-function capture {
-    local node="$(graph_node_create)"
-
-    echo "NEW" | graph_datum write "${node}" state
-
-    if test -z "$*"; then
-	graph_datum edit "${node}" contents
-    else
-	echo "$*" | graph_datum write "${node}" contents
-    fi
+# Make each task id a subtask of the given id supertask.
+function make_subtask_of {
+    local supertask="$1"; shift
+    end_filter_chain "$@"
+    map_lines task_add_subtask "${supertask}"
 }
 
-# pretty-print a nested tree expansion rooted at noded.
+# dotfile export for graphviz
+function dot {
+    case "$1" in
+	dep|context) local edge_set="$1"; shift;;
+	*) error "$1 not one of dep | context";;
+    esac
+
+    end_filter_chain "$@"
+
+    declare -A nodes
+    declare -A edges
+
+    echo "digraph {"
+
+    # output an entry for each node
+    while read id; do
+	printf "\"${id}\" [label=\"%q\"];\n" "$(task_gloss "${id}")"
+	nodes["$id"]=""
+    done
+
+    graph_edge_list "${edge_set}" | graph_edge_touches "${!nodes[@]}" | while read edge; do
+	echo "\"$(graph_edge_u "${edge}")\" -> \"$(graph_edge_v "${edge}")\";"
+    done
+
+    echo "}"
+}
+
+# indent tree expansion
 #
 # you can customize the characters used for indentation.
 function indent {
@@ -791,11 +845,53 @@ function indent {
     done
 }
 
+
+# GTD Commands DSL ************************************************************
+
+
+# Initialize the database
+function init { database_init; }
+
+# Clobber the database
+function clobber { database_clobber; }
+
+# Create a new task.
+#
+# If arguments are given, they are written as the node contents.
+#
+# If no arguments are given:
+# - and stdin is a tty, invokes $EDITOR to create the node contents.
+# - otherwise, stdin is written to the contents file.
+function capture {
+    local node="$(graph_node_create)"
+
+    echo "NEW" | graph_datum state write "${node}"
+
+    if test -z "$*"; then
+	graph_datum contents edit "${node}"
+    else
+	echo "$*" | graph_datum contents write "${node}"
+    fi
+}
+
+
 # Main entry point ************************************************************
 
 # We special-case some verbs when they're the only argument given.
 
-case "$*" in
-    inbox) all new;;
-    *)     "$@";;
+case "$1" in
+    # print list of functions, and exit
+    # just a shorthand for "all new", but this is the gtd lingo
+    inbox)
+	shift;
+	all new | "$@";;
+    *)
+	# XXX: experimental
+	# if the first query keyword is a filter, imply all rather than hang.
+	if graph_filter_is_valid "$1"; then
+	    all | "$@"
+	else
+	    "$@"
+	fi
+	;;
 esac
