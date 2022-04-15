@@ -662,6 +662,13 @@ function end_filter_chain {
     fi
 }
 
+# disables destructive operations in preview mode
+function destructive_operation {
+    if test -v GTD_NONDESTRUCTIVE_MODE; then
+	error "Disabled in nondestructive mode"
+    fi
+}
+
 ## Query Producers ************************************************************
 
 # These appear at the start of a filter chain, but are not themselves filters.
@@ -760,18 +767,21 @@ function activate {
 
 # Drop each task id
 function drop {
+    destructive_operation
     end_filter_chain "$@"
     map_lines task_drop
 }
 
 # Complete each task id
 function complete {
+    destructive_operation
     end_filter_chain "$@"
     map_lines task_complete
 }
 
 # Defer each task id
 function defer {
+    destructive_operation
     end_filter_chain "$@"
     map_lines task_defer
 }
@@ -781,6 +791,7 @@ function defer {
 # The *subtask* to add is given by $1.
 # All *parent* tasks are read
 function make_supertask_of {
+    destructive_operation
     local subtask="$1"; shift
     end_filter_chain "$@"
     map_lines task_add_supertask "${subtask}"
@@ -788,6 +799,7 @@ function make_supertask_of {
 
 # Make each task id a subtask of the given id supertask.
 function make_subtask_of {
+    destructive_operation
     local supertask="$1"; shift
     end_filter_chain "$@"
     map_lines task_add_subtask "${supertask}"
@@ -877,9 +889,20 @@ function capture {
 
 # Main entry point ************************************************************
 
+# parse options
+if test "$1" = "--non-destructive"; then
+   shift
+   declare GTD_NONDESTRUCTIVE_MODE=""
+fi
+
 # We special-case some verbs when they're the only argument given.
 
 case "$1" in
+    # interactively build a query with fzf
+    interactive)
+	# inspired by https://github.com/paweluda/fzf-live-repl
+	: | fzf --print-query --preview "$0 --non-destructive \$(echo {q})"
+	;;
     # print list of functions, and exit
     # just a shorthand for "all new", but this is the gtd lingo
     inbox)
