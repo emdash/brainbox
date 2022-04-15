@@ -161,10 +161,8 @@ function graph_node_gen_id {
 # - path:   prints the path to the dataum file
 # - read:   print the datum file contents to stdout
 # - write:  overwrite the datum file path with stdin
-# - value:  print the last line of the datum file
 # - append: append remaining arguments to datum file.
 # - mkdir:  create datum as a directory
-# - cd:     move into datum directory (uses pushd).
 # - cp:     copy remaining arguments to datum directory
 # - mv:     move remaining arguments to datum directory.
 function graph_datum {
