@@ -1,15 +1,13 @@
-# Design Notes
+# Designed
 
-GtdGraph is written in shell.
-
-I'm officially targeting bash, since it's the most popular shell by a
-mile, but I would accept a PR to supporting another if it's not too
-complex.
+GtdGraph is written in shell. I'm officially targeting bash, since
+it's the most popular shell by a mile, but I would accept PRs
+supporting others shells.
 
 ## Coding Style
 
 This project is in early days, and so I have minimal style
-guidlines. This is some rough notes, to be expanded on later.
+guidelines. This is some rough notes, to be expanded on later.
 
 - when in doubt, make it match the surrounding code
   - or whatever code you're drawing inspiration from
@@ -23,35 +21,75 @@ guidlines. This is some rough notes, to be expanded on later.
 
 ## Datastructure
 
-The database is just nested subdirectories. Nodes and edges are
-themselves subdirectories. Essentially, certain directories are
-interpreted as sets.
+GtdGraph manages a special subdirectory -- called the *data directory*
+-- somewhat inspired by git, but not hidden by default.
 
-- Nodes are identified by a UUID.
-- Edges are identified by a pair of UUIDs, separated by a colon.
-- There are separate "edge sets" for dependency edges and context edges.
-- Most queries come down to a graph traversal, plus a final filter
-  operation on the result set.
+This directory implements a textbook graph datastruacture. By
+"textbook" and "graph", I mean:
 
-Everything is relative to the current working directory, like git.
+> A graph, *G*, is a tuple *G* = (*V*, *E*), where:
+> - *V* is a set of vertices, and
+> - *E* is a set of edges, and
+> - each edge is a tuple of vertices, (*u*, *v*), where:
+>  - *u*, *v* are elements of *E*
 
-- Like `git`.
-- you must call `gtd.sh init` to initialize your task dir.
-- There is no user-level dotfile.
-- This allows you to have multiple, independent graph repositories
-  with different settings for different purposes.
+In the case of GtdGraph, sets are represented as subdirectories under
+the *data directory*.
 
-### Contents File
+In particular, *V* corresponds to the `nodes` subdirectory. There are
+multiple *edge sets*. The `dependencies` set expresses task dependency
+relationships. The `contexts` set expresses context membership.
 
-Each node contains a special file named "contents", which contains
-free-form text. The first line of this file is used as a "gloss",
-i.e. a one-line summary for the node.
+### `nodes`
 
-### Status File
+Nodes are identified by UUID strings. This might be overkill, but the
+`uuid` package makesi t easy to generate UUIDs, and we can be
+reasonably sure they're unique, even across systems.
 
-In addition to the contents file, there is also a "status" file. This
-contains a short string which identifies the node's status:
+This is referred to as the `NODE_DIR` in the source.
 
+### Edges: `dependencies`, `contexts`
+
+There are two sets of edges:
+- `dep`: `DEPS_DIR` in the source
+- `context`: `CTXT_DIR` in the source
+
+Edges a string, containing a pair of UUIDs separated by a `:`.
+
+This separator was chosen because it seemed easy to work with, and
+doesn't feel like it needs a space. I realize this could cause issues
+with some filesystems.
+  
+## Datum / Data
+
+Graph nodes can contain arbitrary data. Data is plural of datum. Each
+graph node datum is simply a file or directory underneath the node's
+directory.
+
+The `graph_datum` graph function is a low-level command which operates on a
+single datum of a single node.
+
+The `datum` query function is a graph filter which exposes a subset of
+the datum subcommands in a filter chain.
+
+Most data are arbitrary, there are a few special keys which support
+more opinionated functions and GTD-specific functionality.
+
+### `contents`
+
+`contents`: datum containing summary of graph node entry
+
+It is a plain text file whose contents is the canonical description
+for the node. The first line of this file is used as the *gloss*,
+which is printed by `graph_node_gloss` and `task_summary`.
+
+**Note** I don't like this name. I am considering renaming this datum
+to `description`.
+
+### `state`
+s
+`state`: datum containing the node's state. This is a single-line text
+file, whose contents is one of:
 - `NEW`
 - `TODO`
 - `COMPLETE`
@@ -65,7 +103,7 @@ contains a short string which identifies the node's status:
 nodes with status `NEW` in order to easily filter them for later
 triage.
 
-Where *date* is iso date string, compatible with the `date` command.
+Where *date pattern* is some DSL describing the pattern of repetition.
 
 `COMPLETED` indicates a node should be ignored except for time tracking
 purposes.
@@ -157,6 +195,8 @@ major life goals or core values.
 The "Someday/Maybe" list merely consists of tasks whose status is
 deferred.
 
+# Undesigned
+
 ## Repeating Events
 
 Tasks with status REPEATS have their activity is controlled by a
@@ -169,6 +209,8 @@ instance of the task.
 The task is considered active *if* the current system time is within
 within a completion window *and* the completion set does not contain
 an entry for this instance.
+
+### Completion Set
 
 The *completion set* is simply a text file, `completions`, containing
 a line for each completed instance. Each line may a subset of the
@@ -234,21 +276,3 @@ They could be implemented in terms of repeating events, or they could
 be a separate notion.
 
 - should each instance of a checklist be tracked separately
-
-## Archiving and History Management
-
-Over time, processing the graph db might get quite slow... some
-provision for archiving old nodes should be made.
-
-Where this gets tricky is when a completed node gets archived, but
-there might still be active edges referring to it.
-
-We probably only want to archive nodes with no active transitive
-dependencies. And we probably want to delete incoming edges when we
-remove the node. But since edges can contain user data, this needs to
-be handled carefully.
-
-Another way to think about it is with history management. If every
-state is preserved, then maybe we can just delete nodes to mark them
-as done. This complicates reporting, in that we have to inspect the
-history to determine when a node disappeared.
