@@ -1,4 +1,4 @@
-# Designed
+# Design
 
 GtdGraph is written in shell. I'm officially targeting bash, since
 it's the most popular shell by a mile, but I would accept PRs
@@ -7,17 +7,146 @@ supporting others shells.
 ## Coding Style
 
 This project is in early days, and so I have minimal style
-guidelines. This is some rough notes, to be expanded on later.
+guidelines. The general rule is: *write the most readable shell possible*.
 
-- when in doubt, make it match the surrounding code
+
+- bash extensions are acceptable iff they are *more* readable than
+  portable shell, or necessary.
+- avoid extensions from incompatible shells.
+- when in doubt, match the surrounding code
   - or whatever code you're drawing inspiration from
-- minimum: single-line comment for each function not starting with a `__`
-  - I haven't stuck to this religiously.
-  - Not sure what style doc-comments to use, and no doc generation yet.
-- in some cases, I align things on punctuation to make typos easier to spot
-- avoid [shell antipatterns](tbd: oilshell link)
+- avoid [shell anti-patterns](tbd: oilshell link)
 - embrace [the good parts](tbd: oilshell link)
-- as much an exploration of shell as it is an end in and of itself
+- format repretitive code / data into tables
+
+
+For PRs to be accepted:
+- at least a single-line doc comment for each function not starting with a `__`
+  - I haven't stuck to this religiously myself. I would happily accept PRs to add missing doc cuments.
+  - bonus points if each argument is documented.
+
+## DSL
+
+### Query Language
+
+Graphs are more complex to manage than trees. I suspect this is why
+most productivity tools are tree based. GtdGraph tames this complexity
+with a simple, post-fix query language.
+
+This is probably clear as mud, so let's start with some examples
+
+#### Examples
+
+**TBD**: provide a working example data directory, where all these
+examples will work.
+
+Summarize all tasks. As your database grows, this will quickly become
+overwhelming.
+
+```
+$ gtd summarize
+```
+
+List the node ids of all tasks identified as *next actions*.
+
+```
+$ gtd next
+```
+
+You can summarize any set of node ids by appending the *summarize*
+keyword.
+
+```
+$ gtd next summarize
+```
+
+Print a summary of the next actions for your "Kitchen Remodel" project.
+
+```
+$ gtd search "Kitchen Remodel" subtasks next summarize
+```
+
+Print a tree formatted summary of your entire kitchen remodel project.
+
+```
+$ gtd search "Kitchen Remodel" as_tree indent
+```
+
+Print a summary of all the things you need to get during your next
+grocery shopping trip.
+
+```
+$ gtd search "Grocery Store" assigned next summarize
+```
+
+**TBD** add examples which mutate the database.
+
+Hopefully these exapmles give you some intuition for how the language works.
+
+#### Language 
+
+The basic syntax couldn't be simpler:
+> [ *producer* [args...] ]  [ (*filter* [args...])... ] [ *consumer* [args ... ] ]
+
+Each query starts with a *node producer*, which will print a list of
+node ids to stdout. As we've seen above, filters can be appended which
+will perform some combination of addition or removal of node
+ids. Finally, a *consumer* may be appended which will do something
+with these node ids, terminating the query.
+
+*producers* and *filters* are read-only operations. Only consumers
+modify the database. Consumers may appear only at the end of a query,
+making it syntactically impossible to modify the database while
+traversing it within a single query (with a few caveats).
+
+#### Producers
+
+These functions "produce" sets of node ids on stdout.
+
+- `all`            (implied if no producer is specified)
+- `orphans`        print orphaned nodes
+- `selection`      print the currently selected ids
+
+#### Filters
+
+You can filter nodes in various ways:
+
+- `new`              keep only nodes with status NEW
+- `subtasks`         output subtasks of each upstream task
+- `projects`         output parent projects of each upstream task 
+- `assigned`         output all tasks assigned to each upstream context
+- `active`           keep only nodes considered active (includes status WAITING)
+- `actionable`       keep only nodes considered actionable (omits WAITING nodes)
+- `next`             keep only nodes considered *next actions*
+- `waiting`          keep only waiting nodes
+- `select_one`       interactively select a single node
+- `select_multiple`  interactively select multiple nodes
+- `search`           keep nodes whose description matches *pattern*, where
+                     pattern is a regex as understood by `grep`
+- `someday`          keep only nodes with status SOMEDAY
+- `choose` [ `-m`]   interactively select one or many nodes
+
+
+#### Consumers
+
+These operations fall into two broad categories.
+
+Nondestructive Formatters:
+- `summarize` - print a short summary of each node
+- `datum`     - print the specified datum for each node
+- `dot`       - convert the set of nodes to graphviz syntax for visualization
+   -`display` - render and display the resulting graph
+- `tree`      - print a tree expansion of each node
+  - `indent`  - pretty-print a tree expansion (must be preceeded by tree)
+- `select`    - makes this set of nodes the current selection
+
+Destructive Operations:
+- `triage`            - mark tasks as TODO
+- `drop`              - mark tasks as DROPPED
+- `complete`          - mark tasks as COMPLETED
+- `defer`             - mark tasks as  SOMEDAY
+
+TBD: adding and removing edges.
 
 ## Datastructure
 
@@ -87,7 +216,7 @@ which is printed by `graph_node_gloss` and `task_summary`.
 to `description`.
 
 ### `state`
-s
+
 `state`: datum containing the node's state. This is a single-line text
 file, whose contents is one of:
 - `NEW`

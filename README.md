@@ -6,7 +6,8 @@ A productivity tool that is:
 - GTD-oriented
 - CLI-based
 - ADHD-friendly
-- offline only (relies only on local filesystem)
+- distributed
+- capable of offline operation
 
 I have a long-time fascination with "productivity tools". Recently, I
 discovered `taskwarrior`. I liked a lot of things about it, but after
@@ -145,7 +146,7 @@ Right now it's eary days. This is the TODO list for v1.0
 
 - uuid
 - fzf
-- dialog
+- graphviz
 
 ### Dev-Only
 
