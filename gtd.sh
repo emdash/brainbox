@@ -704,6 +704,16 @@ function owner_tree {
     graph_expand --depth "${root}" dep incoming  | tree_filter_chain "$@"
 }
 
+# interactively build query
+function interactive {
+    destructive_operation
+    # inspired by https://github.com/paweluda/fzf-live-repl
+    : | fzf \
+	    --print-query \
+	    --preview "$0 --non-destructive \$(echo {q})" \
+	| graph_filter_chain "$@"
+}
+
 ## Query Filters **************************************************************
 
 # keep only new tasks
@@ -929,11 +939,6 @@ fi
 # We special-case some verbs when they're the only argument given.
 
 case "$1" in
-    # interactively build a query with fzf
-    interactive)
-	# inspired by https://github.com/paweluda/fzf-live-repl
-	: | fzf --print-query --preview "$0 --non-destructive \$(echo {q})"
-	;;
     # print list of functions, and exit
     # just a shorthand for "all new", but this is the gtd lingo
     inbox)
