@@ -599,6 +599,7 @@ function graph_filter_is_valid {
 	select_multiple)   return 0;;
 	summarize)         return 0;;
 	datum)             return 0;;
+	search)            return 0;;
 	activate)          return 0;;
 	drop)              return 0;;
 	complete)          return 0;;
@@ -777,6 +778,16 @@ function datum {
     while read id; do
 	echo "${id}" "$(graph_datum "${datum}" "${command}" ${id})"
     done
+}
+
+# search node contents
+function search {
+    local pattern="$1"; shift
+    while read id; do
+	if graph_datum contents read "${id}" | grep -q "${pattern}" -; then
+	    echo "${id}"
+	fi
+    done | graph_filter_chain "$@"
 }
 
 # Reactivate each task id
