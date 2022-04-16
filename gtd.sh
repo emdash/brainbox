@@ -751,6 +751,16 @@ function select_multiple {
     summarize | fzf -m | cut -d ' ' -f 1 | graph_filter_chain "$@"
 }
 
+# search node contents
+function search {
+    local pattern="$1"; shift
+    while read id; do
+	if graph_datum contents read "${id}" | grep -q "${pattern}" -; then
+	    echo "${id}"
+	fi
+    done | graph_filter_chain "$@"
+}
+
 ## Query Consumers ************************************************************
 
 # Print a one-line summary for each task id
@@ -778,16 +788,6 @@ function datum {
     while read id; do
 	echo "${id}" "$(graph_datum "${datum}" "${command}" ${id})"
     done
-}
-
-# search node contents
-function search {
-    local pattern="$1"; shift
-    while read id; do
-	if graph_datum contents read "${id}" | grep -q "${pattern}" -; then
-	    echo "${id}"
-	fi
-    done | graph_filter_chain "$@"
 }
 
 # Reactivate each task id
