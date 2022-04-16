@@ -125,8 +125,8 @@ Right now it's eary days. This is the TODO list for v1.0
   - [X] Copy files under task dir
 - [ ] Visualization
   - [X] tree expand starting at root
-  - [ ] dotfile conversion of entire db
-  - [ ] Visualize subgraph rooted at given node or set of nodes.
+  - [X] dotfile conversion of entire db
+  - [X] Visualize subgraph rooted at given node or set of nodes.
   - [ ] --context: include only context edges
   - [ ] --dep: include only dependency edges
   - [ ] visualize last operation
