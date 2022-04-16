@@ -891,24 +891,29 @@ function dot {
 #
 # you can customize the characters used for indentation.
 function indent {
-    if test -n "$2"; then
-	local marker="$2"
-	shift
+    if test "$1" = "--gloss-only"; then
+	local no_meta=""; shift;
+    fi
+    
+    if test -n "$1"; then
+	local marker="$(echo "$1")"; shift
     else
-	local marker=' '
+	local marker='  '
     fi
 
     end_filter_chain "$@"
 
     while read id depth; do
+	if test ! -v no_meta; then
+	   printf "%s %8s" "${id}" "$(task_state read "${id}")"
+	fi
+
 	# indent the line.
-	for i in $(seq $(("${depth}" + 1))); do
+	for i in $(seq $(("${depth}"))); do
 	    echo -n "${marker}"
 	done
-	
-	test ! "${marker}" = ' ' && echo -n ' '
-	
-	printf "%-8s %s\n" "$(task_state read "${id}")" "$(task_gloss "${id}")"
+
+	printf "$(task_gloss "${id}")\n"
     done
 }
 
