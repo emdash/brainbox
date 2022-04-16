@@ -1,8 +1,25 @@
 # Design Notes
 
-gtdgraph is mostly written in shell. I try to keep the bashisms to a
-minimum, but I'm don't aim for compatibility with any other shell
-besides `osh`.
+GtdGraph is written in shell.
+
+I'm officially targeting bash, since it's the most popular shell by a
+mile, but I would accept a PR to supporting another if it's not too
+complex.
+
+## Coding Style
+
+This project is in early days, and so I have minimal style
+guidlines. This is some rough notes, to be expanded on later.
+
+- when in doubt, make it match the surrounding code
+  - or whatever code you're drawing inspiration from
+- minimum: single-line comment for each function not starting with a `__`
+  - I haven't stuck to this religiously.
+  - Not sure what style doc-comments to use, and no doc generation yet.
+- in some cases, I align things on punctuation to make typos easier to spot
+- avoid [shell antipatterns](tbd: oilshell link)
+- embrace [the good parts](tbd: oilshell link)
+- as much an exploration of shell as it is an end in and of itself
 
 ## Datastructure
 
@@ -30,25 +47,19 @@ Each node contains a special file named "contents", which contains
 free-form text. The first line of this file is used as a "gloss",
 i.e. a one-line summary for the node.
 
-### Birth File
-
-Each node may contain special file named "birth" which just contains
-an iso date string indicating when the given node was first
-created. `capture` will create this file for you. If this file is
-missing, time tracking is disabled for this node.
-
 ### Status File
 
 In addition to the contents file, there is also a "status" file. This
 contains a short string which identifies the node's status:
+
 - `NEW`
 - `TODO`
-- `COMPLETE` *date*
+- `COMPLETE`
 - `WAITING`
-- `DELAYED` *date*
+- `DELAYED`
 - `SOMEDAY`
-- `DROPPED` *date* [*excuse*]
-- `REPEATS` [*date pattern*]
+- `DROPPED`
+- `REPEATS` *date pattern*
 
 `NEW` and `TODO` indicate active nodes. The `capture` command creates
 nodes with status `NEW` in order to easily filter them for later
@@ -69,16 +80,20 @@ Someday/Maybe reports.
 aribtrary string. This is for your own benefit, and may be left
 blank. A lengthy excuse may be written on subsequent lines.
 
+#### Not Yet Implemented
+
 `REPEATS` indicates a repeating event, where *pattern* is an
 expression that defines the pattern of repetition. See [Repeating
 events](#Repeating_Events)
 
-### User Files
+### Data (graph-datum)
 
 You can store whatever files you like directly within this database,
 (including symlinks, if you don't care about being the database being
-self-contained), so long as they don't conflict with the files named
-above.
+self-contained).
+
+Task state is implemented using the same mechansim, so perhaps an
+abstraction is neded for user data.
 
 ## How GtdGraph implements GTD
 
