@@ -607,6 +607,7 @@ function graph_filter_is_valid {
 	make_subtask_of)   return 0;;
 	make_supertask_of) return 0;;
 	dot)               return 0;;
+	as_tree)           return 0;;
 	*)                 return 1;;
     esac
 }
@@ -690,20 +691,6 @@ function assigned {
     graph_traverse "${id}" context incoming | graph_filter_chain "$@"
 }
 
-# tree expansion of project rooted at the given node
-function project_tree {
-    local root="$1"
-    shift
-    graph_expand --depth "${root}" dep outgoing | tree_filter_chain "$@"
-}
-
-# like project_tree, but going upwards
-function owner_tree {
-    local root="$1"
-    shift
-    graph_expand --depth "${root}" dep incoming  | tree_filter_chain "$@"
-}
-
 # interactively build query
 function interactive {
     destructive_operation
@@ -770,6 +757,33 @@ function search {
 	fi
     done | graph_filter_chain "$@"
 }
+
+# tree expansion of project rooted at the given node for given edge set and direction.
+#
+# tree filters can be chained onto this, but not graph filters
+function as_tree {
+    case "$1" in
+	dep|context) local edge_set="$1";;
+	*)           error "$1 not one of: dep | context";;
+    esac
+
+    case "$2" in
+	incoming|outgoing) local direction="$2";;
+	*)                 error "$2 is not one of: incoming | outgoing";;
+    esac
+
+    shift 2
+
+    while read root; do
+	graph_expand \
+	    --depth \
+	    "${root}" \
+	    "${edge_set}" \
+	    "${direction}"
+    done | tree_filter_chain "$@"
+
+}
+
 
 ## Query Consumers ************************************************************
 
