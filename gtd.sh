@@ -598,6 +598,7 @@ function graph_filter_is_valid {
 	select_one)        return 0;;
 	select_multiple)   return 0;;
 	summarize)         return 0;;
+	datum)             return 0;;
 	activate)          return 0;;
 	drop)              return 0;;
 	complete)          return 0;;
@@ -755,6 +756,27 @@ function select_multiple {
 function summarize {
     end_filter_chain "$@"
     map_lines task_summary
+}
+
+# runs graph_datum $1 $2 ${id} for each id
+function datum {
+    test -z "$1" && error "a datum is required"
+
+    case "$2" in
+	exists|path|read) : ;;
+	# write / append / mv don't make sense because of the piping semantics.
+	mkdir|cp|edit)    destructive_operation;;
+	*)                error "invalid subcommand: $2";;
+    esac
+
+    local datum="$1"
+    local command="$2"
+    shift 2
+
+    end_filter_chain "$@"
+    while read id; do
+	echo "${id}" "$(graph_datum "${datum}" "${command}" ${id})"
+    done
 }
 
 # Reactivate each task id
