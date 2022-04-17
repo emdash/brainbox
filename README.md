@@ -2,21 +2,18 @@
 
 A productivity tool that is:
 
-- opinionated
 - GTD-oriented
-- CLI-based
-- ADHD-friendly
-- distributed
-- capable of offline operation
+- Command Line Driven
+- Opinionated
+- Developed with ADHD users in mind
 
-I have a long-time fascination with "productivity tools". Recently, I
-discovered `taskwarrior`. I liked a lot of things about it, but after
-playing with it, I discovered it did not do the one thing I wanted:
-automatic generation of "Next Actions". So, finally bit the bullet and
-started on my own tool.
+I have a long-time fascination with "productivity tools" and the
+[GTD](tbd: Link) philosophy.
 
-I have been meaning to expand my knowledge of shell programming, so
-this tool is largely written in bash.
+Recently, I discovered `taskwarrior`. I like a lot of things about it,
+but after playing with it, I discovered it did not do the one thing I
+wanted most: automatic generation of "Next Actions". So, wrote my own
+tool, and now I'm sharing it with the world.
 
 ## Distinguishing Features
 
@@ -30,18 +27,20 @@ You only have to explicitly track the relationship between your tasks
 and contexts, and GtdGraph figures out the rest using the magic of
 [graph theory](https://en.wikipedia.org/wiki/Graph_theory).
 
+### zero-install, if desired
+
+Just run it from the source dir.
+
 ### Self-contained, independent Databases
 
 The database is just nested subdirectories.
 
-Unlike taskwarrior, which uses a per-user databse by default, GtdGraph
-looks relative to the current working directory (like `git`).
-
-You can store whatever files you like directly within the database.
+You can associate whatever data you wish directly within your
+database.
 
 ### Context Linking and Subsetting
 
-Contexts can be linked, defining flexible subsets of tasks.
+Contexts can be linked, allowing for powerful task filtering:
 
 For example:
 - "Errands"        includes "Grocery Store" "Hardware Store"
@@ -54,9 +53,7 @@ For example:
 GtdGraph can easily handle the equivalent of "list next actions for
 any grocery store on the north side of my home town".
 
-### High level GTD Workflows
-
-Seamlessly shift between the following workflows:
+### High level GTD Workflow
 
 #### Capture
 
@@ -114,7 +111,7 @@ Right now it's eary days. This is the TODO list for v1.0
   - [X] Capture new item
   - [X] List all tasks
   - [X] List new tasks
-  - [ ] List someday tasks
+  - [X] List someday tasks
   - [X] Filter next actions
   - [X] Filter tasks by context
   - [X] Filter tasks by project
@@ -137,17 +134,18 @@ Right now it's eary days. This is the TODO list for v1.0
   - [ ] revert state if command fails
   - [ ] undo
   - [ ] redo
-- [ ] Visual UI
+- [ ] Interactive UI
   - [X] interactively select single task
   - [X] interactively select multiple tasks
-  - [ ] interactive task explorer
+  - [ ] interactively explore task graph
 
 ## Dependencies (debian packages)
 
 - uuid
-- fzf
-- graphviz
+- fzf (for interactive search)
+- graphviz (for visualizations)
+- git (for history managment, TBD)
 
-### Dev-Only
+### Dev Dependencies
 
 - shellcheck

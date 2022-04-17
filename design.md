@@ -1,113 +1,190 @@
 # Design Overview
 
-GtdGraph is written in shell. I'm officially targeting bash, since
-it's the most popular shell by a mile, but I would accept PRs
-supporting others shells.
+GtdGraph is written in shell. It uses a persistent database stored in
+a subdirectory.
 
-## Coding Style
+I'm officially targeting bash, since it's the most popular shell by a
+mile, but I would accept PRs supporting others shells.
 
-The basic rule is: *write shell code to be understood by those not
-expert in shell programming*.
+# GTD Interms of Graphs #
 
-This project aims to manage one's most personal data. As such, I would
-like to be as transparent as possible about how it works. Many
-open-source and industry veterans are skeptical of shell. One of my
-larger goals is to make the case for shell as an implementation
-language.
+I'm assuming you're familiar with [*Getting Things Done*](tbd: link),
+else you wouldn't have read this far.
 
-It's too early for automatic tooling. The following is a set of rough
-guidelines.
+As a brief reminder, the gtd work flow includes: **TBD** insert
+infographic here.
 
-- when in doubt, match the surrounding code
-  - or whatever code you're drawing inspiration from
-- prefer 80 columns
-  - exceptions are allowed when:
-    - the alternative would be awkward or impossible.
-	- for tabular formatting (see below)
-- use tabular formatting:
-  - for case statements
-  - for data-driven code
-  - you may exceed the basic 80 column limit in tabular code
-    - but keep lines as short as possible.
-  - TBD: include some representative examples
-- prefer `snake_case` to `kebab-case` for implementation details
-  - these are candidates for optimization in mainstream languages
-    which do not allow `-` in identifiers.
-- avoid [shell anti-patterns](tbd: oilshell link)
-- embrace [the good parts](tbd: oilshell link)
-- bash extensions are acceptable iff they are:
-  - *more* readable than portable shell, or
-  - strictly necessary for required functionality.
-  - avoid zsh or other incompatible shell constructs.
-    - i'm open to hiding certain things behind conditionals, but
-      these clutter the code, and I prefer to avoid them.
-- prefer `... | while read ...` to `... | sed ...`, `... | grep`, `... | awk ...`
-    - use `test`, `[[ .. ]]`, `case` etc. for direct string comparison.
-  - these tools employ cryptic mini-languages, each of which has its
-    own sordid history of pitfalls and misuse.
-  - these tools may behave differently on end user machines, making
-    bugs hard to reproduce for developers and maintainers.
-  - exception?: passing through user patterns to grep
-- create and respect abstraction boundaries
-  - shell has one foot stuck in the [turing tarpit](tbd: link)
-	- everything is "text", typing is sloppy.
-  - shell has no module system, so we are stuck with:
-    - C-style identifier prefixing
-	- the "subcommand" pattern
-	  - via case matching within a function, `"$@"` dispatch
-	  - shelling out to another tool (with performance penalty)
+The fundamental issue with GTD is tedium of maintaining lists of "next
+actions" and sorting them into contexts. This activity cries out for
+automation with digital tools.
 
-### For PRs
+Where most digital tools go wrong is they:
+- attempt to organize tasks *hierarchically* (a.k.a. as *trees*).
+- model contexts as simple *tags*
 
-Use a feature branch. The description should reference an issue on
-github. If no issue exists, create one yourself.
+GtdGraph lets you focus on what matters most: tasks, projects,
+contexts, and the relationships between them.
 
-Right now there's no tooling. So, manually check that:
-- unit tests pass
-- you have added new tests for any new functions
-- you have updated existing tests to cover new functionality
-- you have comitted no egregious style violations
-- at least a single-line doc comment for each function
-  - exception: functions whose name begins with `__`
-	- these are implementation details of some parent function.
-	- dynamic scoping leads to lots of little helper functions.
-  - bonus points if you add missing comments.
-    - I haven't stuck to this 100% myself, but then again I know what
-      my goals are.
-  - bonus points if you document each argument for each function.
-- "unavoidably" cryptic shell code must:
-  - include sufficient explanatory comments that it can be understood
-    without referring to outside documentation.
-    - exception: *blessed idioms*, which compendium shall be documented herebelow.
-    - bonus points if you successfully argue for a new *blessed idiom*.
-	
-Rest assured, *I* will be checking for these things, and *I* or my
-appointed successor and / or deputee will make the final decision on
-each PR.
+## Inbox
 
-I make no promises as regards such benefits as might accrue in
-relation to, or even to keep accurate score of, afore-mentioned
-"points". However; such behavior will be "loosely factored into" any
-decision-making on my part with respect to future delegation of
-responsibility towards this codebase.
-  
-### Blessed Shell Idioms (and Constructs): "Oh, the Horror!"
+GtdGraph has a `capture` command, which lets you quickly create a task
+before you forget it. Tasks created this way are automatically placed
+in the NEW state.
 
-This whole section: TBD
+Your *inbox* is simply the set of all tasks in the `NEW` state. When
+you assign a `NEW` task to a project or context, it is automatically
+placed in the TODO state.
 
-- bash array syntax
-- redirections
-- special shell vars
-- `"$@"` dispatch"
-- quoting idioms, corner-cases, and pitfalls
+## Next Actions, Projects, and Contexts ##
 
-## Datastructure
+Unlike other systems, which force you to manually organize your tasks
+into "projects" and "next actions", in GtdGraph, this is done
+automatically.
 
-GtdGraph manages a special subdirectory -- called the *data directory*
--- somewhat inspired by git, but not hidden by default.
+### Task Dependency ###
 
-This directory implements a textbook graph datastruacture. By
-"textbook" and "graph", I mean:
+For example: *task `A` depends on task `B`*.
+
+In graph theoretic terms: *a directed edge exists between nodes `A`
+and `B` in the dependency graph*.
+
+### Context Assignment ###
+
+For example: *task "buy milk" is assigned to the "grocery" context.*
+
+In graph theoretic terms: *a directed edge exists between the nodes
+*buy milk* and *grocery* in the context graph*.
+
+### Context Grouping ###
+
+For example:
+
+> Every task in the "Safeway" context should also appear in the to
+> "Grocery Store" context. "Safeway" is included in a "South Side"
+> context. Both "South Side" and "Grocery Store" are included in
+> "Errands".
+
+In dotfile syntax:
+```
+"South Side"    -> "Safeway"
+"Grocery Store" -> "Safeway"
+"Errands"       -> "Grocery Store"
+"Errands"       -> "South Side"
+```
+
+We can easily "filter" tasks by context simply by performing a graph
+depth first traversal, starting with the given context node, and
+following the edges in the context graph.
+
+### Next Actions, Projects, and Others ###
+
+We can automatically categorize nodes as *next actions*, *projects*
+and others with a little bit of graph theory.
+
+Projects are simply task nodes with at least one dependency.
+
+A *next action* is a task with no dependencies that is in an
+*actionable* state.
+
+The "Someday/Maybe" list is automatically constructed from any task
+placed into a *deferred* state.
+
+In GtdGraph, *task state* is modeled as a *datum* named `state`.
+
+### Undesigned
+
+This section contains features I'm planning, but am unsure how best to
+model.
+
+I am focusing on basic features, so that I can start dogfooding
+GtdGraph as my main task manager.
+
+Once I dogfood GtdGraph for a while, I am confident the right design
+will come to me. I'm also not above taking cues from other task
+managers, like TaskWarrior.
+
+#### Triage Workflow
+
+A high level `triage` command is planned to streamline daily review of
+your *inbox*.
+
+#### History management (a.k.a. Undo / Redo)
+
+Kindof an important feature, given how easy it is to accidentally
+`drop` all your tasks at the moment.
+
+History management will semantically preserve the entire state between
+high level operations.
+
+The first pass will likely be implemented on top of `git`. This way,
+you get rollback and remote sync "for free", though it would not be
+ideal for those who may wish to manage large files with gtdgraph.
+
+#### Recurring Tasks
+
+Tasks whose state transitions between *completed* and *actionable*
+according to some *pattern*, *event*, or other *trigger*.
+
+The design will depend somewhat on how history management gets
+implemented, and what kinds of reporting I want to enable (progress
+reports, "completion calendars", etc).
+
+#### Checklists
+
+These are similar to repeating tasks, but are used in a different
+context. Checklists will probably be a different UI around the same
+underlying mechanism as used for recurring events.
+
+#### Review Workflow
+
+I'm focusing on the basic functionality, but the idea is that GtdGraph
+should nag you to do periodic reviews.
+
+Daily:
+- triage your inbox
+- view your next actions
+
+Weekly:
+- review all your active projects
+
+Monthly or Quarterly:
+- review all your projects
+
+Annually:
+- review your roots
+  - I have this vague notion that in a well-maintained database, *root
+    nodes* (aka *source nodes*) ultimately correspond to your *core
+    values* and *life goals*.
+	- dubbed *The view from 30,00 Feet* in the GTD book.
+  - if you have "too many" roots, then either it's time for some
+    serious self-reflection, or perhaps you need some help getting
+    organized.
+
+#### Stalled Project Detection
+
+Again, need to dogfood for a while to get a sense for what counts as a
+*stalled* project.
+
+Is it:
+- a task which hasn't been modified in a while?
+- an entire subgraph within which no node has been modified?
+- any task which hasn't been completed for a while?
+- what counts as "a while"?
+
+# Code Walkthrough
+
+Total code is ~1k lines (including comments) at time of this writing
+(Sun 17 Apr 2022).
+
+## Tests
+
+There is a `./test.sh` script along-side the main script. It is
+intended to be run from the root of the source tree.
+
+## Database
+
+GtdGraph stores its data under a subdirectory -- (`"${DATA_DIR}"` in
+the code), in a manner similar to git.
 
 > A graph, *G*, is a tuple *G* = (*V*, *E*), where:
 > - *V* is a set of vertices, and
@@ -115,49 +192,47 @@ This directory implements a textbook graph datastruacture. By
 > - each edge is a tuple of vertices, (*u*, *v*), where:
 >  - *u*, *v* are elements of *E*
 
-In the case of GtdGraph, sets are represented as subdirectories under
-the *data directory*.
+In other words, GtdGraph is based directy on the set-theoretic notion
+of graphs.  More precisely, the GtdGraph database contains multiple
+graphs, sharing a common set of nodes, but with distinct sets of
+edges.
 
-In particular, *V* corresponds to the `nodes` subdirectory. There are
-multiple *edge sets*. The `dependencies` set expresses task dependency
-relationships. The `contexts` set expresses context membership.
+GtdGraph uses shell primitives and plain old filesystem directories as
+generic, persistent sets.
 
-### `nodes`
+### `nodes` ###
 
-Nodes are identified by UUID strings. This might be overkill, but the
-`uuid` package makesi t easy to generate UUIDs, and we can be
-reasonably sure they're unique, even across systems.
+The `"${NODE_DIR}"` contains an entry for each node. Each node is
+identified by a unique ID (not a content hash) which remains the same
+through its life.
 
-This is referred to as the `NODE_DIR` in the source.
+IDs are generated by `uuid -m`, which might be overkill, but seems at
+least reasonably safe from collisions.
 
-### Edges: `dependencies`, `contexts`
+### Edges: `dependencies`, `contexts` ###
+
+Edges are strings, containing a pair of UUIDs separated by a `:`.
 
 There are two sets of edges:
-- `dep`: `DEPS_DIR` in the source
-- `context`: `CTXT_DIR` in the source
-
-Edges a string, containing a pair of UUIDs separated by a `:`.
-
-This separator was chosen because it seemed easy to work with, and
-doesn't feel like it needs a space. I realize this could cause issues
-with some filesystems.
+- `dep`: `"${DEPS_DIR}"` in the source
+- `context`: `${CTXT_DIR}"` in the source
   
-## Datum / Data
+### Datum / Data ###
 
-Graph nodes can contain arbitrary data. Data is plural of datum. Each
-graph node datum is simply a file or directory underneath the node's
-directory.
+Users can associate arbitrary data with graph nodes. Data is plural of
+datum. Each *datum* is simply a file or directory underneath the
+node's directory.
 
-The `graph_datum` graph function is a low-level command which operates on a
+`graph_datum` is a low-level function which performs operations on a
 single datum of a single node.
 
-The `datum` query function is a graph filter which exposes a subset of
-the datum subcommands in a filter chain.
+`datum` high-level query consumer which exposes a subset of the datum
+subcommands.
 
-Most data are arbitrary, there are a few special keys which support
-more opinionated functions and GTD-specific functionality.
+There are a few `reserved` data used to implement the more opinionated
+and gtd-specific functions.
 
-### `contents`
+#### `contents` ####
 
 `contents`: datum containing summary of graph node entry
 
@@ -168,7 +243,7 @@ which is printed by `graph_node_gloss` and `task_summary`.
 **Note** I don't like this name. I am considering renaming this datum
 to `description`.
 
-### `state`
+#### `state` ####
 
 `state`: datum containing the node's state. This is a single-line text
 file, whose contents is one of:
@@ -200,161 +275,161 @@ Someday/Maybe reports.
 aribtrary string. This is for your own benefit, and may be left
 blank. A lengthy excuse may be written on subsequent lines.
 
-#### Not Yet Implemented
+##### Not Yet Implemented #####
 
 `REPEATS` indicates a repeating event, where *pattern* is an
 expression that defines the pattern of repetition. See [Repeating
 events](#Repeating_Events)
 
-### Data (graph-datum)
+#### Data (graph-datum) ####
 
-You can store whatever files you like directly within this database,
+You can store whatever you like directly within this database,
 (including symlinks, if you don't care about being the database being
 self-contained).
 
-Task state is implemented using the same mechansim, so perhaps an
-abstraction is neded for user data.
+## Filter Chaining: A new shell pattern?
 
-## How GtdGraph implements GTD
+**TBD** Explain the `*_filter_chain` family of functions and how they
+work together to parse the query language.
 
-### Next Actions, Projects, and Contexts
+## Shell FP
 
-Unlike other systems, which force you to explicitly designate
-"projects" and "next actions", in GtdGraph, this level of reporting is
-completely automatic.
+**TBD** Explain `map_lines` and `filter_lines`.
 
-You only have to explicitly track the relationship between your tasks
-and contexts.
+# Coding Style
 
-Your tasks form what in computer science is called a *graph*. Certain
-concepts in GTD have a straight-forward expression in graph theoretic
-terms.
+The basic rule is: *be understood by those less familiar with shell
+programming*.
 
-#### Task Dependency
+This project aims to manage one's most personal data. As such, I would
+like to be as transparent as possible about how it works.
 
-For example: task `A` depends on task `B`. In graph theoretic terms,
-we say that there is a "directed edge" (visually drawn as an arrow)
-between "nodes" `A` and `B`, or just `A -> B`.
+Many open-source and industry veterans are skeptical of shell. One of
+my larger goals is to make the case for doing serious things with
+shell.
 
-#### Context Assignment
+The following is a set of rough guidelines.
 
-For example: task A is assigned to context C. In graph theoretic
-terms, we say that there is "directed edge" from A to C.
+- when in doubt, match the surrounding code
+  - or whatever code you're drawing inspiration from
+- prefer 80 columns
+  - exceptions are allowed when:
+    - the alternative would be awkward or impossible.
+	- for tabular formatting (see below)
+- quote almost all variable substitutions `"${foo}"`
+  - exception: for loops `for f in ${foo}; ...`
+- use tabular style:
+  - for case constructs
+  - for data-driven code
+  - you may exceed the basic 80 column limit to maintain tabular style
+    - but keep lines as short as possible.
+  - TBD: include some representative examples
+- prefer `snake_case` to `kebab-case` for implementation details
+  - these are candidates for optimization in mainstream languages
+    which do not allow `-` in identifiers.
+- short function names are reserved for user-facing commands.
+- prefer `test ...` to `[ ... ]`
+- avoid using "$0"
+  - directly test the status code of commands `if ...`
+- avoid [shell anti-patterns](tbd: oilshell link)
+- embrace [the good parts](tbd: oilshell link)
+- bash extensions are acceptable iff they are:
+  - *more* readable than portable shell, or
+  - strictly necessary for required functionality.
+  - avoid zsh or other incompatible shell constructs.
+    - when unavoidable, hide behind an abstraction layer
+- prefer `... | while read ...` to `... | sed ...`, `... | grep`, `... | awk ...`
+  - use `test`, `[[ ... ]]`, `case ... in ...` within the loop t match each record or line.
+  - afore-mentioned tools employ cryptic mini-languages, each of which
+    has its own sordid history of pitfalls and misuse.
+	- where such tools are truly appropriate, use dedicated scripts
+   - sed, awk, and even grep can consume commands from a file
+   - avoids many quoting hassles
+	 - makes language composition explicit
+	 - modern version control obviates the historical impulse to
+     keep everything in one file.
+  - these are *tool families* rather than specific tools, whose
+    behavior diverges in ways both subtle and gross.
+  - exception?: passing through user patterns to grep
+- prefer pipelines to temp files
+  - `foo | bar` is better than `foo > tmp; bar < tmp;`
+  - when a command cannot consume from stdin
+	- prefer process substitution (`bar <(foo)` or `foo >(bar)` even
+      though this is shell-specific.
+	- or use named pipes, if the feature is important enough to
+      warrant broad portability.
+- create and respect abstraction boundaries
+  - factor out patterns into *composable* functions or scripts
+  - shell has no module system, so we are stuck with:
+    - C-style identifier prefixing
+	- the "subcommand pattern"
+	  - via pattern matching, or `"$@"` dispatch
+	  - shelling out to another tool (with performance penalty)
 
-#### Context Subsetting
+Blank line between multi-line function definitions.
 
-For example: context "Safeway" is a subset of context "Grocery
-Store". Every task assigned to "Safeway" is logically also assigned to
-"Grocery Store".
+Very short function definitions can be formatted on one line:
 
-The same context "Safeway" is also a subset of the geographic context
-"South Side", so every task assigned to "Safeway" is also logically
-assigned to "South Side". Both "South Side" and "Grocery Store" are
-subsets of "Errands".
-
-In dotfile syntax:
 ```
-"South Side"    -> "Safeway;"
-"Grocery Store" -> "Safeway;"
-"Errands"       -> "Grocery Store;"
-"Errands"       -> "South Side;"
+function task_contents { graph_datum contents "$@"; }
+function task_state    { graph_datum state    "$@"; }
+
 ```
 
-We can easily "filter" tasks by context simply by performing a graph
-traversal, starting with the given context node, and following only
-"context" edges.
+A section comment looks like:
 
-#### Next Actions, Projects, and Project Roots
+```
+# Section *********************************************************************
+```
+Two blank lines surround section comments.
 
-Next actions are simply task nodes with no dependencies.
 
-Projects are simply task nodes with at least one dependency.
+```
+## Sub Section ****************************************************************
+```
 
-A "project root" is a task which is not a dependency of any other task
--- which if your database is well maintained, would ideally represent
-major life goals or core values.
+Single blank line around subection comments.
 
-The "Someday/Maybe" list merely consists of tasks whose status is
-deferred.
+I could split sections into `gtd`.sh shell libraries, but for now I
+prefer the script remain self-contained.
 
-# Undesigned
+Sections are arranged in an inverted pyramid, with more generic layers
+and at the top, and more specific layers at the bottom.
+	  
+## Blessed Shell Idioms
 
-## Repeating Events
+This section documents the unavoidably cryptic shell idioms that are
+difficult to avoid.
 
-Tasks with status REPEATS have their activity is controlled by a
-*pattern* and a *completion set*.
+**TBD**
 
-The *pattern* defines the time windows during which the task may be
-completed, while the *completion set* records the status for each
-instance of the task.
+- `cut -d ... -f ...`
+- `head`
+- `tail`
+- bash array syntax
+- redirections
+- special shell vars
+- `"$@"` dispatch"
+- quoting idioms, corner-cases, and pitfalls
 
-The task is considered active *if* the current system time is within
-within a completion window *and* the completion set does not contain
-an entry for this instance.
+## Pull Requests
 
-### Completion Set
-
-The *completion set* is simply a text file, `completions`, containing
-a line for each completed instance. Each line may a subset of the
-status file syntax:
-- `COMPLETED` *date*
-- `DELAYED` *date*
-- `DROPPED` *excuse*
-
-#### Patterns
-
-The pattern format is TBD.
-
-This is a major feature which is still being designed.
-
-At minimum we can translate from ical.
-
-I might borrow some ideas from my old calendar app.
-
-The key thing is that patterns define *completion windows*, not just
-sets of datetimes.
-
-I.e. each instance has both a start time where it becomes active, and
-a due date, where it's considered missed if not completed by this
-time.
-
-#### Reporting
-
-GtdGraph can generate completion reports for any recurring task or set
-of tasks in a vareity of formats.
-
-If no entry exists in the completion set for a given task intstance,
-it is considered "missed". This counts the same as DROPPED.
-
-DELAYED counts as "missed" unless a corresponding completion event
-exists in the time window defined by the given *date*.
-
-If multiple completions exist for the same time window, it's reflected
-in the report but doesn't improve your "score". It's just provided for
-feedback.
-
-#### Dependencies and Repeating Tasks
-
-There are two scenarios:
-- pattern defines finite time period:
-  - the parent task is blocked until the time period elapses
-  - you can define a percentage goal. the parent task fails if the goal is not met.
-- repeats indefinitely
-  - parent task is just used for justification purposes.
-  
-#### Open Questions
-
-- do dependencies of repeating tasks become themselves repeating?
-  - can we have one-off dependencies which block the repeating task as a whole?
-- is a repeating task like a template, which stamps out new instances of its entire subgraph?
-  - do we want changes to the template to propagate to each instance?
-
-### Checklists
-
-These are related to repeating events, except that they're under the
-user's control.
-
-They could be implemented in terms of repeating events, or they could
-be a separate notion.
-
-- should each instance of a checklist be tracked separately
+- create your own fork
+  - create a topic branch on your own fork
+    - The description should reference an issue on github.
+	  - If no issue exists, create one yourself.
+- unit tests pass
+- you have added new tests for any new functions
+- you have updated existing tests to cover new functionality
+- you have comitted no egregious violations of official style
+- at least a single-line doc comment for each function
+  - exception: functions whose name begins with `__`
+	- these are implementation details, and logically part of a parent
+      function.
+  - bonus points if you contribute or correct doc comments
+  - bonus points if you document function arguments
+- "unavoidably" cryptic shell code must:
+  - include sufficient explanatory comments that it can be understood
+    without reference to external documentation.
+    - exception: *blessed idioms*, which compendium shall be appear herebelow.
+    - bonus points if you successfully argue for a new *blessed idiom*.

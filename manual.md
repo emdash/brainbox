@@ -98,6 +98,21 @@ Hopefully these exapmles give you some intuition for how the language works.
 
 Some subcommands don't fit into the query model.
 
+### `capture`
+
+Create a node and place it in the inbox. If additional arguments are
+given, they become the node's "contents". If stdin is interactive,
+opens contents file in your favorite editor. Otherwise, node contents
+is read from stdin.
+
+### `clobber`
+
+Deletes the database, with confirmation.
+
+### `init`
+
+Initializes a new graph database.
+
 ### `interactive`
 
 You can build non-destructive queries interactively, with the result
@@ -109,14 +124,14 @@ This is a powerful command which:
 - expresses task dependencies
 - assigns tasks to contexts
 
+### `redo`
+
+Restores the last undone operation.
+
 ### `undo`
 
 Undoes the last operation, restoring whatever the previous state
 happened to be.
-
-### `redo`
-
-Restores the last undone operation.
 
 # Query Language Reference #
 
@@ -143,36 +158,36 @@ within a single query (with a few caveats).
 
 ## Producers ##
 
-These functions "produce" sets of node ids on stdout.
-
 | Command         | Description                                                      |
 |-----------------|------------------------------------------------------------------|
+| `-`             | consume node ids from stdin                                      |
 | `all`           | (implied if no producer is specified)                            |
 | `from` *bucket* | output the node ids contained in the named *bucket* (see `into`) |
+| `inbox`         | alias for `all is_new`                                           |
+
 
 ## Filters ##
 
-You can filter nodes in various ways:
-
 | Command                  | Description                                                 |
 |--------------------------|-------------------------------------------------------------|
-| `actionable`             | keep only nodes considered actionable (omits WAITING nodes) |
-| `active`                 | keep only nodes considered active (includes status WAITING) |
-| `assigned`               | output all tasks assigned to each upstream context          |
+| `assigned`               | output all tasks assigned to each context                   |
 | `choose` [ `-m` \| `-s`] | interactively select one or many nodes                      |
 | `datum` *datum* `exists` | keep only nodes for which the given datum is defined        |
-| `new`                    | keep only nodes with status NEW                             |
-| `next`                   | keep only nodes considered *next actions*                   |
-| `projects`               | output parent projects of each upstream task                |
-| `subtasks`               | output subtasks of each upstream task                       |
+| `is_actionable`          | keep only nodes considered actionable (omits WAITING nodes) |
+| `is_active`              | keep only nodes considered active (includes status WAITING) |
+| `is_complete`            | keep only nodes considered completed                        |
+| `is_new`                 | keep only nodes with status NEW                             |
+| `is_next`                | keep only nodes considered *next actions*                   |
+| `is_orphan`              | keep only orphaned nodes                                    |
+| `is_root`                | keep only nodes which are roots in the dependency graph     |
+| `is_unassigned`          | keep only nodes not assigned to any context                 |
+| `is_waiting`             | keep only waiting in state WAITING                          |
+| `is_someday`             | keep only nodes with status SOMEDAY                         |
+| `projects`               | insert ancestors of each node                               |
+| `subtasks`               | insert subtasks of each upstream task                       |
 | `search`                 | keep nodes whose description matches *pattern*              |
-| `someday`                | keep only nodes with status SOMEDAY                         |
-| `unassigned`             | keep only nodes not assigned to any context                 |
-| `waiting`                | keep only waiting nodes                                     |
 
 ## Consumers ##
-
-These operations fall into two broad categories.
 
 Nondestructive Formatters:
 
@@ -189,6 +204,7 @@ Destructive Operations:
 
 | Command                                       | Description                             |
 |-----------------------------------------------|-----------------------------------------|
+| `activate`                                    | mark tasks as TODO                      |
 | `complete`                                    | mark tasks as COMPLETED                 |
 | `datum` *datum* `write`                       | print the specified datum for each node |
 | `datum` *datum* `append`                      | print the specified datum for each node |
@@ -196,4 +212,3 @@ Destructive Operations:
 | `datum` *datum* `cp` [ flags...] [ *path*...] | copy given paths into datum directory   |
 | `defer`                                       | mark tasks as SOMEDAY                   |
 | `drop`                                        | mark tasks as DROPPED                   |
-| `triage`                                      | mark tasks as TODO                      |
