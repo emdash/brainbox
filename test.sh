@@ -457,9 +457,61 @@ function test_graph_traverse_with_cycle {
     make_test_edge "${t2}" "${t4}" dep
     make_test_edge "${t4}" "${t1}" dep
 
-    if gtd graph_traverse "${t1}" dep outgoing &> /dev/null; then
-	error "should fail"
-    fi
+    # will fail
+    gtd graph_traverse "${t1}" dep outgoing &> /dev/null
+}
+
+function test_graph_expand {
+    gtd database_init || error "couldn't initialize test db"
+
+    local t1="$(make_test_node t1)"
+    local t2="$(make_test_node t2)"
+    local t3="$(make_test_node t3)"
+    local t4="$(make_test_node t4)"
+
+    make_test_edge "${t1}" "${t2}" dep
+    make_test_edge "${t1}" "${t3}" dep
+    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t3}" "${t4}" dep
+
+    local -a actual=($(gtd graph_expand "${t1}" dep outgoing | gtd map task_gloss ))
+    local -a expected=("t1" "t3" "t4" "t2" "t4")
+    assert "${actual[*]}" = "${expected[*]}"
+}
+
+function test_graph_expand_with_depth {
+    gtd database_init || error "couldn't initialize test db"
+
+    local t1="$(make_test_node t1)"
+    local t2="$(make_test_node t2)"
+    local t3="$(make_test_node t3)"
+    local t4="$(make_test_node t4)"
+
+    make_test_edge "${t1}" "${t2}" dep
+    make_test_edge "${t1}" "${t3}" dep
+    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t3}" "${t4}" dep
+
+    local -a actual=($(gtd graph_expand --depth "${t1}" dep outgoing | cut -d ' ' -f 2 ))
+    local -a expected=("0" "1" "2" "1" "2")
+    assert "${actual[*]}" = "${expected[*]}"
+}
+
+function test_graph_expand_with_cycle {
+    gtd database_init || error "couldn't initialize test db"
+
+    local t1="$(make_test_node t1)"
+    local t2="$(make_test_node t2)"
+    local t3="$(make_test_node t3)"
+    local t4="$(make_test_node t4)"
+
+    make_test_edge "${t1}" "${t2}" dep
+    make_test_edge "${t1}" "${t3}" dep
+    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t4}" "${t1}" dep
+
+    # will fail
+    gtd graph_expand "${t1}" dep outgoing &> /dev/null
 }
 
 function test_task_state_is_valid {
@@ -666,7 +718,10 @@ function run_all_tests {
 
     should_pass test_graph_datum
     should_pass test_graph_traverse
-    should_pass test_graph_traverse_with_cycle
+    should_fail test_graph_traverse_with_cycle
+    should_pass test_graph_expand
+    should_pass test_graph_expand_with_depth
+    should_fail test_graph_expand_with_cycle
 
     should_pass test_task_contents
     should_pass test_task_gloss
