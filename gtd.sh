@@ -542,33 +542,41 @@ function task_summary {
     echo "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
 }
 
+## Task Management
+
+# Automatically transition a NEW task to TODO
+#
+# helper function used by certain operations to streamline GTD workflow.
+function task_auto_triage {
+    case "$(task_state read "$1")" in
+	NEW) task_activate "$1";;
+    esac
+}
+
+# explicitly activate the given task by setting state TODO.
+function task_activate {
+    echo "TODO" | task_state write "$1"
+}
+
 # Add a dependency to an existing task
 #
 # $1: the existing task
 # $2: the dependency
 function task_add_subtask {
-    graph_edge_create "$1" "$2" dep
+    task_auto_triage "$2"
+    #graph_edge_create "$1" "$2" dep
 }
 
-# Add a dependency to an existing task
+# Assign task to the given context.
 #
-# $1: the existing task
-# $2: the parent task to add
-function task_add_supertask {
-    graph_edge_create "$2" "$1" dep
-}
-
-# Assign task to the given context
+# Note that this creates an edge in the opposite direction to
+# add_subtask: from the context to the node.
 #
 # $1: the existing task
 # $2: the context
 function task_assign {
+    task_auto_triage "$1"
     graph_edge_create "$2" "$1" context
-}
-
-# mark the given task as TODO
-function task_activate {
-    echo "TODO" | task_state write "$1"
 }
 
 # mark the given task as dropped
@@ -590,29 +598,47 @@ function task_defer {
 # An Embedded DSL for Queries *************************************************
 
 
+## Helpers ********************************************************************
+
 # returns true if "$@" is recognized as a valid filter keyword
 function graph_filter_is_valid {
+    # XXX: this table has to be maintained manually. It is the union
+    # of filters and consumers. Keep it in sync with these sections.
     case "$1" in
-	new)               return 0;;
-	active)            return 0;;
-	actionable)        return 0;;
-	next)              return 0;;
-	waiting)           return 0;;
-	roots)             return 0;;
-	orphans)           return 0;;
-	select_one)        return 0;;
-	select_multiple)   return 0;;
-	summarize)         return 0;;
+	# filters
+	assigned)          return 0;;
+	choose)            return 0;;
+	# datum exists
 	datum)             return 0;;
+	is_actionable)     return 0;;
+	is_active)         return 0;;
+	is_complete)       return 0;;
+	is_new)            return 0;;
+	is_next)           return 0;;
+	is_orphan)         return 0;;
+	is_root)           return 0;;
+	is_unassigned)     return 0;;
+	is_waiting)        return 0;;
+	projects)          return 0;;
+	subtasks)          return 0;;
 	search)            return 0;;
-	activate)          return 0;;
-	drop)              return 0;;
-	complete)          return 0;;
-	defer)             return 0;;
-	make_subtask_of)   return 0;;
-	make_supertask_of) return 0;;
+	someday)           return 0;;
+	# nondestructive consumers
+	# datum read
+	# datum path
 	dot)               return 0;;
-	as_tree)           return 0;;
+	into)              return 0;;
+	summarize)         return 0;;
+	tree)              return 0;;
+	# destructive consumers
+	activate)          return 0;;
+	complete)          return 0;;
+	# datum write
+	# datum append
+	# datum mkdir
+	# datum cp
+	defer)             return 0;;
+	drop)              return 0;;
 	*)                 return 1;;
     esac
 }
@@ -675,85 +701,107 @@ function destructive_operation {
     fi
 }
 
-## Query Producers ************************************************************
+## Query Commands *************************************************************
+
+# XXX: everything below here must be manually kept in sync with
+# `manual.md`.
+# Keep things in alphabetical order.
+
+### Query Producers ***********************************************************
 
 # These appear at the start of a filter chain, but are not themselves filters.
 
 # all tasks
-function all {
-    graph_node_list | graph_filter_chain "$@"
-}
+function all { graph_node_list | graph_filter_chain "$@" ; }
 
-# all subtasks of the given node
-function subtasks {
-    local id="$1"; shift
-    graph_traverse "${id}" dep outgoing | graph_filter_chain "$@"
-}
+# output tasks from named bucket
+function from { not_implemented "from"; }
 
-# all tasks assigned to a context
+# output all new tasks
+function inbox { all | is_new | graph_filter_chain "$@" ;}
+
+### Query Filters *************************************************************
+
+# insert tasks assigned to each incoming context id
 function assigned {
-    local id="$1"; shift
-    graph_traverse "${id}" context incoming | graph_filter_chain "$@"
-}
-
-# interactively build query
-function interactive {
-    destructive_operation
-    # inspired by https://github.com/paweluda/fzf-live-repl
-    : | fzf \
-	    --print-query \
-	    --preview "$0 --non-destructive \$(echo {q})" \
-	| graph_filter_chain "$@"
-}
-
-## Query Filters **************************************************************
-
-# keep only new tasks
-function new {
-    filter_lines task_is_new | graph_filter_chain "$@"
-}
-
-# Keep only active tasks.
-function active {
-    filter_lines task_is_active | graph_filter_chain "$@"
-}
-
-# Keep only actionable tasks.
-function actionable {
-    filter_lines task_is_actionable | graph_filter_chain "$@"
-}
-
-# Keep only next actions
-function next {
-    filter_lines task_is_next_action | graph_filter_chain "$@"
-}
-
-# Keep only waiting tasks
-function waiting {
-    filter_lines task_is_waiting | graph_filter_chain "$@"
-}
-
-# Keep only tasks which are the root of a subgraph
-function roots {
-    filter_lines task_is_root | graph_filter_chain "$@"
-}
-
-# Keep only tasks which are not connected to any other tasks
-function orphans {
-    filter_lines task_is_orphan | graph_filter_chain "$@"
+    while read id; do
+	graph_traverse "${id}" context incoming | graph_filter_chain "$@"
+    done
 }
 
 # keep only the node selected by the user
-function select_one {
-    summarize | fzf | cut -d ' ' -f 1 | graph_filter_chain "$@"
+function choose {
+    case "$1" in
+       -m|--multi)  local opt="-m"; shift;;
+       -s|--single) local opt=""  ; shift;;
+       *)           local opt="-m"       ;;
+    esac
+				  
+    summarize | fzf "${opt}" | cut -d ' ' -f 1 | graph_filter_chain "$@"
 }
 
-# keep only the nodes selected by the user
-function select_multiple {
-    summarize | fzf -m | cut -d ' ' -f 1 | graph_filter_chain "$@"
+# Keep only actionable tasks.
+function is_actionable {
+    filter_lines task_is_actionable | graph_filter_chain "$@"
 }
 
-# search node contents
+# Keep only active tasks.
+function is_active {
+    filter_lines task_is_active | graph_filter_chain "$@"
+}
+
+# Keep only completed tasks
+function is_complete {
+    filter_lines task_is_complete | graph_filter_chain "$@"
+}
+
+# keep only new tasks
+function is_new {
+    filter_lines task_is_new | graph_filter_chain "$@"
+}
+
+# Keep only next actions
+function is_next {
+    filter_lines task_is_next_action | graph_filter_chain "$@"
+}
+
+# Keep only tasks not associated with any other tasks
+function is_orphan {
+    filter_lines task_is_orphan | graph_filter_chain "$@"
+}
+
+# Keep only tasks which are the root of a subgraph
+function is_root {
+    filter_lines task_is_root | graph_filter_chain "$@"
+}
+
+# Keep only tasks not assigned to any context
+function is_unassigned {
+    filter_lines task_is_unassigned | graph_filter_chain "$@"
+}
+
+# Keep only waiting tasks
+function is_waiting {
+    filter_lines task_is_waiting | graph_filter_chain "$@"
+}
+
+# insert parents of each incoming task id
+function projects {
+    while read id; do
+	graph_traverse "${id}" dep incoming
+    done | graph_filter_chain "$@"
+}
+
+# insert subtasks of each incoming parent task id
+function subtasks {
+    while read id; do
+	graph_traverse "${id}" dep outgoing
+    done | graph_filter_chain "$@"
+}
+
+# keep only nodes whose contents matches the given *pattern*.
+#
+# tbd: make this more configurable
 function search {
     local pattern="$1"; shift
     while read id; do
@@ -763,40 +811,7 @@ function search {
     done | graph_filter_chain "$@"
 }
 
-# tree expansion of project rooted at the given node for given edge set and direction.
-#
-# tree filters can be chained onto this, but not graph filters
-function as_tree {
-    case "$1" in
-	dep|context) local edge_set="$1";;
-	*)           error "$1 not one of: dep | context";;
-    esac
-
-    case "$2" in
-	incoming|outgoing) local direction="$2";;
-	*)                 error "$2 is not one of: incoming | outgoing";;
-    esac
-
-    shift 2
-
-    while read root; do
-	graph_expand \
-	    --depth \
-	    "${root}" \
-	    "${edge_set}" \
-	    "${direction}"
-    done | tree_filter_chain "$@"
-
-}
-
-
-## Query Consumers ************************************************************
-
-# Print a one-line summary for each task id
-function summarize {
-    end_filter_chain "$@"
-    map_lines task_summary
-}
+## Non-destructive Query Consumers ********************************************
 
 # runs graph_datum $1 $2 ${id} for each id
 function datum {
@@ -819,52 +834,6 @@ function datum {
     done
 }
 
-# Reactivate each task id
-function activate {
-    end_filter_chain "$@"
-    map_lines task_activate
-}
-
-# Drop each task id
-function drop {
-    destructive_operation
-    end_filter_chain "$@"
-    map_lines task_drop
-}
-
-# Complete each task id
-function complete {
-    destructive_operation
-    end_filter_chain "$@"
-    map_lines task_complete
-}
-
-# Defer each task id
-function defer {
-    destructive_operation
-    end_filter_chain "$@"
-    map_lines task_defer
-}
-
-# Make each task id a supertask of the given subtask.
-#
-# The *subtask* to add is given by $1.
-# All *parent* tasks are read
-function make_supertask_of {
-    destructive_operation
-    local subtask="$1"; shift
-    end_filter_chain "$@"
-    map_lines task_add_supertask "${subtask}"
-}
-
-# Make each task id a subtask of the given id supertask.
-function make_subtask_of {
-    destructive_operation
-    local supertask="$1"; shift
-    end_filter_chain "$@"
-    map_lines task_add_subtask "${supertask}"
-}
-
 # dotfile export for graphviz
 function dot {
     case "$1" in
@@ -885,16 +854,52 @@ function dot {
 	nodes["$id"]=""
     done
 
-    graph_edge_list "${edge_set}" | graph_edge_touches "${!nodes[@]}" | while read edge; do
+    graph_edge_list "${edge_set}" \
+	| graph_edge_touches "${!nodes[@]}" \
+	| while read edge; do
 	echo "\"$(graph_edge_u "${edge}")\" -> \"$(graph_edge_v "${edge}")\";"
     done
 
     echo "}"
 }
 
+# stash node ids in named bucket
+function into { not_implemented "into" ; }
+
+# Print a one-line summary for each task id
+function summarize {
+    end_filter_chain "$@"
+    map_lines task_summary
+}
+
+# tree expansion of project rooted at the given node for given edge set and direction.
+#
+# tree filters can be chained onto this, but not graph filters
+function tree {
+    case "$1" in
+	dep|context) local edge_set="$1";;
+	*)           error "$1 not one of: dep | context";;
+    esac
+
+    case "$2" in
+	incoming|outgoing) local direction="$2";;
+	*)                 error "$2 is not one of: incoming | outgoing";;
+    esac
+
+    shift 2
+
+    while read root; do
+	graph_expand \
+	    --depth \
+	    "${root}" \
+	    "${edge_set}" \
+	    "${direction}"
+    done | tree_filter_chain "$@"
+}
+
 # indent tree expansion
 #
-# you can customize the characters used for indentation.
+# TBD: merge this functionality into summarize?
 function indent {
     if test "$1" = "--gloss-only"; then
 	local no_meta=""; shift;
@@ -922,15 +927,38 @@ function indent {
     done
 }
 
+## Destructive Query Commands *************************************************
 
-# GTD Commands DSL ************************************************************
+# Reactivate each task id
+function activate {
+    end_filter_chain "$@"
+    map_lines task_activate
+}
+
+# Complete each task id
+function complete {
+    destructive_operation
+    end_filter_chain "$@"
+    map_lines task_complete
+}
+
+# Drop each task id
+function drop {
+    destructive_operation
+    end_filter_chain "$@"
+    map_lines task_drop
+}
+
+# Defer each task id
+function defer {
+    destructive_operation
+    end_filter_chain "$@"
+    map_lines task_defer
+}
 
 
-# Initialize the database
-function init { database_init; }
+# Non-query commands **********************************************************
 
-# Clobber the database
-function clobber { database_clobber; }
 
 # Create a new task.
 #
@@ -951,30 +979,69 @@ function capture {
     fi
 }
 
+# Initialize the database
+function init {
+    database_init;
+}
+
+# interactively build query
+function interactive {
+    destructive_operation
+    # inspired by https://github.com/paweluda/fzf-live-repl
+    : | fzf \
+	    --print-query \
+	    --preview "$0 --non-destructive \$(echo {q})" \
+	| graph_filter_chain "$@"
+}
+
+# Clobber the database
+function clobber {
+    database_clobber;
+}
+
+# Create edges between sets of nodes in the given named buckets.
+#
+# The first argument is the "edge set", which is either `task` or
+# `context`.
+#
+# The second argument is the *from bucket*.
+#
+# The third argument is the *into bucket*.
+#
+# Every node in the *from* set will be linked to every node in the
+# *into* set. Typically, one of these sets will contain only a single
+# node.
+function link {
+    destructive_operation
+
+    case "$1" in
+	subtask) local link="task_add_subtask";;
+	context) local link="task_assign";;
+	*)       error "Not one of task | context";;
+    esac
+
+    local from_ids="$(from "$2")"
+    local into_ids="$(from "$3")"
+
+    for u in ${from_ids}; do
+	for v in ${into_ids}; do
+	    "${link}" "${u}" "${v}" "${edge_set}"
+	done
+    done
+}
+
 
 # Main entry point ************************************************************
 
+
 # parse options
 if test "$1" = "--non-destructive"; then
-   shift
-   declare GTD_NONDESTRUCTIVE_MODE=""
+   declare GTD_NONDESTRUCTIVE_MODE=""; shift
 fi
 
-# We special-case some verbs when they're the only argument given.
-
 case "$1" in
-    # print list of functions, and exit
-    # just a shorthand for "all new", but this is the gtd lingo
-    inbox)
-	shift;
-	all new | "$@";;
-    *)
-	# XXX: experimental
-	# if the first query keyword is a filter, imply all rather than hang.
-	if graph_filter_is_valid "$1"; then
-	    all | "$@"
-	else
-	    "$@"
-	fi
-	;;
+    # handle the case where we actually want to read nodes from `stdin`
+    -) : | graph_filter_chain "$@" ;;
+    # if the first argument is a query filter, `all` is the implied producer
+    *) if graph_filter_is_valid "$1"; then all | "$@" ; else "$@" ; fi ;;
 esac
