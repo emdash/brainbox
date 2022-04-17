@@ -1,7 +1,13 @@
 set -eo pipefail
 
-# TBD: Make this configurable
-DATA_DIR="./gtdgraph"
+# name-prefixed variable here, but ...
+if test -v GTD_DATA_DIR; then
+    # ... prefer to keep the short name in the rest of the code for
+    # now.
+    DATA_DIR="${GTD_DATA_DIR}"
+else
+    DATA_DIR="./gtdgraph"
+fi
 
 # Database directories
 NODE_DIR="${DATA_DIR}/state/nodes"
@@ -193,7 +199,6 @@ function graph_datum {
 function __datum_read {
     test -f "${path}" && cat "${path}"
 }
-
 
 # print all graph nodes
 function graph_node_list {
@@ -475,7 +480,7 @@ function task_state_is_actionable {
 ## define task data ***********************************************************
 
 function task_contents { graph_datum contents "$@"; }
-function task_state    { graph_datum state "$@"; }
+function task_state    { graph_datum state    "$@"; }
 
 ## read-only task properties **************************************************
 
