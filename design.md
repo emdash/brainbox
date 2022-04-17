@@ -1,4 +1,4 @@
-# Design
+# Design Overview
 
 GtdGraph is written in shell. I'm officially targeting bash, since
 it's the most popular shell by a mile, but I would accept PRs
@@ -6,147 +6,100 @@ supporting others shells.
 
 ## Coding Style
 
-This project is in early days, and so I have minimal style
-guidelines. The general rule is: *write the most readable shell possible*.
+The basic rule is: *write shell code to be understood by those not
+expert in shell programming*.
 
+This project aims to manage one's most personal data. As such, I would
+like to be as transparent as possible about how it works. Many
+open-source and industry veterans are skeptical of shell. One of my
+larger goals is to make the case for shell as an implementation
+language.
 
-- bash extensions are acceptable iff they are *more* readable than
-  portable shell, or necessary.
-- avoid extensions from incompatible shells.
+It's too early for automatic tooling. The following is a set of rough
+guidelines.
+
 - when in doubt, match the surrounding code
   - or whatever code you're drawing inspiration from
+- prefer 80 columns
+  - exceptions are allowed when:
+    - the alternative would be awkward or impossible.
+	- for tabular formatting (see below)
+- use tabular formatting:
+  - for case statements
+  - for data-driven code
+  - you may exceed the basic 80 column limit in tabular code
+    - but keep lines as short as possible.
+  - TBD: include some representative examples
+- prefer `snake_case` to `kebab-case` for implementation details
+  - these are candidates for optimization in mainstream languages
+    which do not allow `-` in identifiers.
 - avoid [shell anti-patterns](tbd: oilshell link)
 - embrace [the good parts](tbd: oilshell link)
-- format repretitive code / data into tables
+- bash extensions are acceptable iff they are:
+  - *more* readable than portable shell, or
+  - strictly necessary for required functionality.
+  - avoid zsh or other incompatible shell constructs.
+    - i'm open to hiding certain things behind conditionals, but
+      these clutter the code, and I prefer to avoid them.
+- prefer `... | while read ...` to `... | sed ...`, `... | grep`, `... | awk ...`
+    - use `test`, `[[ .. ]]`, `case` etc. for direct string comparison.
+  - these tools employ cryptic mini-languages, each of which has its
+    own sordid history of pitfalls and misuse.
+  - these tools may behave differently on end user machines, making
+    bugs hard to reproduce for developers and maintainers.
+  - exception?: passing through user patterns to grep
+- create and respect abstraction boundaries
+  - shell has one foot stuck in the [turing tarpit](tbd: link)
+	- everything is "text", typing is sloppy.
+  - shell has no module system, so we are stuck with:
+    - C-style identifier prefixing
+	- the "subcommand" pattern
+	  - via case matching within a function, `"$@"` dispatch
+	  - shelling out to another tool (with performance penalty)
 
+### For PRs
 
-For PRs to be accepted:
-- at least a single-line doc comment for each function not starting with a `__`
-  - I haven't stuck to this religiously myself. I would happily accept PRs to add missing doc cuments.
-  - bonus points if each argument is documented.
+Use a feature branch. The description should reference an issue on
+github. If no issue exists, create one yourself.
 
-## DSL
+Right now there's no tooling. So, manually check that:
+- unit tests pass
+- you have added new tests for any new functions
+- you have updated existing tests to cover new functionality
+- you have comitted no egregious style violations
+- at least a single-line doc comment for each function
+  - exception: functions whose name begins with `__`
+	- these are implementation details of some parent function.
+	- dynamic scoping leads to lots of little helper functions.
+  - bonus points if you add missing comments.
+    - I haven't stuck to this 100% myself, but then again I know what
+      my goals are.
+  - bonus points if you document each argument for each function.
+- "unavoidably" cryptic shell code must:
+  - include sufficient explanatory comments that it can be understood
+    without referring to outside documentation.
+    - exception: *blessed idioms*, which compendium shall be documented herebelow.
+    - bonus points if you successfully argue for a new *blessed idiom*.
+	
+Rest assured, *I* will be checking for these things, and *I* or my
+appointed successor and / or deputee will make the final decision on
+each PR.
 
-### Query Language
+I make no promises as regards such benefits as might accrue in
+relation to, or even to keep accurate score of, afore-mentioned
+"points". However; such behavior will be "loosely factored into" any
+decision-making on my part with respect to future delegation of
+responsibility towards this codebase.
+  
+### Blessed Shell Idioms (and Constructs): "Oh, the Horror!"
 
-Graphs are more complex to manage than trees. I suspect this is why
-most productivity tools are tree based. GtdGraph tames this complexity
-with a simple, post-fix query language.
+This whole section: TBD
 
-This is probably clear as mud, so let's start with some examples
-
-#### Examples
-
-**TBD**: provide a working example data directory, where all these
-examples will work.
-
-Summarize all tasks. As your database grows, this will quickly become
-overwhelming.
-
-```
-$ gtd summarize
-```
-
-List the node ids of all tasks identified as *next actions*.
-
-```
-$ gtd next
-```
-
-You can summarize any set of node ids by appending the *summarize*
-keyword.
-
-```
-$ gtd next summarize
-```
-
-Print a summary of the next actions for your "Kitchen Remodel" project.
-
-```
-$ gtd search "Kitchen Remodel" subtasks next summarize
-```
-
-Print a tree formatted summary of your entire kitchen remodel project.
-
-```
-$ gtd search "Kitchen Remodel" as_tree indent
-```
-
-Print a summary of all the things you need to get during your next
-grocery shopping trip.
-
-```
-$ gtd search "Grocery Store" assigned next summarize
-```
-
-**TBD** add examples which mutate the database.
-
-Hopefully these exapmles give you some intuition for how the language works.
-
-#### Language 
-
-The basic syntax couldn't be simpler:
-> [ *producer* [args...] ]  [ (*filter* [args...])... ] [ *consumer* [args ... ] ]
-
-Each query starts with a *node producer*, which will print a list of
-node ids to stdout. As we've seen above, filters can be appended which
-will perform some combination of addition or removal of node
-ids. Finally, a *consumer* may be appended which will do something
-with these node ids, terminating the query.
-
-*producers* and *filters* are read-only operations. Only consumers
-modify the database. Consumers may appear only at the end of a query,
-making it syntactically impossible to modify the database while
-traversing it within a single query (with a few caveats).
-
-#### Producers
-
-These functions "produce" sets of node ids on stdout.
-
-- `all`            (implied if no producer is specified)
-- `orphans`        print orphaned nodes
-- `selection`      print the currently selected ids
-
-#### Filters
-
-You can filter nodes in various ways:
-
-- `new`              keep only nodes with status NEW
-- `subtasks`         output subtasks of each upstream task
-- `projects`         output parent projects of each upstream task 
-- `assigned`         output all tasks assigned to each upstream context
-- `active`           keep only nodes considered active (includes status WAITING)
-- `actionable`       keep only nodes considered actionable (omits WAITING nodes)
-- `next`             keep only nodes considered *next actions*
-- `waiting`          keep only waiting nodes
-- `select_one`       interactively select a single node
-- `select_multiple`  interactively select multiple nodes
-- `search`           keep nodes whose description matches *pattern*, where
-                     pattern is a regex as understood by `grep`
-- `someday`          keep only nodes with status SOMEDAY
-- `choose` [ `-m`]   interactively select one or many nodes
-
-
-#### Consumers
-
-These operations fall into two broad categories.
-
-Nondestructive Formatters:
-- `summarize` - print a short summary of each node
-- `datum`     - print the specified datum for each node
-- `dot`       - convert the set of nodes to graphviz syntax for visualization
-   -`display` - render and display the resulting graph
-- `tree`      - print a tree expansion of each node
-  - `indent`  - pretty-print a tree expansion (must be preceeded by tree)
-- `select`    - makes this set of nodes the current selection
-
-Destructive Operations:
-- `triage`            - mark tasks as TODO
-- `drop`              - mark tasks as DROPPED
-- `complete`          - mark tasks as COMPLETED
-- `defer`             - mark tasks as  SOMEDAY
-
-TBD: adding and removing edges.
+- bash array syntax
+- redirections
+- special shell vars
+- `"$@"` dispatch"
+- quoting idioms, corner-cases, and pitfalls
 
 ## Datastructure
 
