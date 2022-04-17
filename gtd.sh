@@ -504,7 +504,7 @@ function task_is_waiting {
 
 # summarize the current task: id, status, and gloss
 function task_summary {
-    echo "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
+    printf "%s %10s %s\n" "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
 }
 
 ## Task Management
@@ -903,7 +903,7 @@ function indent {
 
     while read id depth; do
 	if test ! -v no_meta; then
-	   printf "%s %8s" "${id}" "$(task_state read "${id}")"
+	   printf "%s %10s" "${id}" "$(task_state read "${id}")"
 	fi
 
 	# indent the line.
@@ -911,7 +911,7 @@ function indent {
 	    echo -n "${marker}"
 	done
 
-	printf "$(task_gloss "${id}")\n"
+	printf " $(task_gloss "${id}")\n"
     done
 }
 
@@ -946,7 +946,6 @@ function defer {
 
 
 # Non-query commands **********************************************************
-
 
 # Create a new task.
 #

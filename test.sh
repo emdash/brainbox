@@ -787,7 +787,7 @@ function test_task_summary {
     echo "NEW" | gtd task_state write fake-uuid
 
     echo "foo bar baz" | gtd task_contents write fake-uuid
-    assert "$(gtd task_summary fake-uuid)" = "fake-uuid NEW foo bar baz"
+    assert "$(gtd task_summary fake-uuid)" = "fake-uuid        NEW foo bar baz"
 }
 
 function test_task_auto_triage {
