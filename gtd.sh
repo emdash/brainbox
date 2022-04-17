@@ -468,7 +468,7 @@ function task_is_leaf {
 
 # returns true if a task is orphaned: is a root with no dependencies
 function task_is_orphan {
-    task_is_root "$1" && task_is_root "$1"
+    task_is_root "$1" && task_is_leaf "$1"
 }
 
 # returns true if task has state NEW
@@ -488,14 +488,12 @@ function task_is_actionable {
 
 # returns true if the given task is a "next action"
 function task_is_next_action {
-    # basically we check whether the task has any outgoing edges. if
-    # not, then by definition it is a next action.
     task_is_actionable "$1" && task_is_leaf "$1"
 }
 
 # returns true if a task is not assigned to any context
 function task_is_unassigned {
-    test -z "$(graph_adjacent "$1" context incoming)"
+    test -z "$(graph_node_adjacent "$1" context incoming)"
 }
 
 # returns true if a task is marked as waiting
@@ -530,7 +528,7 @@ function task_activate {
 # $2: the dependency
 function task_add_subtask {
     task_auto_triage "$2"
-    #graph_edge_create "$1" "$2" dep
+    graph_edge_create "$1" "$2" dep
 }
 
 # Assign task to the given context.
