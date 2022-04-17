@@ -34,26 +34,8 @@ function not_implemented {
     error "$1 is not implemented."
 }
 
-# Filter each word of stdin according to the exit status of "$@"
-function filter_words {
-    local first="t";
-    while read input; do
-	for word in $input; do
-	    if "$@" "${word}"; then
-		if test -z "${first}"; then
-		    echo -n ' ';
-		else
-		    first=""
-		fi
-		echo -n "${word}"
-	    fi
-	done
-    done
-    echo
-}
-
 # Filter each line of stdin according to the exit status of "$@"
-function filter_lines {
+function filter {
     while read input; do	
 	if "$@" "${input}"; then
 	    echo "${input}"
@@ -61,24 +43,8 @@ function filter_lines {
     done
 }
 
-# Apply "$@" to each word of stdin
-function map_words {
-    local first="t"
-    while read input; do
-	for word in $input; do
-	    if test -z "${first}"; then
-	       echo -n ' '
-	    else
-		first=''
-	    fi
-	    "$@" $word
-	done
-    done
-    echo
-}
-
 # Apply "$@" to each line of stdin.
-function map_lines {
+function map {
     while read input; do
 	"$@" "${input}"
     done
@@ -742,47 +708,47 @@ function choose {
 
 # Keep only actionable tasks.
 function is_actionable {
-    filter_lines task_is_actionable | graph_filter_chain "$@"
+    filter task_is_actionable | graph_filter_chain "$@"
 }
 
 # Keep only active tasks.
 function is_active {
-    filter_lines task_is_active | graph_filter_chain "$@"
+    filter task_is_active | graph_filter_chain "$@"
 }
 
 # Keep only completed tasks
 function is_complete {
-    filter_lines task_is_complete | graph_filter_chain "$@"
+    filter task_is_complete | graph_filter_chain "$@"
 }
 
 # keep only new tasks
 function is_new {
-    filter_lines task_is_new | graph_filter_chain "$@"
+    filter task_is_new | graph_filter_chain "$@"
 }
 
 # Keep only next actions
 function is_next {
-    filter_lines task_is_next_action | graph_filter_chain "$@"
+    filter task_is_next_action | graph_filter_chain "$@"
 }
 
 # Keep only tasks not associated with any other tasks
 function is_orphan {
-    filter_lines task_is_orphan | graph_filter_chain "$@"
+    filter task_is_orphan | graph_filter_chain "$@"
 }
 
 # Keep only tasks which are the root of a subgraph
 function is_root {
-    filter_lines task_is_root | graph_filter_chain "$@"
+    filter task_is_root | graph_filter_chain "$@"
 }
 
 # Keep only tasks not assigned to any context
 function is_unassigned {
-    filter_lines task_is_unassigned | graph_filter_chain "$@"
+    filter task_is_unassigned | graph_filter_chain "$@"
 }
 
 # Keep only waiting tasks
 function is_waiting {
-    filter_lines task_is_waiting | graph_filter_chain "$@"
+    filter task_is_waiting | graph_filter_chain "$@"
 }
 
 # insert parents of each incoming task id
@@ -869,7 +835,7 @@ function into { not_implemented "into" ; }
 # Print a one-line summary for each task id
 function summarize {
     end_filter_chain "$@"
-    map_lines task_summary
+    map task_summary
 }
 
 # tree expansion of project rooted at the given node for given edge set and direction.
@@ -932,28 +898,28 @@ function indent {
 # Reactivate each task id
 function activate {
     end_filter_chain "$@"
-    map_lines task_activate
+    map task_activate
 }
 
 # Complete each task id
 function complete {
     destructive_operation
     end_filter_chain "$@"
-    map_lines task_complete
+    map task_complete
 }
 
 # Drop each task id
 function drop {
     destructive_operation
     end_filter_chain "$@"
-    map_lines task_drop
+    map task_drop
 }
 
 # Defer each task id
 function defer {
     destructive_operation
     end_filter_chain "$@"
-    map_lines task_defer
+    map task_defer
 }
 
 

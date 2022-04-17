@@ -145,7 +145,7 @@ function yesToNo {
     esac
 }
 
-# helper for testing map_lines
+# helper for testing map
 function yesToNoLines {
     case "$1" in
 	yes) echo "no";;
@@ -187,27 +187,14 @@ function test_assert_false_true {
 # implementation detail of some other function, usually a recursion
 # helper. these do not need to be tested separately.
 
-
-function test_filter_words {
-    local actual="$(echo yes no yes yes no no | gtd filter_words ../test.sh isYes)"
-    local expected="yes yes yes"
-    assert "${actual}" = "${expected}"
-}
-
-function test_filter_lines {
-    local actual="$(printf 'yes\nno\nyes\n\yes\no' | gtd filter_lines ../test.sh isYes)"
+function test_filter {
+    local actual="$(printf 'yes\nno\nyes\n\yes\no' | gtd filter ../test.sh isYes)"
     local expected="$(printf 'yes\nyes\nyes')"
     assert "${actual}" = "${expected}"
 }
 
-function test_map_words {
-    local actual="$(echo yes no yes yes no no | gtd map_words ../test.sh yesToNo)"
-    local expected="no yes no no yes yes"
-    assert "${actual}" = "${expected}"
-}
-
-function test_map_lines {
-    local actual="$(printf 'yes\nno\nyes\nyes\nno\n' | gtd map_lines ../test.sh yesToNoLines)"
+function test_map {
+    local actual="$(printf 'yes\nno\nyes\nyes\nno\n' | gtd map ../test.sh yesToNoLines)"
     local expected="$(printf 'no\nyes\nno\nno\nyes')"
     assert "${actual}" = "${expected}"
 }
@@ -448,11 +435,11 @@ function test_graph_traverse {
     make_test_edge "${t3}" "${t4}" dep
     make_test_edge "${t5}" "${t4}" dep
 
-    local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map_words task_gloss ))
+    local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map task_gloss ))
     local -a expected=("t1" "t3" "t4" "t2")
     assert "${actual[*]}" = "${expected[*]}"
 
-    actual=($(gtd graph_traverse "${t4}" dep incoming | gtd map_words task_gloss ))
+    actual=($(gtd graph_traverse "${t4}" dep incoming | gtd map task_gloss ))
     expected=("t4" "t5" "t3" "t1" "t2")
     assert "${actual[*]}" = "${expected[*]}"
 }
@@ -659,10 +646,8 @@ function run_all_tests {
     should_pass test_assert_false_false
     should_fail test_assert_false_true
     
-    should_pass test_filter_words
-    should_pass test_filter_lines
-    should_pass test_map_words
-    should_pass test_map_lines
+    should_pass test_filter
+    should_pass test_map
 
     should_pass test_database_ensure_init
     should_pass test_database_init
