@@ -13,6 +13,7 @@ fi
 NODE_DIR="${DATA_DIR}/state/nodes"
 DEPS_DIR="${DATA_DIR}/state/dependencies"
 CTXT_DIR="${DATA_DIR}/state/contexts"
+BUCKET_DIR="${DATA_DIR}/buckets"
 
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
@@ -679,7 +680,13 @@ function destructive_operation {
 function all { graph_node_list | graph_filter_chain "$@" ; }
 
 # output tasks from named bucket
-function from { not_implemented "from"; }
+function from {
+    local bucket="${BUCKET_DIR}/$1"; shift;
+
+    test -e "${bucket}" || error "No bucket named ${bucket}";
+
+    ls "${bucket}" | graph_filter_chain "$@"
+}
 
 # output all new tasks
 function inbox { all | is_new | graph_filter_chain "$@" ;}
@@ -827,8 +834,25 @@ function dot {
     echo "}"
 }
 
-# stash node ids in named bucket
-function into { not_implemented "into" ; }
+# add node ids to the named bucket
+#
+# if --replace is given, the new ids replace the old bucket contents.
+function into {
+    case "$1" in
+	--replace)
+	    local bucket="${BUCKET_DIR}/$2";
+	    rm -rf "${bucket}";;
+	*)
+	    local bucket="${BUCKET_DIR}/$1";
+	    ;;
+    esac
+    
+    mkdir -p "${bucket}"
+
+    while read id; do
+	touch "${bucket}/${id}"
+    done
+}
 
 # Print a one-line summary for each task id
 function summarize {
@@ -946,6 +970,7 @@ function capture {
 # Initialize the database
 function init {
     database_init;
+    mkdir -p "${BUCKET_DIR}"
 }
 
 # interactively build query
