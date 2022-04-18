@@ -632,7 +632,7 @@ function graph_filter_chain {
 	    error "$1 is not a valid graph query filter"
 	fi
     else
-	:
+	cat
     fi
 }
 
@@ -650,7 +650,7 @@ function tree_filter_chain {
 	    error "$1 is not a valid tree query filter"
 	fi
     else
-	:
+	cat
     fi
 }
 
@@ -789,22 +789,34 @@ function search {
 # runs graph_datum $1 $2 ${id} for each id
 function datum {
     test -z "$1" && error "a datum is required"
-
     case "$2" in
-	exists|path|read) : ;;
-	# write / append / mv don't make sense because of the piping semantics.
-	mkdir|cp|edit)    destructive_operation;;
-	*)                error "invalid subcommand: $2";;
+	exists)    __datum_exists    "$@";;
+	path|read) __datum_path_read "$@";;
+	mkdir|cp)  __datum_mkdir_cp  "$@";;
+	*)         error "invalid subcommand: ${command}";;
     esac
+}
 
-    local datum="$1"
-    local command="$2"
+function __datum_exists {
+    local datum="$1";
+    # dropping second argument
     shift 2
+    filter graph_datum "${datum}" exists | graph_filter_chain "$@"
+}
 
+function __datum_path_read {
+    local datum="$1"; shift
+    local command="$1"; shift
     end_filter_chain "$@"
-    while read id; do
-	echo "${id}" "$(graph_datum "${datum}" "${command}" ${id})"
-    done
+    map graph_datum "${datum}" "${command}"
+}
+
+function __datum_mkdir_cp {
+    destructive_operation
+    local datum="$1"; shift
+    local command="$1"; shift
+    end_filter_chain "$@"
+    map graph_datum "${datum}" "${command}"
 }
 
 # dotfile export for graphviz
@@ -1031,7 +1043,7 @@ fi
 
 case "$1" in
     # handle the case where we actually want to read nodes from `stdin`
-    -) : | graph_filter_chain "$@" ;;
+    -) shift; graph_filter_chain "$@" ;;
     # if the first argument is a query filter, `all` is the implied producer
     *) if graph_filter_is_valid "$1"; then all | "$@" ; else "$@" ; fi ;;
 esac
