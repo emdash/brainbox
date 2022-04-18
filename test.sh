@@ -980,14 +980,16 @@ function run_all_tests {
 
 # warn about missing tests
 function tattle {
-    mkdir -p "${FUNC_DIR}"
-    
+    # make a directory with a file for every test case
+    mkdir -p "${FUNC_DIR}"    
     declare -F | cut -d ' ' -f 3 | grep '^test_' | while read func; do
 	touch "${FUNC_DIR}/${func}"
     done
 
+    # should_pass and should_fail remove the file, if it exists
     run_all_tests
 
+    # warn the user if the directory is non-empty
     if test -s "${FUNC_DIR}"; then
 	echo "The following tests were not run: " >&2
 	ls -t "${FUNC_DIR}"
