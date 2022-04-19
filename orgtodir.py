@@ -96,7 +96,7 @@ def get_tags():
         while True:
             if next_char() == ':':
                 if tag:
-                    tags.append(tag)
+                    tags.append(tag.strip("@"))
                 tag = ""
                 accept()
             else:
@@ -106,10 +106,9 @@ def get_tags():
         return tags
 
 def process_line():
-    global line
-
+    global line, orig_line
     try:
-        line = sys.stdin.readline()
+        line = orig_line = sys.stdin.readline()
         if not line: exit(0)
     
         if next_char() == "#":
@@ -120,25 +119,18 @@ def process_line():
                 return ("content", line)
             else:
                 state = get_state()
-                gloss = get_gloss()
+                gloss = get_gloss().strip()
                 tags = get_tags()
                 return ("heading", (line_depth, state, gloss, tags))
     except StopIteration:
-        return ("blank", None)
-
-def make_node(next_id, state, gloss, tags):
-    os.mkdir(str(next_id))
-    os.chdir(str(next_id))
-    contents = open("contents", "w")
-    contents.write(gloss)
-    open("state","w").write(str(state))
-    open("tags", "w").write(" ".join(tags))
+        return ("content", "")
 
 def process_lines():
     global line
     depth = 0
     stack = []
     ids = gen_ids()
+    tattle = open("tattle.org", "w")
 
     os.system("rm -rf org_to_dir")
     os.mkdir("org_to_dir")
@@ -146,20 +138,31 @@ def process_lines():
 
     while True:
         (ty, info) = process_line()
+        print(ty, info)
         if   ty == "comment": pass
         elif ty == "content": open("contents", "a").write(info)
         elif ty == "heading":
             line_depth, state, gloss, tags = info
-            if   line_depth >  depth:
+
+            if line_depth > depth:
                 stack.append((depth, os.getcwd()))
                 depth = line_depth
-            elif line_depth < depth:
-                depth, dir = stack.pop()
+                next_id = ids.__next__()
+                os.mkdir(str(next_id))
+                os.chdir(str(next_id))
+            else:
+                while line_depth <= depth:
+                    depth, dir = stack.pop()
                 os.chdir(dir)
-            make_node(ids.__next__(), state, gloss, tags)
-        else: pass
-                    
+
+            # we are creating a node
+            tattle.write(orig_line)
+            contents = open("contents", "w")
+            contents.write(gloss)
+            open("state","w").write(str(state))
+            open("tags", "w").write(" ".join(tags))
+        else:
+            raise ValueError(info)
         
-line = sys.stdin.readline()
-stack = []
+line = orig_line = sys.stdin.readline()
 process_lines()
