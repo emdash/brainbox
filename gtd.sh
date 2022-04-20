@@ -23,6 +23,15 @@ EDGE_DIRS=("${DEPS_DIR}" "${CTXT_DIR}")
 
 # Helpers *********************************************************************
 
+# print to stderr
+function debug {
+    if test "$1" = "-n"; then
+	shift;
+	echo -n "$*" >&2
+    else
+	echo "$*" >&2
+    fi
+}
 
 # Print error message and exit.
 function error {
@@ -49,6 +58,19 @@ function map {
     while read input; do
 	"$@" "${input}"
     done
+}
+
+# fake cat to avoid spawning subprocess
+function pcat {
+    if test -z "$1"; then
+	while read -r line; do
+	    echo "${line}"
+	done
+    else
+	while read -r line; do
+	    echo "${line}"
+	done < "$1"
+    fi
 }
 
 
@@ -154,8 +176,8 @@ function graph_datum {
 	read)   __datum_read            ;;
 	# XXX: remove these two uuocs once you figure out how.
 	# it seems like a `:` should work here, but it breaks the tests.
-	write)  cat >          "${path}";;
-	append) cat >>         "${path}";;
+	write)  pcat >          "${path}";;
+	append) pcat >>         "${path}";;
 	edit)   "${EDITOR}"    "${path}";;
 	mkdir)  mkdir -p       "${path}";;
 	cp)     cp "$@"        "${path}";;
@@ -166,7 +188,7 @@ function graph_datum {
 }
 
 function __datum_read {
-    test -f "${path}" && cat "${path}"
+    test -f "${path}" && pcat < "${path}"
 }
 
 # print all graph nodes
@@ -632,7 +654,7 @@ function graph_filter_chain {
 	    error "$1 is not a valid graph query filter"
 	fi
     else
-	cat
+	pcat
     fi
 }
 
@@ -650,7 +672,7 @@ function tree_filter_chain {
 	    error "$1 is not a valid tree query filter"
 	fi
     else
-	cat
+	pcat
     fi
 }
 
