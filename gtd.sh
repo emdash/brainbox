@@ -3,6 +3,8 @@
 set -eo pipefail
 shopt -s failglob
 
+LIB_DIR="${HOME}/src/gtdgraph"
+
 # name-prefixed variable here, but ...
 if test -v GTD_DATA_DIR; then
     # ... prefer to keep the short name in the rest of the code for
@@ -13,10 +15,10 @@ else
 fi
 
 # Database directories
-NODE_DIR="${DATA_DIR}/state/nodes"
-DEPS_DIR="${DATA_DIR}/state/dependencies"
-CTXT_DIR="${DATA_DIR}/state/contexts"
-BUCKET_DIR="${DATA_DIR}/buckets"
+export NODE_DIR="${DATA_DIR}/state/nodes"
+export DEPS_DIR="${DATA_DIR}/state/dependencies"
+export CTXT_DIR="${DATA_DIR}/state/contexts"
+export BUCKET_DIR="${DATA_DIR}/buckets"
 
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
@@ -228,27 +230,33 @@ function graph_node_create {
 # command.
 function graph_node_adjacent {
     database_ensure_init
-    local node="$1"
-    local edge_set="$2"
-    local direction="$3"
 
-    case "${edge_set}" in
-	dep)     local edge_dir="${DEPS_DIR}";;
-	context) local edge_dir="${CTXT_DIR}";;
-	*)       error "${edge_set} is not one of dep | context"
-    esac
+    "${LIB_DIR}/graph.py" graph_node_adjacent "$@"
+    # local node="$1"
+    # local edge_set="$2"
+    # local direction="$3"
 
-    case "${direction}" in
-	incoming) local self="graph_edge_v"; local linked="graph_edge_u";;
-	outgoing) local self="graph_edge_u"; local linked="graph_edge_v";;
-	*)        error "${direction} is not one of incoming | outgoing";;
-    esac
+    # case "${edge_set}" in
+    # 	dep)     pushd "${DEPS_DIR}" > /dev/null;;
+    # 	context) pushd "${CTXT_DIR}" > /dev/null;;
+    # 	*)       error "${edge_set} is not one of dep | context"
+    # esac
+
+    # case "${direction}" in
+    # 	incoming)
+    # 	    local -a edges=( *:"${node}" )
+    # 	    local linked="graph_edge_u";;
+    # 	outgoing)
+    # 	    local -a edges=( "${node}":* )
+    # 	    local linked="graph_edge_v";;
+    # 	*) error "${direction} is not one of incoming | outgoing";;
+    # esac
+
+    # popd > /dev/null
     
-    for edge in $(ls -t "${edge_dir}"); do
-	if test "$("${self}" "${edge}")" = "${node}"; then
-	    echo "$("${linked}" ${edge})"
-	fi
-    done
+    # for edge in ${edges}; do
+    # 	"${linked}" "${edge}"
+    # done
 }
 
 # Print the internal edge representation for nodes u and v to stdout.

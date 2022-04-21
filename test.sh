@@ -365,7 +365,7 @@ function test_graph_node_adjacent {
 
     # test outgoing edges for t1
     local -a actual=($(gtd graph_node_adjacent "${t1}" dep outgoing))
-    local -a expected=("${t3}" "${t2}" )
+    local -a expected=("${t2}" "${t3}" )
     assert "${actual[*]}" = "${expected[*]}"
 
     # test outgoing edges for t2
@@ -383,7 +383,7 @@ function test_graph_node_adjacent {
 
     # test incoming edges for t4
     local -a actual=($(gtd graph_node_adjacent "${t4}" dep incoming))
-    local -a expected=("${t3}" "${t2}")
+    local -a expected=("${t2}" "${t3}")
     assert "${actual[*]}" = "${expected[*]}"
 }
 
@@ -459,11 +459,11 @@ function test_graph_traverse {
     make_test_edge "${t5}" "${t4}" dep
 
     local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map task_gloss ))
-    local -a expected=("t1" "t3" "t4" "t2")
+    local -a expected=("t1" "t2" "t4" "t3")
     assert "${actual[*]}" = "${expected[*]}"
 
     actual=($(gtd graph_traverse "${t4}" dep incoming | gtd map task_gloss ))
-    expected=("t4" "t5" "t3" "t1" "t2")
+    expected=("t4" "t2" "t1" "t3" "t5")
     assert "${actual[*]}" = "${expected[*]}"
 }
 
@@ -498,7 +498,7 @@ function test_graph_expand {
     make_test_edge "${t3}" "${t4}" dep
 
     local -a actual=($(gtd graph_expand "${t1}" dep outgoing | gtd map task_gloss ))
-    local -a expected=("t1" "t3" "t4" "t2" "t4")
+    local -a expected=("t1" "t2" "t4" "t3" "t4")
     assert "${actual[*]}" = "${expected[*]}"
 }
 
@@ -858,7 +858,7 @@ function test_task_add_subtask {
     assert_false gtd task_is_new "${t5}"
 
     local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map task_gloss))
-    local -a expected=("t1 t3 t4 t5 t2")
+    local -a expected=("t1 t2 t4 t5 t3")
     assert "${actual[*]}" = "${expected[*]}"
 }
 
@@ -894,7 +894,7 @@ function test_task_assign {
     assert_true  gtd task_is_new "${t5}"
 
     local -a actual=($(gtd graph_traverse "${t5}" context outgoing | gtd map task_gloss))
-    local -a expected=("t5 t4 t3 t1")
+    local -a expected=("t5 t1 t3 t4")
     assert "${actual[*]}" = "${expected[*]}"
 }
 
