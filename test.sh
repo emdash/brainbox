@@ -24,7 +24,9 @@ function tear_down {
 
 # print message to stderr and exit.
 function error {
-    echo "$*" >&2
+    line="$(caller 0 | cut -d ' ' -f 1)"
+    file="$(basename $(caller 0 | cut -d ' ' -f 3))"
+    echo "${file}:${line} $*" >&2
     exit 1
 }
 
@@ -98,12 +100,24 @@ function print_summary {
 }
 
 function assert {
-    test "$@"|| error "Assertion failed: $*"
+    if test "$@"; then
+	:
+    else
+	local line func file
+	line="$(caller 0 | cut -d ' ' -f 1)"
+	file="$(basename $(caller 0 | cut -d ' ' -f 3))"	
+	echo "${file}:${line} Assertion failed: $*" >&2
+	exit 1
+    fi
 }
 
 function assert_false {
     if "$@"; then
-	error "'$*' should be false"
+	local line func file
+	line="$(caller 0 | cut -d ' ' -f 1)"
+	file="$(basename $(caller 0 | cut -d ' ' -f 3))"	
+	echo "${file}:${line} '$*' should be false" >&2
+	exit 1
     fi
 }
 
@@ -111,7 +125,11 @@ function assert_true {
     if "$@"; then
 	return 0;
     else
-	error "'$*' should be true"
+	local line func file
+	line="$(caller 0 | cut -d ' ' -f 1)"
+	file="$(basename $(caller 0 | cut -d ' ' -f 3))"
+	echo "${file}:${line} '$*' should be true" >&2
+	exit 1
     fi
 }
 
