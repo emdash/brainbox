@@ -1,4 +1,7 @@
+#! /usr/bin/env bash
+
 set -eo pipefail
+shopt -s failglob
 
 # name-prefixed variable here, but ...
 if test -v GTD_DATA_DIR; then
@@ -214,7 +217,7 @@ function graph_node_create {
     if test -e "${path}"; then
 	error "A node with ${id} already exists."
     else
-    	mkdir -p "$(graph_node_path ${id})"
+    	mkdir -p "$(graph_node_path "${id}")"
 	echo "${id}"
     fi
 }
@@ -346,7 +349,7 @@ function graph_traverse {
 function __graph_traverse_rec {
     local cur="$1"
 
-    if test -v nodes_on_stack["${cur}"]; then
+    if test -v "nodes_on_stack[${cur}]"; then
 	error "Graph contains a cycle"
 	return 1
     fi
@@ -354,7 +357,7 @@ function __graph_traverse_rec {
     # add this node to the cycle checking set
     nodes_on_stack["${cur}"]=""
 
-    if test ! -v seen["${cur}"]; then
+    if test ! -v "seen[${cur}]"; then
 	echo "${cur}"
 	seen["${cur}"]="1"
 
@@ -364,7 +367,7 @@ function __graph_traverse_rec {
     fi
 
     # remove node from cycle checking set
-    unset nodes_on_stack["${cur}"]
+    unset "nodes_on_stack[${cur}]"
 }
 
 # similar to above, but performing a "tree expansion"
@@ -399,7 +402,7 @@ function __graph_expand_rec {
     local cur="$1"
     local depth="$2"
 
-    if test -v nodes_on_stack["${cur}"]; then
+    if test -v "nodes_on_stack[${cur}]"; then
 	error "Graph contains a cycle"
 	return 1
     fi
@@ -418,7 +421,7 @@ function __graph_expand_rec {
     done
 
     # remove node from cycle checking set
-    unset nodes_on_stack["${cur}"]
+    unset "nodes_on_stack[${cur}]"
 }
 
 
