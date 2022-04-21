@@ -731,7 +731,7 @@ function inbox { all | is_new | graph_filter_chain "$@" ;}
 # insert tasks assigned to each incoming context id
 function assigned {
     while read id; do
-	graph_traverse "${id}" context incoming | graph_filter_chain "$@"
+	graph_traverse "${id}" context outgoing | graph_filter_chain "$@"
     done
 }
 
