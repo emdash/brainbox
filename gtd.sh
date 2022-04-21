@@ -855,27 +855,30 @@ function __datum_mkdir_cp {
 # dotfile export for graphviz
 function dot {
     case "$1" in
-	dep|context) local edge_set="$1"; shift;;
+	dep|context|all) local edge_set="$1"; shift;;
 	*) error "$1 not one of dep | context";;
     esac
 
     end_filter_chain "$@"
 
-    declare -A nodes
-    declare -A edges
-
     echo "digraph {"
+
+    echo "rankdir=LR;"
+
+    declare -A nodes
 
     # output an entry for each node
     while read id; do
-	printf "\"${id}\" [label=\"%q\"];\n" "$(task_gloss "${id}")"
+	printf "\"${id}\" [label=\"%q\", shape=\"box\",width=1];\n" "$(task_gloss "${id}")"
 	nodes["$id"]=""
     done
 
-    graph_edge_list "${edge_set}" \
-	| graph_edge_touches "${!nodes[@]}" \
-	| while read edge; do
-	echo "\"$(graph_edge_u "${edge}")\" -> \"$(graph_edge_v "${edge}")\";"
+    graph_edge_list "${edge_set}" | while read edge; do
+	local u="$(graph_edge_u "${edge}")"
+	local v="$(graph_edge_v "${edge}")"
+	if test -v "nodes[${u}]" -o -v "nodes[${v}]"; then
+	    echo "\"$(graph_edge_u "${edge}")\" -> \"$(graph_edge_v "${edge}")\";"
+	fi
     done
 
     echo "}"

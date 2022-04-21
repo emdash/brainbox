@@ -38,65 +38,146 @@ You can see the list of tasks by typing:
 `gtd summarize`
 
 That is all you need to get started. When your task list has grown to
-the point where it no longer fits on one screen is when thing get interesting.
+the point where it no longer fits on one screen is when it gets
+interesting.
 
 ## Queries ##
 
 Graphs are more complex to manage than trees. I suspect this is why
-most productivity tools are tree based. GtdGraph tames this complexity
-with a simple, post-fix query language.
+most productivity tools are tree-based, if they go beyond flat
+lists. GtdGraph tames this complexity with a simple, post-fix query
+language.
 
 ### Examples ###
 
 **TBD**: provide a working example data directory, where all these
 examples will work.
 
-Summarize all tasks. As your database grows, this will quickly become
-overwhelming.
+#### Summarize All Tasks
 
 ```
 $ gtd summarize
 ```
 
-List the node ids of all tasks identified as *next actions*.
+This is enough to get you started; however, as your database grows, it will quickly become overwhelming.
+
+#### List Task Ids which are *Next Actions* 
 
 ```
-$ gtd next
+$ gtd is_next
 ```
 
-You can summarize any set of node ids by appending the *summarize*
-keyword.
+This command by itself is not terribly useful: it lists *IDs*, which
+are strings of gibberish. However, you can fix this by appending
+*summarize*, as above.
 
 ```
-$ gtd next summarize
+$ gtd is_next summarize
 ```
 
-Print a summary of the next actions for your "Kitchen Remodel" project.
+**Key Concept**: `summarize` is a *query consumer*, while is `is_next`
+is a *query filter*. A *query filter* operates on sets of nodes, while
+a *query consumer* does *something* with those nodes, and ends the
+query.
+
+#### Search Task Descriptions
 
 ```
 $ gtd search "Kitchen Remodel" subtasks next summarize
 ```
 
-Print a tree formatted summary of your entire kitchen remodel project.
+Print a summary of *next actions* for the `"Kitchen Remodel"` project.
+
+`search` is another *query filter*. Unlike `is_next`, `search`
+consumes consumes an *argument*. This *argument* may be:
+
+- a single unquoted word
+- a double-quoted string 
+- a single-quoted string
+
+The word is interpreted as a regex by the `grep` command on your
+system. If you really want to use a regex, then I recommend
+single-quoting, as you would with `grep`.
+
+#### Tree Formatting
 
 ```
-$ gtd search "Kitchen Remodel" as_tree indent
+$ gtd search "Kitchen Remodel" tree dep outgoing indent
 ```
 
-Print a summary of all the things you need to get during your next
-grocery shopping trip.
+This will format all the subtasks of the "Kitchen Remodel" project as
+a tree.
+
+*Trees* and *graphs* are closely related. In short: trees are a
+*subset* of graphs, where each node may only have one incoming
+edge. In task management, it isn't uncommon for subgraphs to have
+tree-like structure.
+
+In the example database, the *project* labeled `"Kitchen Remodel"`
+has tree-like structure.
+
+- `tree` is a *query consumer* whichcomputes the *tree expansion* of
+  each node in the *input set*.
+- `dep` `outgoing` are *arguments* to `tree`. They specify which edges to follow, and in which direction. In this case: *follow outgoing dependency edges*.
+- `indent` Is like `summarize`, but it works on the output of `tree`.
+
+`tree` will work fine on input which does *not* have tree
+structure. Any shared nodes will be *duplicated* in the *tree
+expansion*.
+
+#### *Contexts* and *Edge Sets*
 
 ```
-$ gtd search "Grocery Store" assigned next summarize
+$ gtd search "Grocery Store" assigned is_next summarize
 ```
 
-**TBD** add examples which mutate the database.
+This will show a summary of all *next actions* assigned to the
+`"Grocery Store"` context in the example database.
 
-Hopefully these exapmles give you some intuition for how the language works.
+#### Buckets: Naming Query Results, and Database Updates
 
-## Other Non-Query Commands
+```
+$ gtd choose into trash
+```
 
-Some subcommands don't fit into the query model.
+This will bring up an interactive menu, where you can search and
+select whichever tasks you wish. If you *accept* the query, then these
+tasks will be placed into a *bucket* named `trash`.
+
+- By default, `fzf` uses the `tab` key to select nodes. 
+- Press `<enter>` to accept the selection.
+- Use `Ctrl-C` to cancel the entire operation.
+
+`fzf` is a separate project. Consult the documentation for `fzf` for
+details on its configuration and use.
+
+- `choose` is a *query filter*, which uses `fzf` to allow interactive
+  selection of whichever tasks it receives from the *upstream* query
+  command. The *IDs* of whichever nodes you select will be passed
+  *downstream* to the next *query command*.
+- `into` is a *query consumer* which will place the IDs it receives
+  into the *bucket* named by its *argument*.
+
+```
+$ gtd from trash complete
+```
+
+This will mark every node in the `trash` bucket as `COMPLETED`. A task
+with *state* `COMPLETED` is no longer considered *active*. This means
+that various filters, including `is_next` will exclude such nodes from
+their output. `COMPLETED` tasks are still present in the database, and
+as such, will appear in the output of `gtd summarize`, `gtd all`, and
+`gtd dot`. They are merely *filtered* as desired.
+
+- `from` is a *query producer*. It sends the tasks from the *bucket*
+  named by its argument *downstream* to the next *query command*. It
+  may only appear at the beginning of a query.
+- `complete` is a *query consumer*, which places the tasks it from
+  *upstream* into the `COMPLETED` state.
+
+## Non-Query Commands
+
+Some commands don't fit into the query model.
 
 ### `capture`
 
@@ -107,7 +188,7 @@ is read from stdin.
 
 ### `clobber`
 
-Deletes the database, with confirmation.
+Deletes the database forever, with confirmation.
 
 ### `init`
 
@@ -115,8 +196,7 @@ Initializes a new graph database.
 
 ### `interactive`
 
-You can build non-destructive queries interactively, with the result
-being printed to stdout.
+Allows you to build non-destructive queries interactively.
 
 ### `link`
 
