@@ -540,12 +540,14 @@ function test_graph_expand_with_cycle {
 function test_task_state_is_valid {
     assert_true  gtd task_state_is_valid NEW
     assert_true  gtd task_state_is_valid TODO
-    assert_true  gtd task_state_is_valid COMPLETE
+    assert_true  gtd task_state_is_valid DONE
     assert_true  gtd task_state_is_valid DROPPED
     assert_true  gtd task_state_is_valid WAITING
     assert_true  gtd task_state_is_valid SOMEDAY
+    assert_true  gtd task_state_is_valid PERSIST
+    assert_false gtd task_state_is_valid COMPLETE
+    assert_false gtd task_state_is_valid COMPLETED
     assert_false gtd task_state_is_valid WAIT
-    assert_false gtd task_state_is_valid DONE
     assert_false gtd task_state_is_valid DEFERRED
     assert_false gtd task_state_is_valid FOOBAR
 }
@@ -553,10 +555,11 @@ function test_task_state_is_valid {
 function test_task_state_is_active {
     assert_true  gtd task_state_is_active NEW
     assert_true  gtd task_state_is_active TODO
-    assert_false gtd task_state_is_active COMPLETE
+    assert_false gtd task_state_is_active DONE
     assert_false gtd task_state_is_active DROPPED
     assert_true  gtd task_state_is_active WAITING
     assert_false gtd task_state_is_active SOMEDAY
+    assert_true  gtd task_state_is_active PERSIST
 }
 
 function test_task_state_is_actionable {
@@ -566,6 +569,7 @@ function test_task_state_is_actionable {
     assert_false gtd task_state_is_actionable DROPPED
     assert_false gtd task_state_is_actionable WAITING
     assert_false gtd task_state_is_actionable SOMEDAY
+    assert_false gtd task_state_is_actionable PERSIST
 }
 
 function test_task_contents {
@@ -805,7 +809,7 @@ function test_task_summary {
     echo "NEW" | gtd task_state write fake-uuid
 
     echo "foo bar baz" | gtd task_contents write fake-uuid
-    assert "$(gtd task_summary fake-uuid)" = "fake-uuid        NEW foo bar baz"
+    assert "$(gtd task_summary fake-uuid)" = "fake-uuid     NEW foo bar baz"
 }
 
 function test_task_auto_triage {
@@ -922,7 +926,7 @@ function test_task_complete {
     echo "NEW" | gtd task_state write fake-uuid
     assert_true gtd task_is_new fake-uuid
     gtd task_complete fake-uuid
-    assert "$(gtd task_state read fake-uuid)" = "COMPLETED"
+    assert "$(gtd task_state read fake-uuid)" = "DONE"
 }
 
 function test_task_defer {

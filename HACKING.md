@@ -6,7 +6,7 @@ a subdirectory.
 I'm officially targeting bash, since it's the most popular shell by a
 mile, but I would accept PRs supporting others shells.
 
-# GTD Interms of Graphs #
+# GTD as an Application of Graph Theory #
 
 I'm assuming you're familiar with [*Getting Things Done*](tbd: link),
 else you wouldn't have read this far.
@@ -41,19 +41,24 @@ Unlike other systems, which force you to manually organize your tasks
 into "projects" and "next actions", in GtdGraph, this is done
 automatically.
 
-### Task Dependency ###
+## Task Dependency ##
 
 For example: *task `A` depends on task `B`*.
 
 In graph theoretic terms: *a directed edge exists between nodes `A`
 and `B` in the dependency graph*.
 
-### Context Assignment ###
+## Context Assignment ##
 
 For example: *task "buy milk" is assigned to the "grocery" context.*
 
 In graph theoretic terms: *a directed edge exists between the nodes
 *buy milk* and *grocery* in the context graph*.
+
+In the concrete implementation of GTD, context assignment is an edge
+point from a context *to* a task, rather than the other way
+around. This way, filtering by context is just depth-first traversal
+of the graph rooted at your desired context.
 
 ### Context Grouping ###
 
@@ -76,7 +81,9 @@ We can easily "filter" tasks by context simply by performing a graph
 depth first traversal, starting with the given context node, and
 following the edges in the context graph.
 
-### Next Actions, Projects, and Others ###
+It's the same underlying mechanism as context assignment.
+
+## Next Actions, Projects, and Others ##
 
 We can automatically categorize nodes as *next actions*, *projects*
 and others with a little bit of graph theory.
@@ -91,7 +98,7 @@ placed into a *deferred* state.
 
 In GtdGraph, *task state* is modeled as a *datum* named `state`.
 
-### Undesigned
+## Undesigned ##
 
 This section contains features I'm planning, but am unsure how best to
 model.
@@ -103,12 +110,12 @@ Once I dogfood GtdGraph for a while, I am confident the right design
 will come to me. I'm also not above taking cues from other task
 managers, like TaskWarrior.
 
-#### Triage Workflow
+### Triage Workflow ###
 
 A high level `triage` command is planned to streamline daily review of
 your *inbox*.
 
-#### History management (a.k.a. Undo / Redo)
+### History management (a.k.a. Undo / Redo) ###
 
 Kindof an important feature, given how easy it is to accidentally
 `drop` all your tasks at the moment.
@@ -120,7 +127,7 @@ The first pass will likely be implemented on top of `git`. This way,
 you get rollback and remote sync "for free", though it would not be
 ideal for those who may wish to manage large files with gtdgraph.
 
-#### Recurring Tasks
+### Recurring Tasks ###
 
 Tasks whose state transitions between *completed* and *actionable*
 according to some *pattern*, *event*, or other *trigger*.
@@ -129,38 +136,13 @@ The design will depend somewhat on how history management gets
 implemented, and what kinds of reporting I want to enable (progress
 reports, "completion calendars", etc).
 
-#### Checklists
+### Checklists ###
 
 These are similar to repeating tasks, but are used in a different
 context. Checklists will probably be a different UI around the same
 underlying mechanism as used for recurring events.
 
-#### Review Workflow
-
-I'm focusing on the basic functionality, but the idea is that GtdGraph
-should nag you to do periodic reviews.
-
-Daily:
-- triage your inbox
-- view your next actions
-
-Weekly:
-- review all your active projects
-
-Monthly or Quarterly:
-- review all your projects
-
-Annually:
-- review your roots
-  - I have this vague notion that in a well-maintained database, *root
-    nodes* (aka *source nodes*) ultimately correspond to your *core
-    values* and *life goals*.
-	- dubbed *The view from 30,00 Feet* in the GTD book.
-  - if you have "too many" roots, then either it's time for some
-    serious self-reflection, or perhaps you need some help getting
-    organized.
-
-#### Stalled Project Detection
+### Stalled Project Detection ###
 
 Again, need to dogfood for a while to get a sense for what counts as a
 *stalled* project.
@@ -187,10 +169,11 @@ GtdGraph stores its data under a subdirectory -- (`"${DATA_DIR}"` in
 the code), in a manner similar to git.
 
 > A graph, *G*, is a tuple *G* = (*V*, *E*), where:
+>
 > - *V* is a set of vertices, and
 > - *E* is a set of edges, and
 > - each edge is a tuple of vertices, (*u*, *v*), where:
->  - *u*, *v* are elements of *E*
+>   - *u*, *v* are elements of *E*
 
 In other words, GtdGraph is based directy on the set-theoretic notion
 of graphs.  More precisely, the GtdGraph database contains multiple
@@ -214,6 +197,7 @@ least reasonably safe from collisions.
 Edges are strings, containing a pair of UUIDs separated by a `:`.
 
 There are two sets of edges:
+
 - `dep`: `"${DEPS_DIR}"` in the source
 - `context`: `${CTXT_DIR}"` in the source
   
@@ -247,14 +231,16 @@ to `description`.
 
 `state`: datum containing the node's state. This is a single-line text
 file, whose contents is one of:
+
 - `NEW`
 - `TODO`
-- `COMPLETE`
+- `DONE`
 - `WAITING`
 - `DELAYED`
 - `SOMEDAY`
-- `DROPPED`
-- `REPEATS` *date pattern*
+- `DROPPED` *excuse*
+- `REPEATS` *pattern*
+- `PERSIST`
 
 `NEW` and `TODO` indicate active nodes. The `capture` command creates
 nodes with status `NEW` in order to easily filter them for later
@@ -271,15 +257,33 @@ date.
 `SOMEDAY` indicates a node should be ignored indefinitely, except for
 Someday/Maybe reports.
 
-`DROPPED` indicates a node should be ignored, where *excuse* is an
-aribtrary string. This is for your own benefit, and may be left
-blank. A lengthy excuse may be written on subsequent lines.
+`DROPPED` indicates a node should be ignored, where the
+**not-yet-implemented** *excuse* is an aribtrary string. This is for
+your own benefit, and may be left blank. A lengthy excuse may be
+written on subsequent lines.
+
+`PERSIST` indicates a node that is expected to remain in the graph
+forever. Nodes used primarily as *contexts* and / or to store
+*information* should be placed in this state. The idea is that
+`COMPLETED`, `SOMEDAY`, and `DROPPED` are states which *could* be
+removed from the graph without surprising the user. The `archive`
+command will bulk-move any inactive subgraphs into the `archive`
+subdir to speed up general queries. You can use state `PERSIST` to
+prevent nodes from being swept up in archive collection, without them
+also polluting your next-actions when they are empty. You also use
+`is_persistent` as a general query filter when you're specifically
+looking for general information.
 
 ##### Not Yet Implemented #####
 
 `REPEATS` indicates a repeating event, where *pattern* is an
 expression that defines the pattern of repetition. See [Repeating
 events](#Repeating_Events)
+
+*excuses* - it's a simple enough idea, but there's no UI around it
+yet.
+
+`archive`
 
 #### Data (graph-datum) ####
 
@@ -404,6 +408,7 @@ difficult to avoid.
 **TBD**
 
 - `cut -d ... -f ...`
+  - replace with `read -d ... x y z`? 
 - `head`
 - `tail`
 - bash array syntax

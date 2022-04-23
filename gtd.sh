@@ -453,10 +453,11 @@ function task_state_is_valid {
     case "$1" in
 	NEW)      return 0;;
 	TODO)     return 0;;
-	COMPLETE) return 0;;
+	DONE)     return 0;;
 	DROPPED)  return 0;;
 	WAITING)  return 0;;
 	SOMEDAY)  return 0;;
+	PERSIST)  return 0;;
 	*)        return 1;;
     esac
 }
@@ -467,6 +468,7 @@ function task_state_is_active {
 	NEW)     return 0;;
 	TODO)    return 0;;
 	WAITING) return 0;;
+	PERSIST) return 0;;
 	*)       return 1;;
     esac
 }
@@ -475,6 +477,7 @@ function task_state_is_active {
 function task_state_is_actionable {
     case "$1" in
 	WAITING) return 1;;
+	PERSIST) return 1;;
 	*)    task_state_is_active "$1";;
     esac
 }
@@ -505,6 +508,11 @@ function task_is_leaf {
 # returns true if a task is orphaned: is a root with no dependencies
 function task_is_orphan {
     task_is_root "$1" && task_is_leaf "$1"
+}
+
+# returns true if a task is a project
+function task_is_project {
+    ! { task is_root "$1" || task_is_leaf "$1" ; }
 }
 
 # returns true if task has state NEW
@@ -539,7 +547,7 @@ function task_is_waiting {
 
 # summarize the current task: id, status, and gloss
 function task_summary {
-    printf "%s %10s %s\n" "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
+    printf "%s %7s %s\n" "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
 }
 
 ## Task Management
@@ -586,7 +594,7 @@ function task_drop {
 
 # mark the given task as completed
 function task_complete {
-    echo "COMPLETED" | task_state write "$1"
+    echo "DONE" | task_state write "$1"
 }
 
 # mark the given task as someday
@@ -616,9 +624,11 @@ function graph_filter_is_valid {
 	is_new)            return 0;;
 	is_next)           return 0;;
 	is_orphan)         return 0;;
+	is_project)        return 0;;
 	is_root)           return 0;;
 	is_unassigned)     return 0;;
 	is_waiting)        return 0;;
+	project)           return 0;;
 	projects)          return 0;;
 	subtasks)          return 0;;
 	search)            return 0;;
@@ -774,6 +784,11 @@ function is_next {
 # Keep only tasks not associated with any other tasks
 function is_orphan {
     filter task_is_orphan | graph_filter_chain "$@"
+}
+
+# Keep only tasks which are considered projects
+function is_project {
+    filter task_is_project | graph_filter_chain "$@"
 }
 
 # Keep only tasks which are the root of a subgraph
@@ -953,7 +968,7 @@ function indent {
 
     while read id depth; do
 	if test ! -v no_meta; then
-	   printf "%s %10s" "${id}" "$(task_state read "${id}")"
+	   printf "%7s" "$(task_state read "${id}")"
 	fi
 
 	# indent the line.
@@ -963,6 +978,11 @@ function indent {
 
 	printf " $(task_gloss "${id}")\n"
     done
+}
+
+# Shorthand for formatting a project as a tree
+function project {
+    tree dep outgoing indent "$@"
 }
 
 ## Destructive Query Commands *************************************************

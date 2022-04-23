@@ -9,18 +9,17 @@ def gen_ids():
         yield next
         next += 1
 
-def valid_state(s):
-    return s in {
-        "TODO",
-        "QUES",
-        "WAIT",
-        "SHOP",
-        "OOS",
-        "DONE",
-        "CANCELLED",
-        "BOUGHT",
-        "REMEMBER"
-    }
+valid_states = {
+    "TODO":      "TODO",
+    "QUES":      "TODO",
+    "WAIT":      "WAITING",
+    "SHOP":      "TODO",
+    "OOS":       "DROPPED",
+    "DONE":      "DONE",
+    "CANCELLED": "DROPPED",
+    "BOUGHT":    "DONE",
+    "REMEMBER":  "PERSIST"
+}
 
 class Scanner:
 
@@ -65,12 +64,12 @@ class Scanner:
             state += self.next_char()
             self.accept()
     
-        if valid_state(state):
+        if state in valid_states:
             self.skip_whitespace()
-            return state
+            return valid_states[state]
         else:
             self.reject(state)
-            return "INFO"
+            return "PERSIST"
     
     def get_gloss(self):
         gloss = ""
@@ -193,11 +192,11 @@ assert Scanner("*** TODO Foo bar baz :Bunsen:Rizzo:").process_line() == \
 assert Scanner("*** TODO Foo bar baz").process_line()                == \
     ('heading', (3, 'TODO', 'Foo bar baz', [])) 
 assert Scanner("*** Foo bar baz :Bunsen:Rizzo:").process_line()      == \
-    ('heading', (3, None, 'Foo bar baz', ['Bunsen', 'Rizzo']))
+    ('heading', (3, 'PERSIST', 'Foo bar baz', ['Bunsen', 'Rizzo']))
 assert Scanner("*** Foo bar baz").process_line()                     == \
-    ('heading', (3, None, 'Foo bar baz', []))   
+    ('heading', (3, 'PERSIST', 'Foo bar baz', []))   
 assert Scanner("*** Foo bar baz :Bunsen:").process_line()            == \
-    ('heading', (3, None, 'Foo bar baz', ['Bunsen']))
+    ('heading', (3, 'PERSIST', 'Foo bar baz', ['Bunsen']))
 assert Scanner(":Bunsen:Rizzo:").get_tags()                          == \
     ['Bunsen', 'Rizzo']            
 assert Scanner(":Bunsen:").get_tags()                                == \
