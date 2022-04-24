@@ -7,12 +7,12 @@ A productivity tool that is:
 - Opinionated
 
 I have a long-time fascination with "productivity tools" and the
-[GTD](tbd:link) philosophy.
+[GTD](https://en.wikipedia.org/wiki/Getting_Things_Done) philosophy.
 
-Recently, I discovered [`taskwarrior`](tbd:link). I like a lot of
-things about it, does not do the one thing I wanted most:
-automatic maintenance of "Next Actions". So, wrote my own tool, and now
-I'm sharing it with the world.
+Recently, I discovered [`taskwarrior`](https://taskwarrior.org/). I
+like a lot of things about it, does not do the one thing I wanted
+most: automatic maintenance of "Next Actions". So, wrote my own tool,
+and now I'm sharing it with the world.
 
 To get a feel for how it works, please read the [manual](manual.md),
 which is written in a tutorial style.

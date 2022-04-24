@@ -38,7 +38,8 @@ examples in by hand, and think carefully before you press `<enter>`.
 
 GtdGraph is command-line driven. You should be comfortable in a unix
 shell environment, and have some failiarity with the philosophy of
-[Getting Things Done](link:tbd).
+[Getting Things
+Done](https://en.wikipedia.org/wiki/Getting_Things_Done).
 
 You must first create a database:
 
@@ -83,8 +84,8 @@ GtdGraph uses `fzf` for interactive selection.
 - Press `<enter>` to accept the selection.
 - Use `Ctrl-C` to cancel the entire operation.
 
-[fzf](link:tbd) is a separate project. Consult its documentation for
-details on configuration and use.
+[fzf](https://github.com/junegunn/fzf) is a separate project. Consult
+its documentation for details on configuration and use.
 
 That is all you need to get started. When your task list has grown to
 the point where it no longer fits on one screen, read on.
@@ -406,8 +407,8 @@ visual representation of your database from time to time.
 	gtd dot | dot -Tx11
 	
 This will produce a visualization you can view interactively. Consult
-the [graphviz](link:tbd) documentation for more on `dot` and related
-commands.
+the [graphviz](https://graphviz.org/) documentation for more on `dot`
+and related commands.
 
 The `dot` *query consumer* can be combined with *filters*, as with
 `summarize`. For example:
@@ -431,7 +432,7 @@ The basic syntax: [ *producer* [args...] ]  [ (*filter*
 [args...])... ] [ *consumer* [args ... ] ]
 
 In plain language: each query begins with an optional *producer*,
-followed by any nymber of *filters*, and ending with an optional
+followed by any number of *filters*, and ending with an optional
 *consumer*. Some query commands consume options and / or required
 arguments.
 

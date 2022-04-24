@@ -8,8 +8,9 @@ mile, but I would accept PRs supporting others shells.
 
 # GTD as an Application of Graph Theory #
 
-I'm assuming you're familiar with [*Getting Things Done*](tbd: link),
-else you wouldn't have read this far.
+I'm assuming you're familiar with [*Getting Things
+Done*](https://en.wikipedia.org/wiki/Getting_Things_Done), else you
+wouldn't have read this far.
 
 As a brief reminder, the gtd work flow includes: **TBD** insert
 infographic here.
@@ -335,8 +336,8 @@ The following is a set of rough guidelines.
 - prefer `test ...` to `[ ... ]`
 - avoid using "$0"
   - directly test the status code of commands `if ...`
-- avoid [shell anti-patterns](tbd: oilshell link)
-- embrace [the good parts](tbd: oilshell link)
+- embrace [the good
+  parts](https://www.oilshell.org/blog/tags.html?tag=shell-the-good-parts#shell-the-good-parts)
 - bash extensions are acceptable iff they are:
   - *more* readable than portable shell, or
   - strictly necessary for required functionality.
