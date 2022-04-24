@@ -174,19 +174,31 @@ function database_commit {
 	rm -rf "${DATA_DIR}/undo_stack"
     fi
 
-    # add .keep files to any empty subdirectores, so that git will
-    # actually track them.
-    find "${STATE_DIR}" -type d -empty | while read path; do
-	touch "${path}/.keep"
-    done
+    # Git only tracks "regular" files, so it's not possible to add an
+    # empty directory to a git repo.
+    #
+    # The simplest work-around I could think of was to add .keep files
+    # to any empty subdirectores, so that git will actually track
+    # them.
+    find "${STATE_DIR}" -type d -empty -print0 | xargs -0 touch "{}.keep"
 
     # add every plain file we find to the index
-    find "${STATE_DIR}" -type f | while read path; do
-	# XXX: "${foo#bar} is a bashism that removes the prefix here
-	# used to make the path relative to the working directory,
-	# since find is started from cwd.
-	database_git add "${path#${STATE_DIR}/}"
-    done
+    #
+    # XXX: xargs hack required to make this acceptably fast on "large"
+    # databases.
+    #
+    # XXX: I am not sure of the best way to get xarg to putput paths
+    # relative to a particular directory, or else strip prefixes. The
+    # simplest solution was pushd / popd.
+    pushd "${STATE_DIR}" > /dev/null
+    find "." -type f -print0 |         \
+	xargs                          \
+	    -0                         \
+	    git                        \
+	    --git-dir="../hist"        \
+	    --work-tree="."            \
+	    add
+    popd > /dev/null
 
     # commit the changes. arguments interpreted as message.
     database_git commit -m "$*"
