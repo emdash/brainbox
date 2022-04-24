@@ -689,7 +689,7 @@ function task_is_orphan {
 
 # returns true if a task is a project
 function task_is_project {
-    ! { task is_root "$1" || task_is_leaf "$1" ; }
+    ! { task_is_root "$1" || task_is_leaf "$1" ; }
 }
 
 # returns true if task has state NEW
