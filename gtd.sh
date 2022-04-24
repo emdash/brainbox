@@ -81,6 +81,48 @@ function pcat {
     fi
 }
 
+# write this short python script into the data directory.
+#
+# XXX: this is awkward, but keeps this project self-contained. if you
+# have a better idea -- particularly if you can make the bash code it
+# replaces fast -- patches are welcome. probably the answer involves
+# xargs. See graph_node_adjacent.
+function graph_dot_py {
+    cat > "${DATA_DIR}/graph.py" <<EOF
+#! /usr/bin/env python3
+
+import os
+import sys
+
+# helpers to speed up code I haven't yet figured out how to optimize
+# in bash
+
+def graph_node_adjacent(node, edge_set, direction):
+    if edge_set == "dep":
+        edges = os.getenv("DEPS_DIR")
+    elif edge_set == "context":
+        edges = os.getenv("CTXT_DIR")
+    else:
+        print("invald")
+        exit(1)
+
+    if direction == "outgoing":
+        for edge in os.listdir(edges):
+            (u, v) = edge.split(':')
+            if u == node: print(v)
+    elif direction == "incoming":
+        for edge in os.listdir(edges):
+            (u, v) = edge.split(':')
+            if v == node: print(u)
+    else:
+        print("invalid")
+
+if sys.argv[1] == "graph_node_adjacent":
+    graph_node_adjacent(*sys.argv[2:])
+EOF
+    chmod +x "${DATA_DIR}/graph.py"
+}
+
 
 # Database Management *********************************************************
 
@@ -94,6 +136,7 @@ function database_init {
 	done
 	mkdir -p "${HIST_DIR}"
 	git init -q --bare "${HIST_DIR}"
+	graph_dot_py
     else
 	echo "Already initialized"
 	return 1
@@ -340,32 +383,46 @@ function graph_node_create {
 function graph_node_adjacent {
     database_ensure_init
 
-    "${LIB_DIR}/graph.py" graph_node_adjacent "$@"
-    # local node="$1"
-    # local edge_set="$2"
-    # local direction="$3"
+    # XXX: See `graph_dot_py` in the helpers section. I tried to write
+    # this all in bash, but bash can be *shockingly* slow, and it's
+    # not always clear why. The python script that replaces it is
+    # *orders of magnitude* faster, despite doing essentially the same
+    # thing, and even accounting for python interpreter overhead. We
+    # are shelling out after all. This realy starts to matter when
+    # your DB grows to several hundred nodes.
+    "${DATA_DIR}/graph.py" graph_node_adjacent "$@"
+    return "$?"
 
-    # case "${edge_set}" in
-    # 	dep)     pushd "${DEPS_DIR}" > /dev/null;;
-    # 	context) pushd "${CTXT_DIR}" > /dev/null;;
-    # 	*)       error "${edge_set} is not one of dep | context"
-    # esac
+    # XXX: The code below is the bash implementation at the point I
+    # gave. I leave it here so that it's clear what it is I was trying
+    # to do originally. Normally I don't like leaving unreachable code
+    # in place. But ultimately I want to remove the python hack, and I
+    # consider this a priority.
+    local node="$1"
+    local edge_set="$2"
+    local direction="$3"
 
-    # case "${direction}" in
-    # 	incoming)
-    # 	    local -a edges=( *:"${node}" )
-    # 	    local linked="graph_edge_u";;
-    # 	outgoing)
-    # 	    local -a edges=( "${node}":* )
-    # 	    local linked="graph_edge_v";;
-    # 	*) error "${direction} is not one of incoming | outgoing";;
-    # esac
+    case "${edge_set}" in
+	dep)     pushd "${DEPS_DIR}" > /dev/null;;
+	context) pushd "${CTXT_DIR}" > /dev/null;;
+	*)       error "${edge_set} is not one of dep | context"
+    esac
 
-    # popd > /dev/null
+    case "${direction}" in
+	incoming)
+	    local -a edges=( *:"${node}" )
+	    local linked="graph_edge_u";;
+	outgoing)
+	    local -a edges=( "${node}":* )
+	    local linked="graph_edge_v";;
+	*) error "${direction} is not one of incoming | outgoing";;
+    esac
+
+    popd > /dev/null
     
-    # for edge in ${edges}; do
-    # 	"${linked}" "${edge}"
-    # done
+    for edge in ${edges}; do
+	"${linked}" "${edge}"
+    done
 }
 
 # Print the internal edge representation for nodes u and v to stdout.
