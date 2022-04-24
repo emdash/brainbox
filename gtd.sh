@@ -199,13 +199,26 @@ function database_undo {
     fi
 
     database_current_commit >> "${DATA_DIR}/undo_stack"
-
     database_git reset --hard HEAD^
 }
 
 # revert any uncommitted changes
 function database_revert {
     git reset --hard HEAD
+}
+
+# generate random UUIDs.
+function gen_uuid {
+    # XXX: there are any number of ways one could do this, but I
+    # already depend on python3, so this is the way I'm doing it.
+    #
+    # If there's enough interest, I could make the case for allowing
+    # the user to tune this.
+    #
+    # The rationale for using UUID is that, in theory, it makes
+    # collisions 'impossible'. This could be useful for synchronizing
+    # state between different devices in the not-to-distant future.
+    python3 -c 'import uuid; print(uuid.uuid4())'
 }
 
 
@@ -228,7 +241,8 @@ function graph_node_gen_id {
     database_ensure_init
 
     # generate fresh uuid
-    local id="$(uuid -m)"
+    local id
+    id="$(gen_uuid)"
 
     # If by some freak of coincidence we have a collision, keep trying
     # recursively.

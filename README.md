@@ -91,14 +91,13 @@ achieve a user or system-wide installation.
 At the time of this writing, GtdGraph has not been packaged by any
 distribution.
 
-#### Dependencies (debian packages)
+#### Dependencies
 
 GtdGraph relies on a small number of dependencies which anyone
 interested in a shell-based productivity *probably* already has
-installed.
+installed (except maybe uuid).
 
 - python3, for some targeted "optimizations"
-- uuid, for ID generation
 - fzf, or a compatible alternative, for interactive search
 - git, for history managment
 
