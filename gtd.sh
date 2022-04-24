@@ -14,7 +14,6 @@ fi
 
 # Important directories
 # XXX: how to make lib dir point to directory containing this script?
-export LIB_DIR="${HOME}/src/gtdgraph"
 export STATE_DIR="${DATA_DIR}/state"
 export NODE_DIR="${STATE_DIR}/nodes"
 export DEPS_DIR="${STATE_DIR}/dependencies"
@@ -146,8 +145,8 @@ function database_init {
 # Check whether the data directory has been initialized.
 function database_ensure_init {
     # check whether we are initialized.
-    if ! test -e "${DATA_DIR}"; then
-	error "Nodegraph is not initialized. Please run: $0 init"
+    if ! test -d "${DATA_DIR}"; then
+	error "$0 is not initialized. Please run: $0 init"
     fi
 }
 
