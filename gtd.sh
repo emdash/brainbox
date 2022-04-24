@@ -3,22 +3,25 @@
 set -eo pipefail
 shopt -s failglob
 
-LIB_DIR="${HOME}/src/gtdgraph"
-
 # name-prefixed variable here, but ...
 if test -v GTD_DATA_DIR; then
     # ... prefer to keep the short name in the rest of the code for
     # now.
-    DATA_DIR="${GTD_DATA_DIR}"
+    export DATA_DIR="${GTD_DATA_DIR}"
 else
-    DATA_DIR="./gtdgraph"
+    export DATA_DIR="./gtdgraph"
 fi
 
-# Database directories
-export NODE_DIR="${DATA_DIR}/state/nodes"
-export DEPS_DIR="${DATA_DIR}/state/dependencies"
-export CTXT_DIR="${DATA_DIR}/state/contexts"
+# Important directories
+# XXX: how to make lib dir point to directory containing this script?
+export LIB_DIR="${HOME}/src/gtdgraph"
+export STATE_DIR="${DATA_DIR}/state"
+export NODE_DIR="${STATE_DIR}/nodes"
+export DEPS_DIR="${STATE_DIR}/dependencies"
+export CTXT_DIR="${STATE_DIR}/contexts"
+export HIST_DIR="${DATA_DIR}/hist/"
 export BUCKET_DIR="${DATA_DIR}/buckets"
+
 
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
@@ -89,6 +92,8 @@ function database_init {
 	for dir in "${EDGE_DIRS[@]}"; do
 	    mkdir -p "${dir}"
 	done
+	mkdir -p "${HIST_DIR}"
+	git init -q --bare "${HIST_DIR}"
     else
 	echo "Already initialized"
 	return 1
@@ -111,6 +116,96 @@ function database_clobber {
 	yes) rm -rf "${DATA_DIR}";;
 	*)   echo "Not wiping database."; return 1;;
     esac
+}
+
+# wraps git for use as db history management.
+function database_git {
+    git --git-dir="${HIST_DIR}" --work-tree="${STATE_DIR}" "$@"
+}
+
+# commit any changes we find to git, using the specified commit message
+function database_commit {
+    local path
+
+    if test -f "${DATA_DIR}/undo_stack"; then
+	rm -rf "${DATA_DIR}/undo_stack"
+    fi
+
+    # add .keep files to any empty subdirectores, so that git will
+    # actually track them.
+    find "${STATE_DIR}" -type d -empty | while read path; do
+	touch "${path}/.keep"
+    done
+
+    # add every plain file we find to the index
+    find "${STATE_DIR}" -type f | while read path; do
+	# XXX: "${foo#bar} is a bashism that removes the prefix here
+	# used to make the path relative to the working directory,
+	# since find is started from cwd.
+	database_git add "${path#${STATE_DIR}/}"
+    done
+
+    # commit the changes. arguments interpreted as message.
+    database_git commit -m "$*"
+}
+
+# list all the changes to the db from the beginning of time
+function database_history { database_git log --oneline ; }
+
+# returns true if we have undone tasks
+function database_have_undone {
+    test -e "${DATA_DIR}/undo_stack"
+}
+
+# print the current commit hash
+function database_current_commit {
+    database_git show -s --pretty=oneline HEAD | cut -d ' ' -f 1
+}
+
+# print the current undo tag if it exists
+function database_last_undone {
+    if database_have_undone; then
+	tail -n -1 < "${DATA_DIR}/undo_stack"
+    else
+	error "Not in undo state"
+    fi
+}
+
+# function
+function database_redo {
+    if database_have_undone; then
+	database_git reset --hard "$(database_last_undone)"
+	local ncommits="$(wc -l < "${DATA_DIR}/undo_stack")"
+	if test "${ncommits}" -lt 2; then
+	    rm -rf "${DATA_DIR}/undo_stack"
+	else
+	    cp "${DATA_DIR}/undo_stack" "${DATA_DIR}/tmp"
+	    head -n -1 < "${DATA_DIR}/tmp" > "${DATA_DIR}/undo_stack"
+	    rm "${DATA_DIR}/tmp"
+	fi
+    else
+	echo "nothing to redo"
+    fi
+}
+
+# restore the previous command state
+function database_undo {
+    local ncommits
+
+    ncommits="$(database_history | wc -l)"
+
+    if test "${ncommits}" -lt 2; then
+	error "Nothing to undo."
+    fi
+
+    database_current_commit >> "${DATA_DIR}/undo_stack"
+
+    database_git reset --hard HEAD^
+}
+
+# revert any uncommitted changes
+function database_revert {
+    git reset --hard HEAD
 }
 
 
@@ -989,8 +1084,10 @@ function project {
 
 # Reactivate each task id
 function activate {
+    destructive_operation
     end_filter_chain "$@"
     map task_activate
+    database_commit "${SAVED_ARGV}"
 }
 
 # Complete each task id
@@ -998,6 +1095,7 @@ function complete {
     destructive_operation
     end_filter_chain "$@"
     map task_complete
+    database_commit "${SAVED_ARGV}"
 }
 
 # Drop each task id
@@ -1005,6 +1103,7 @@ function drop {
     destructive_operation
     end_filter_chain "$@"
     map task_drop
+    database_commit "${SAVED_ARGV}"
 }
 
 # Defer each task id
@@ -1012,6 +1111,7 @@ function defer {
     destructive_operation
     end_filter_chain "$@"
     map task_defer
+    database_commit "${SAVED_ARGV}"
 }
 
 
@@ -1034,6 +1134,7 @@ function capture {
     else
 	echo "$*" | graph_datum contents write "${node}"
     fi
+    database_commit "${SAVED_ARGV}"
 }
 
 # Initialize the database
@@ -1075,7 +1176,7 @@ function link {
     case "$1" in
 	subtask) local link="task_add_subtask";;
 	context) local link="task_assign";;
-	*)       error "Not one of task | context";;
+	*)       error "Not one of subtask | context";;
     esac
 
     local from_ids="$(from "$2")"
@@ -1086,11 +1187,23 @@ function link {
 	    "${link}" "${u}" "${v}" "${edge_set}"
 	done
     done
+
+    database_commit "${SAVED_ARGV}"
 }
 
+# restore the last undone command, if one exists
+function redo { database_redo ; }
+
+# roll back to the state prior to execution of the last destructive
+function undo { database_undo ; }
+
+# show the current database undo
+function history { database_history | cat ; }
 
 # Main entry point ************************************************************
 
+# save args for undo log
+SAVED_ARGV="$@"
 
 # parse options
 if test "$1" = "--non-destructive"; then

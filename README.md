@@ -154,12 +154,8 @@ This is the TODO list for v1.0
   - [X] Task Data (need tests untested)
     - [X] Copy files under task dir
 - History Management
-  - [ ] edges no longer represented as empty directories.
-	  - represent edges as plain files?
-	  - add .keep file which is just empty placed under the edge dir?
-	  - store a state file with a dummy state?
-  - [ ] undo
-  - [ ] redo
+  - [X] undo
+  - [X] redo
   - [ ] revert if command fails
     - [ ] in particular, if adding edges would produce a cycle
 - Visualizations and Reports
