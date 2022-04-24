@@ -200,7 +200,7 @@ function database_commit {
     popd > /dev/null
 
     # commit the changes. arguments interpreted as message.
-    database_git commit -m "$*"
+    database_git commit -am "$*"
 }
 
 # list all the changes to the db from the beginning of time
