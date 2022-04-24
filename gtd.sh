@@ -1218,10 +1218,16 @@ function capture {
     echo "NEW" | graph_datum state write "${node}"
 
     if test -z "$*"; then
-	graph_datum contents edit "${node}"
+	if tty > /dev/null; then
+	    graph_datum contents edit "${node}"
+	else
+	    echo "from stdin"
+	    graph_datum contents write "${node}"
+	fi
     else
 	echo "$*" | graph_datum contents write "${node}"
     fi
+
     database_commit "${SAVED_ARGV}"
 }
 
