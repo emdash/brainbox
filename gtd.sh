@@ -465,17 +465,27 @@ function graph_edge_list {
     ls -t "${dirs[@]}"
 }
 
-# Return true if the given edge touches the given set of nodes
+# Return true if the given edge touches the input set.
+#
+# XXX: also, this function consumes edges from stdin, and nodes from
+# "$@".
+#
+# XXX: this should probably be renamed to reflect the fact that both
+# ends of the edge must like in the input set.
 function graph_edge_touches {
-    declare -A nodes
+    local edge nodes
+    local -A nodes
+
     for node in "$@"; do
-	nodes["${node}"]=""
+	nodes["${node}"]="1"
     done
 
-    while read edge; do
-	if test -v nodes["$(graph_edge_u "$1")"] || test -v nodes["$(graph_edge_v "$1")"]
-	then
-	    echo "${edge}"
+    while read -r edge; do
+	local u v
+	u="$(graph_edge_u "${edge}")"
+	v="$(graph_edge_v "${edge}")"
+	if test -v "nodes[${u}]" -a -v "nodes[${v}]"; then
+	   echo "${edge}"
 	fi
     done
 }
@@ -1065,12 +1075,8 @@ function dot {
 	nodes["$id"]=""
     done
 
-    graph_edge_list "${edge_set}" | while read edge; do
-	local u="$(graph_edge_u "${edge}")"
-	local v="$(graph_edge_v "${edge}")"
-	if test -v "nodes[${u}]" -o -v "nodes[${v}]"; then
-	    echo "\"$(graph_edge_u "${edge}")\" -> \"$(graph_edge_v "${edge}")\";"
-	fi
+    graph_edge_list "${edge_set}" | graph_edge_touches "${!nodes[@]}" | while read edge; do
+	echo "\"$(graph_edge_u "${edge}")\" -> \"$(graph_edge_v "${edge}")\";"
     done
 
     echo "}"
