@@ -669,6 +669,10 @@ function task_state_is_actionable {
     esac
 }
 
+# returns true if the given task is in the DONE state
+function task_is_complete {
+    test "$(task_state read "$1")" = "DONE"
+}
 ## define task data ***********************************************************
 
 function task_contents { graph_datum contents "$@"; }
