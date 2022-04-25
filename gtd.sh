@@ -673,6 +673,13 @@ function task_state_is_actionable {
 function task_is_complete {
     test "$(task_state read "$1")" = "DONE"
 }
+
+# returns true if a task has at least one outgoing context edge
+function task_is_context {
+    test -n "$(graph_node_adjacent "$1" context outgoing)"
+}
+
+
 ## define task data ***********************************************************
 
 function task_contents { graph_datum contents "$@"; }
@@ -812,6 +819,7 @@ function graph_filter_is_valid {
 	is_actionable)     return 0;;
 	is_active)         return 0;;
 	is_complete)       return 0;;
+	is_context)        return 0;;
 	is_new)            return 0;;
 	is_next)           return 0;;
 	is_orphan)         return 0;;
@@ -960,6 +968,11 @@ function is_active {
 # Keep only completed tasks
 function is_complete {
     filter task_is_complete | graph_filter_chain "$@"
+}
+
+# Keep only context nodes
+function is_context {
+    filter task_is_context | graph_filter_chain "$@"
 }
 
 # keep only new tasks
