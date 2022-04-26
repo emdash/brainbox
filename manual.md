@@ -490,13 +490,12 @@ Nondestructive Formatters:
 
 Destructive Operations:
 
-| Command                                         | Description                             |
-|-------------------------------------------------|-----------------------------------------|
-| `activate`                                      | mark tasks as TODO                      |
-| `complete`                                      | mark tasks as COMPLETED                 |
-| `datum` *datum* `write`                         | print the specified datum for each node |
-| `datum` *datum* `append`                        | print the specified datum for each node |
-| `datum` *datum* `mkdir`                         | create the specified datum directory    |
-| `datum` *datum* `cp` [ *flags*...] [ *path*...] | copy given paths into datum directory   |
-| `defer`                                         | mark tasks as SOMEDAY                   |
-| `drop`                                          | mark tasks as DROPPED                   |
+| Command                                         | Description                                                      |
+|-------------------------------------------------|------------------------------------------------------------------|
+| `activate`                                      | mark tasks as TODO                                               |
+| `complete`                                      | mark tasks as COMPLETED                                          |
+| `datum` *datum* `mkdir`                         | create the specified datum directory                             |
+| `datum` *datum* `cp` [ *flags*...] [ *path*...] | copy given paths into datum directory                            |
+| `defer`                                         | mark tasks as SOMEDAY                                            |
+| `drop`                                          | mark tasks as DROPPED                                            |
+| `edit` [ `--sequential` ]                       | invoke `${EDITOR}` on each node, simultaneously or sequentially. |
