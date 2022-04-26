@@ -848,6 +848,7 @@ function graph_filter_is_valid {
 	# datum cp
 	defer)             return 0;;
 	drop)              return 0;;
+	edit)              return 0;;
 	*)                 return 1;;
     esac
 }
@@ -1217,6 +1218,24 @@ function defer {
     end_filter_chain "$@"
     map task_defer
     database_commit "${SAVED_ARGV}"
+}
+
+# edit the contents of node in the input set in turn.
+function edit {
+    destructive_operation
+    end_filter_chain "$@"
+    if test "$1" = "--sequential"; then
+	dataum contents path | while read line; do
+	    # xargs -o: reopens stdin / stdout as tty in the child process.
+	    echo "${line}" | xargs -o "${EDITOR}"
+	done
+    elif test -z "$1"; then
+	# xargs -o: reopens stdin / stdout as tty in the child process.
+	datum contents path | xargs -o "${EDITOR}"
+    else
+	error "invalid argument: $1"
+    fi
+    database_commit
 }
 
 
