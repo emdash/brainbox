@@ -919,9 +919,9 @@ function end_filter_chain {
 }
 
 # disables destructive operations in preview mode
-function destructive_operation {
-    if test -v GTD_NONDESTRUCTIVE_MODE; then
-	error "Disabled in nondestructive mode"
+function forbid_preview {
+    if test -v GTD_PREVIEW_MODE; then
+	error "Disabled in preview mode."
     fi
 }
 
@@ -961,6 +961,9 @@ function assigned {
 
 # keep only the node selected by the user
 function choose {
+    # can't preview because this also uses FZF.
+    forbid_preview
+
     case "$1" in
        -m|--multi)  local opt="-m"; shift;;
        -s|--single) local opt=""  ; shift;;
@@ -1079,7 +1082,7 @@ function __datum_path_read {
 }
 
 function __datum_mkdir_cp {
-    destructive_operation
+    forbid_preview
     local datum="$1"; shift
     local command="$1"; shift
     end_filter_chain "$@"
@@ -1204,7 +1207,7 @@ function project {
 
 # Reactivate each task id
 function activate {
-    destructive_operation
+    forbid_preview
     end_filter_chain "$@"
     map task_activate
     database_commit "${SAVED_ARGV}"
@@ -1212,7 +1215,7 @@ function activate {
 
 # Complete each task id
 function complete {
-    destructive_operation
+    forbid_preview
     end_filter_chain "$@"
     map task_complete
     database_commit "${SAVED_ARGV}"
@@ -1220,7 +1223,7 @@ function complete {
 
 # Drop each task id
 function drop {
-    destructive_operation
+    forbid_preview
     end_filter_chain "$@"
     map task_drop
     database_commit "${SAVED_ARGV}"
@@ -1228,7 +1231,7 @@ function drop {
 
 # Defer each task id
 function defer {
-    destructive_operation
+    forbid_preview
     end_filter_chain "$@"
     map task_defer
     database_commit "${SAVED_ARGV}"
@@ -1236,7 +1239,7 @@ function defer {
 
 # edit the contents of node in the input set in turn.
 function edit {
-    destructive_operation
+    forbid_preview
     end_filter_chain "$@"
     if test "$1" = "--sequential"; then
 	dataum contents path | while read line; do
@@ -1263,7 +1266,7 @@ function edit {
 # - and stdin is a tty, invokes $EDITOR to create the node contents.
 # - otherwise, stdin is written to the contents file.
 function capture {
-    destructive_operation
+    forbid_preview
     local node="$(graph_node_create)"
 
     echo "NEW" | graph_datum state write "${node}"
@@ -1284,24 +1287,24 @@ function capture {
 
 # Initialize the database
 function init {
-    destructive_operation
+    forbid_preview
     database_init;
     mkdir -p "${BUCKET_DIR}"
 }
 
 # interactively build query
 function interactive {
-    destructive_operation
+    forbid_preview
     # inspired by https://github.com/paweluda/fzf-live-repl
     : | fzf \
 	    --print-query \
-	    --preview "$0 --non-destructive \$(echo {q})" \
+	    --preview "$0 --preview \$(echo {q})" \
 	| graph_filter_chain "$@"
 }
 
 # Clobber the database
 function clobber {
-    destructive_operation
+    forbid_preview
     database_clobber;
 }
 
@@ -1318,7 +1321,7 @@ function clobber {
 # *into* set. Typically, one of these sets will contain only a single
 # node.
 function link {
-    destructive_operation
+    forbid_preview
 
     case "$1" in
 	subtask) local link="task_add_subtask";;
@@ -1340,13 +1343,13 @@ function link {
 
 # restore the last undone command, if one exists
 function redo {
-    destructive_operation
+    forbid_preview
     database_redo
 }
 
 # roll back to the state prior to execution of the last destructive
 function undo {
-    destructive_operation
+    forbid_preview
     database_undo
 }
 
@@ -1363,8 +1366,8 @@ function history {
 SAVED_ARGV="$@"
 
 # parse options
-if test "$1" = "--non-destructive"; then
-   declare GTD_NONDESTRUCTIVE_MODE=""; shift
+if test "$1" = "--preview"; then
+   declare GTD_PREVIEW_MODE=""; shift
 fi
 
 case "$1" in
