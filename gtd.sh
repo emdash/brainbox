@@ -68,6 +68,20 @@ function map {
 }
 
 # fake cat to avoid spawning subprocess
+#
+# XXX: I'm not sure this is actually a performance win. Some
+# benchmarking is in order. My original assumption is that process
+# creation a bottleneck, but my current suspicion is that it's
+# actually that `while read ...` in bash is ridiculously slow, and
+# that `cat` may be faster in some cases.
+#
+# also, I think that this still ends up running in a subprocess.
+#
+# the real goal here was to avoid having to have `cat` as a dummy
+# command for query helpers like `graph_filter_chain`. One would have
+# suspected the null command would be useful for this, allowing a
+# shell command to simply "forward" stdin to stdout, but I cannot seem
+# to make it work.
 function pcat {
     if test -z "$1"; then
 	while read -r line; do
@@ -1235,7 +1249,7 @@ function edit {
     else
 	error "invalid argument: $1"
     fi
-    database_commit
+    database_commit "${SAVED_ARGV}"
 }
 
 
