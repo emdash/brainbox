@@ -1249,6 +1249,7 @@ function edit {
 # - and stdin is a tty, invokes $EDITOR to create the node contents.
 # - otherwise, stdin is written to the contents file.
 function capture {
+    destructive_operation
     local node="$(graph_node_create)"
 
     echo "NEW" | graph_datum state write "${node}"
@@ -1269,6 +1270,7 @@ function capture {
 
 # Initialize the database
 function init {
+    destructive_operation
     database_init;
     mkdir -p "${BUCKET_DIR}"
 }
@@ -1285,6 +1287,7 @@ function interactive {
 
 # Clobber the database
 function clobber {
+    destructive_operation
     database_clobber;
 }
 
@@ -1322,13 +1325,23 @@ function link {
 }
 
 # restore the last undone command, if one exists
-function redo { database_redo ; }
+function redo {
+    destructive_operation
+    database_redo
+}
 
 # roll back to the state prior to execution of the last destructive
-function undo { database_undo ; }
+function undo {
+    destructive_operation
+    database_undo
+}
 
 # show the current database undo
-function history { database_history | cat ; }
+function history {
+    # cat here to prevent pager from being invoked, which is annoying
+    # within emacs. but maybe I should remove this.
+    database_history | cat ;
+}
 
 # Main entry point ************************************************************
 
