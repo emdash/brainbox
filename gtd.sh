@@ -361,8 +361,8 @@ function graph_datum {
 	read)   __datum_read            ;;
 	# XXX: remove these two uuocs once you figure out how.
 	# it seems like a `:` should work here, but it breaks the tests.
-	write)  pcat >          "${path}";;
-	append) pcat >>         "${path}";;
+	write)   cat >          "${path}";;
+	append)  cat >>         "${path}";;
 	edit)   "${EDITOR}"    "${path}";;
 	mkdir)  mkdir -p       "${path}";;
 	cp)     cp "$@"        "${path}";;
@@ -373,7 +373,7 @@ function graph_datum {
 }
 
 function __datum_read {
-    test -f "${path}" && pcat < "${path}"
+    test -f "${path}" &&  cat < "${path}"
 }
 
 # print all graph nodes
@@ -892,7 +892,7 @@ function graph_filter_chain {
 	    error "$1 is not a valid graph query filter"
 	fi
     else
-	pcat
+	 cat
     fi
 }
 
@@ -910,7 +910,7 @@ function tree_filter_chain {
 	    error "$1 is not a valid tree query filter"
 	fi
     else
-	pcat
+	 cat
     fi
 }
 
