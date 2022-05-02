@@ -856,6 +856,7 @@ function graph_filter_is_valid {
 	into)              return 0;;
 	summarize)         return 0;;
 	tree)              return 0;;
+	triage)            return 0;;
 	# destructive consumers
 	activate)          return 0;;
 	complete)          return 0;;
@@ -1261,6 +1262,11 @@ function edit {
 
 # Non-query commands **********************************************************
 
+# List all known buckets
+function buckets {
+    ls "${BUCKET_DIR}"
+}
+
 # Create a new task.
 #
 # If arguments are given, they are written as the node contents.
@@ -1288,6 +1294,12 @@ function capture {
     database_commit "${SAVED_ARGV}"
 }
 
+# Clobber the database
+function clobber {
+    forbid_preview
+    database_clobber;
+}
+
 # Initialize the database
 function init {
     forbid_preview
@@ -1302,13 +1314,7 @@ function interactive {
     : | fzf \
 	    --print-query \
 	    --preview "$0 --preview \$(echo {q})" \
-	| graph_filter_chain "$@"
-}
-
-# Clobber the database
-function clobber {
-    forbid_preview
-    database_clobber;
+	| into interactive "$@"
 }
 
 # Create edges between sets of nodes in the given named buckets.
@@ -1343,6 +1349,69 @@ function link {
 
     database_commit "${SAVED_ARGV}"
 }
+
+# interactively distribute items in the input set into buckets
+function triage {
+    local -a choice
+    while read id; do
+	if choices=( $(__triage "${id}" "$@" ) ); then
+	    for choice in "${choices[@]}"; do
+		echo "triaging $(task_gloss "${id}") as ${choice}"
+		echo "${id}" | into "${choice}"
+	    done
+	else
+	    return 1
+	fi
+    done
+}
+
+function __triage {
+    local choice
+    local -a choices
+    while true; do
+	if choice="$(__triage_select "$@")"; then
+	    if test "${choice}" = '<done>'; then
+		break
+	    elif test "${choice}" = '<new>'; then
+		choices+=( "$(__triage_new)" )
+	    else
+		choices+=( "${choice}" )
+	    fi
+	else
+	    return 1
+	fi
+    done
+    for choice in "${choices[@]}"; do
+	echo "${choice}"
+    done
+}
+
+function __triage_select {
+    local id="$1"; shift
+    __triage_buckets "$@" \
+	| fzf \
+	      --tac \
+	      --no-sort \
+	      --preview "echo '${choices[*]}'; $0 task_contents read ${id}"
+}
+
+function __triage_new {
+    : | fzf --print-query --prompt="New Bucket: "
+}
+
+function __triage_buckets {
+    if test -z "$*"; then
+	buckets
+    else
+	for bucket in "$@"; do
+	    echo "${bucket}"
+	done
+    fi
+    echo '<new>'
+    echo '<done>'
+}
+
+## State management ***********************************************************
 
 # restore the last undone command, if one exists
 function redo {

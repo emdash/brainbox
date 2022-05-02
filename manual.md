@@ -104,6 +104,10 @@ See [examples](#Examples) below.
 There is a short list of non-query commands whose naming should be
 self-explanatory.
 
+### `buckets`
+
+List all known buckets.
+
 ### `capture`
 
 Create a node and place it in the inbox, as described
@@ -138,7 +142,12 @@ happened to be.
 
 ### `history`
 
-Shows the history of changes to the database.
+List the history and commit id of each command which has altered the
+database.
+
+### `triage`
+
+Interactively distribute the input set into buckets.
 
 ## Examples {#Examples}
 
