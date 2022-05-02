@@ -275,7 +275,7 @@ function database_undo {
 
 # revert any uncommitted changes
 function database_revert {
-    git reset --hard HEAD
+    database_git reset --hard HEAD
 }
 
 # generate random UUIDs.
