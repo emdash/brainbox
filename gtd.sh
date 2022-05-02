@@ -179,6 +179,16 @@ function database_git {
     git --git-dir="${HIST_DIR}" --work-tree="${STATE_DIR}" "$@"
 }
 
+# make sure git tracks empty directories.
+function database_keep_empty {
+    # Git only tracks "regular" files, so it's not possible to add an
+    # empty directory to a git repo.
+    #
+    # The simplest work-around I could think of was to add .keep files
+    # to any empty subdirectores, so that git will track them.
+    find "${STATE_DIR}" -type d -empty -printf '%p/.keep\0' | xargs -0 -n 1 touch
+}
+
 # commit any changes we find to git, using the specified commit message
 function database_commit {
     local path
@@ -187,14 +197,7 @@ function database_commit {
 	rm -rf "${DATA_DIR}/undo_stack"
     fi
 
-    # Git only tracks "regular" files, so it's not possible to add an
-    # empty directory to a git repo.
-    #
-    # The simplest work-around I could think of was to add .keep files
-    # to any empty subdirectores, so that git will actually track
-    # them.
-    find "${STATE_DIR}" -type d -empty -print0 | xargs -0 touch "{}.keep"
-
+    database_keep_empty
     # add every plain file we find to the index
     #
     # XXX: xargs hack required to make this acceptably fast on "large"
