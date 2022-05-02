@@ -186,7 +186,7 @@ function database_keep_empty {
     #
     # The simplest work-around I could think of was to add .keep files
     # to any empty subdirectores, so that git will track them.
-    find "${STATE_DIR}" -type d -empty -printf '%p/.keep\0' | xargs -0 -n 1 touch
+    find "${STATE_DIR}" -type d -empty -printf '%p/.keep\0' | xargs -0 -rn 1 touch
 }
 
 # commit any changes we find to git, using the specified commit message
