@@ -1250,9 +1250,15 @@ function defer {
 # edit the contents of node in the input set in turn.
 function edit {
     forbid_preview
-    end_filter_chain "$@"
+
     if test "$1" = "--sequential"; then
-	dataum contents path | while read line; do
+	local sequential=1; shift;
+    fi
+
+    end_filter_chain "$@"
+
+    if test -v sequential; then
+	datum contents path | while read -r line; do
 	    # xargs -o: reopens stdin / stdout as tty in the child process.
 	    echo "${line}" | xargs -o "${EDITOR}"
 	done
