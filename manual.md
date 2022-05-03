@@ -521,3 +521,4 @@ Destructive Operations:
 | `drop`                                          | mark tasks as DROPPED                                            |
 | `edit` [ `--sequential` ]                       | invoke `${EDITOR}` on each node, simultaneously or sequentially. |
 | `persist`                                       | mark tasks as PERSIST                                            |
+| `triage` [ bucket... ]                          | interactively distribute tasks into buckets.                     |
