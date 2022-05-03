@@ -817,6 +817,11 @@ function task_defer {
     echo "SOMEDAY" | task_state write "$1"
 }
 
+# mark the given task as persistent
+function task_persist {
+    echo "PERSIST" | task_state write "$1"
+}
+
 
 # An Embedded DSL for Queries *************************************************
 
@@ -844,6 +849,7 @@ function graph_filter_is_valid {
 	is_root)           return 0;;
 	is_unassigned)     return 0;;
 	is_waiting)        return 0;;
+	persist)           return 0;;
 	project)           return 0;;
 	projects)          return 0;;
 	subtasks)          return 0;;
@@ -1256,6 +1262,14 @@ function edit {
     else
 	error "invalid argument: $1"
     fi
+    database_commit "${SAVED_ARGV}"
+}
+
+# persist each task
+function persist {
+    forbid_preview
+    end_filter_chain "$@"
+    map task_persist
     database_commit "${SAVED_ARGV}"
 }
 

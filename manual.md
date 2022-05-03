@@ -508,3 +508,4 @@ Destructive Operations:
 | `defer`                                         | mark tasks as SOMEDAY                                            |
 | `drop`                                          | mark tasks as DROPPED                                            |
 | `edit` [ `--sequential` ]                       | invoke `${EDITOR}` on each node, simultaneously or sequentially. |
+| `persist`                                       | mark tasks as PERSIST                                            |
