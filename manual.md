@@ -131,6 +131,10 @@ preview.
 Create *task dependencies* and *context assignments*. See the
 [example](#link-example).
 
+### `unlink`
+
+Remove *task dependencies* and *context assignments*.
+
 ### `redo`
 
 Restores the last undone operation.
@@ -340,6 +344,14 @@ Store"`.
 	gtd search "Grocery Store" assigned is_next summarize
 	
 Show the current shopping list.
+
+### Breaking Links
+
+TBD
+
+### Moving Tasks
+
+TBD
 
 ### Creating Context Hierarchies
 

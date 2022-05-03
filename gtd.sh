@@ -802,6 +802,19 @@ function task_assign {
     graph_edge_create "$2" "$1" context
 }
 
+# Remove the dependency between task and subtask
+#
+# $1: the existing task
+# $2: the dependency
+function task_remove_subtask {
+    graph_edge_delete "$1" "$2" dep
+}
+
+# Remove the dependency between task and context
+function task_unassign {
+    graph_edge_delete "$2" "$1" context
+}
+
 # mark the given task as dropped
 function task_drop {
     echo "DROPPED" | task_state write "$1"
@@ -1355,6 +1368,28 @@ function link {
     case "$1" in
 	subtask) local link="task_add_subtask";;
 	context) local link="task_assign";;
+	*)       error "Not one of subtask | context";;
+    esac
+
+    local from_ids="$(from "$2")"
+    local into_ids="$(from "$3")"
+
+    for u in ${from_ids}; do
+	for v in ${into_ids}; do
+	    "${link}" "${u}" "${v}" "${edge_set}"
+	done
+    done
+
+    database_commit "${SAVED_ARGV}"
+}
+
+# remove edges between sets of nodes in different buckets
+function unlink {
+    forbid_preview
+
+    case "$1" in
+	subtask) local link="task_remove_subtask";;
+	context) local link="task_unassign";;
 	*)       error "Not one of subtask | context";;
     esac
 
