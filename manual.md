@@ -15,20 +15,20 @@ Installation is documented [here](install.md)
 
 ## A Word of Caution
 
-GtdGraph is intended for *personal* task management, as opposed to
-teams and organizations. As such, it aims to be as light-weight as
-possible.  GtdGraph is intended to be used *locally* and *directly* by
-a *single user*. The implementation is wholly unsuitable for
-*concurrent* use by one or more users.
+GtdGraph is intended for *individual*, as opposed to *team* use.
 
-As a command-line tool, GtdGraph can trivially consume data from
-external sources (e.g. `curl`); however, as GtdGraph is itself a
-*shell program*, it is potentially vulnerable to *shell injection*
-attacks. In particular: *never* pass comand-line *arguments* to
+GtdGraph is intended to be used *locally* and *directly* by a *single
+user*. The implementation is wholly unsuitable for *concurrent* use by
+one or more users. With the sole exception of *live queries*, avoid
+running multiple instances of `gtd` on the same database.
+
+GtdGraph is itself a *shell program*, it is potentially vulnerable to
+*shell injection* attacks. *never* pass comand-line *arguments* to
 gtdgraph from an untrusted source via command substitution or any
 other mechanism. If you absolutely *must* consume data from an
-external tool, use IO redirection, and sanitize any data before
-passing it to GtdGraph.
+external tool, use the facilities for IO redirection. At the moment,
+it is up to *the user* to ensure inputs to GtdGraph are benign, or
+else choose an appropriate sandboxing strategy.
 
 As with any command-line tool, avoid copy-pasting commands from random
 websites (including *this one*) directly into your terminal. Type
@@ -37,7 +37,7 @@ examples in by hand, and think carefully before you press `<enter>`.
 ## Overview & Getting Started {#Overview}
 
 GtdGraph is command-line driven. You should be comfortable in a unix
-shell environment, and have some failiarity with the philosophy of
+shell environment, and have some familiarity with the philosophy of
 [Getting Things
 Done](https://en.wikipedia.org/wiki/Getting_Things_Done).
 
@@ -115,7 +115,18 @@ Create a node and place it in the inbox, as described
 
 ### `clobber`
 
-Deletes the database forever, with confirmation.
+Deletes the database forever, with confirmation. This **cannot be
+undone.**
+
+### `follow` *read-only query*
+
+Creates a *live query*. See [the example](#live-queries). The query
+must be not modify the database.
+
+### `history`
+
+List the history and commit id of each command which has altered the
+database.
 
 ### `init`
 
@@ -129,29 +140,20 @@ preview.
 ### `link`
 
 Create *task dependencies* and *context assignments*. See the
-[example](#link-example).
-
-### `unlink`
-
-Remove *task dependencies* and *context assignments*.
+[example](#link-example). See `unlink` below.
 
 ### `redo`
 
-Restores the last undone operation.
+Restores the last undone operation. See `undo` below.
+
+### `unlink`
+
+Remove *task dependencies* and *context assignments*. See `link`
+above.
 
 ### `undo`
 
-Undoes the last operation, restoring whatever the previous state
-happened to be.
-
-### `history`
-
-List the history and commit id of each command which has altered the
-database.
-
-### `triage`
-
-Interactively distribute the input set into buckets.
+Undoes the last change to the database. See `redo` above.
 
 ## Examples {#Examples}
 
@@ -161,9 +163,21 @@ You can try the following examples on a sample database:
 
 **TBD**: provide this directory.
 
-### Reviewing your *Inbox* ###
+### Viewing your *Inbox* ###
 
 	gtd inbox summarize
+	
+ 
+### Triaging your Inbox
+
+	gtd inbox triage
+
+This will interactively distribute the input set into buckets. If no
+buckets exist, you can create them on the fly, or give them as
+additional arguments.
+
+**TBD** Verify the behavior of `triage` with buckets given. I have not
+tried it yet.
 
 ### Reviewing your *Next Actions* ###
 
@@ -210,15 +224,15 @@ This will show a summary of all *next actions* assigned to the
 *Key Concept*: In GtdGraph, *contexts* also form a graph.
 
 *Key Concept*: In GtdGraph, the distinction between *tasks*,
-*contexts*, and *projects* is merely a conceptual one.  *nodes*. What
+*contexts*, and *projects* is merely a conceptual one. What
 I have previously referred to as *tasks*, *contexts*, and *projects*
 are all simply *nodes* in a *graph*.
 
 In the remainder of this document:
 
 - *task* refers to a *node* used as a task, in the GTD sense.
-- *context* refers to a node used as a context, in the GTD sense 
-- *project* refers to a node used as a project, in the GTD sense.
+- *context* refers to a *node* used as a context, in the GTD sense 
+- *project* refers to a *node* used as a project, in the GTD sense.
 - *node* is used when the distinction is irrelevant.
 
 In any case, these terms refer to the same underlying construct witin
@@ -226,7 +240,7 @@ GtdGraph.
 
 ### Projects and Tree Formatting ###
 
-	gtd is_project choose -s
+	gtd is_project choose -
 	
 Interactively select a single *project* from the database, and print
 its ID.
@@ -439,6 +453,37 @@ The `dot` *query consumer* can be combined with *filters*, as with
 This will limit the output to subtasks of the "Kitchen Remodel"
 project.
 
+### Live Queries {#live-queries}
+
+GtdGraph supports *live queries*. These are automatically re-evaluated
+whenever the database updates.
+
+	gtd follow inbox summarize &
+	gtd capture "I added something to the database"
+	gtd undo
+	
+Notice the query is reprinted each time. This is particularly useful
+in conjunction with the `dot` query consumer:
+
+	gtd follow is_active dot all | dot -Tx11 &
+	gtd inbox choose into --replace target
+	gtd is_active choose into --replace source
+	gtd link subtask source target
+	
+Live queries are the exception to rule of "at most one `gtd` process
+operating on the database" at a time. This is is because they are
+synchronized to occur after a successful database commit, ensuring
+they always have a consistent view of the database.
+
+At the moment, only one live query is supported at any given time. So
+the per-database currenncy rule is:
+
+- at most one live query, plus
+- at most one additional command
+
+As this is confusing and complicated to explain, I aim to improve this
+situation in future releases.
+
 ## Conclusion
 
 This is GtdGraph in a nutshell. We're barely scratching the surface of
@@ -496,7 +541,7 @@ database.
 
 ## Consumers ##
 
-Nondestructive Formatters:
+Read-only Consumers:
 
 | Command                                                | Description                                                                       |
 |--------------------------------------------------------|-----------------------------------------------------------------------------------|
@@ -509,7 +554,7 @@ Nondestructive Formatters:
 | `tree` (`dep` \| `context`) (`incoming` \| `outgoing`) | produces the *tree expansion* of each node in the *input set*                     |
 | `indent`                                               | formats the output as an indented list. only used with `tree`                     |
 
-Destructive Operations:
+Updating Consumers:
 
 | Command                                         | Description                                                      |
 |-------------------------------------------------|------------------------------------------------------------------|

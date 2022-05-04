@@ -218,6 +218,9 @@ function database_commit {
 
     # commit the changes. arguments interpreted as message.
     database_git commit -am "$*"
+
+    # if all the above succeeded, trigger update of any live queries.
+    notify_follow
 }
 
 # list all the changes to the db from the beginning of time
@@ -254,6 +257,8 @@ function database_redo {
 	    head -n -1 < "${DATA_DIR}/tmp" > "${DATA_DIR}/undo_stack"
 	    rm "${DATA_DIR}/tmp"
 	fi
+	# if all the above succeeded, trigger update of any live queries.
+	notify_follow
     else
 	echo "nothing to redo"
     fi
@@ -271,11 +276,13 @@ function database_undo {
 
     database_current_commit >> "${DATA_DIR}/undo_stack"
     database_git reset --hard HEAD^
+    notify_follow
 }
 
 # revert any uncommitted changes
 function database_revert {
     database_git reset --hard HEAD
+    notify_follow
 }
 
 # generate random UUIDs.
@@ -1464,6 +1471,42 @@ function __triage_buckets {
     fi
     echo '<new>'
     echo '<done>'
+}
+
+## Live Queries ***************************************************************
+
+# evaluate the given non-interactive query each time the database changes
+function follow {
+    local -r query="$@"
+    local -r fifo="${DATA_DIR}/follow"
+    trap __follow_exit EXIT
+
+    # tbd: allow multiple live queries. just one will do for now.
+    if test -e "${fifo}"; then
+	error "at most live query at is supported"
+    else
+	mkfifo "${fifo}"
+
+	# the protocol is really simple. we just read a line from the
+	# fifo, re-running the query each time we do. the contents of
+	# the line don't matter.
+	while true; do
+	    "$0" --preview ${query}
+	    read -r ignored < "${fifo}" || true
+	done
+    fi
+}
+
+function __follow_exit {
+    test -e "${DATA_DIR}/follow" && rm "${DATA_DIR}/follow"
+}
+
+# notify live queries to re-run after database commits.
+function notify_follow {
+    local -r fifo="${DATA_DIR}/follow"
+    if test -e "${fifo}"; then
+	echo "notify" > "${fifo}"
+    fi
 }
 
 ## State management ***********************************************************
