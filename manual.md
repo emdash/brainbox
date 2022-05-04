@@ -492,7 +492,7 @@ what is possible, particularly when combined with shell programming.
 I hope you will give GtdGraph a try. Please feel free to submit bug
 reports, feedback, and feature requests via *GitHub Issues*.
 
-# Appendix: Query Language Reference #
+# Appendix A: Query Language Reference #
 
 The basic syntax: [ *producer* [args...] ]  [ (*filter*
 [args...])... ] [ *consumer* [args ... ] ]
@@ -567,3 +567,49 @@ Updating Consumers:
 | `edit` [ `--sequential` ]                       | invoke `${EDITOR}` on each node, simultaneously or sequentially. |
 | `persist`                                       | mark tasks as PERSIST                                            |
 | `triage` [ bucket... ]                          | interactively distribute tasks into buckets.                     |
+
+# Appendix B: Recovering from Database Corruption
+
+GtdGraph is a work in progress and may contain bugs which corrupt the
+database. However, since GtdGraph uses `git` for history management,
+it generally possible to recover a corrupted database. GtdGraph
+intentially does not supress the output of `git` commands it executes,
+as it provides valuable feedback.
+
+`gtd undo` is your first line of defense. If a command fails or has
+some other undesirable effect, it is often sufficient to run `git
+undo`, and then simply repeat the offending command, altering as
+appropriate.
+
+If a command exits prematurely, leaving the working tree dirty, you
+can manually commit any changes via 
+	
+	gtd database_commit <message>
+	
+If this is not enough, then you can directly modify the git repository
+via:
+	
+	gtd database_git ...
+	
+This is a wrapper command, which sets the git directory and working
+tree as appropriate. Any arguments are forwarded directly to
+`git`. Knowledge of the `git` version control system is
+required. Consult the [Documentation](https://git-scm.com/) for more.
+
+# Appendix C: Scripting API
+
+The commands documented in this manual are implemented in terms of a
+lower-level *scripting API*. New features and extensions to GtdGraph
+may also make use of this API. Additionally, it possible, though
+cumbersome, to use the scripting API directly from the command line.
+
+The scripting API consists of all functions defined in `gtd.sh` which
+do not begin with `__`. The scripting API is documented directly
+within the source code. See [`gtd.sh`](gtd.sh).
+
+Knowledge of `bash` is strongly recommended before attempting direct
+use of the scripting API; however, interested users are encouraged to
+read the source code.
+
+The [Hacking Guide](HACKING.md) documents GtdGraph's conceptual
+design, and will help orient you to `gtd.sh`'s source code.
