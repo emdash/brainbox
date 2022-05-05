@@ -924,16 +924,19 @@ function life_goals {
 
 # output the nodes adjacent to each input node
 function adjacent {
+    local edges="$1"
+    local direction="$2"
+    shift 2
     while read id; do
-	graph_node_adjacent "${id}" "$@"
-    done
+	graph_node_adjacent "${id}" "${edges}" "${direction}"
+    done | graph_filter_chain "$@"
 }
 
 # insert tasks assigned to each incoming context id
 function assigned {
     while read id; do
-	graph_traverse "${id}" context outgoing | graph_filter_chain "$@"
-    done
+	graph_traverse "${id}" context outgoing
+    done | graph_filter_chain "$@"
 }
 
 # keep only the node selected by the user
