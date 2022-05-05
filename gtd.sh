@@ -1540,12 +1540,12 @@ function __triage_buckets {
 function follow {
     local -r query="$@"
     local -r fifo="${DATA_DIR}/follow"
-    trap __follow_exit EXIT
 
     # tbd: allow multiple live queries. just one will do for now.
     if test -e "${fifo}"; then
 	error "at most live query at is supported"
     else
+	trap __follow_exit EXIT
 	mkfifo "${fifo}"
 
 	# the protocol is really simple. we just read a line from the
