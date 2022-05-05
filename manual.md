@@ -312,8 +312,8 @@ tasks will be placed into a *bucket* named `trash`.
 nodes on which you intend to perform subsequent operations.
 
 *Key Concept*: Buckets are created as needed. If a bucket already
-exists, the *input set* is *unioned* with existing contents. Use
-`--replace` to ignore discard the previouse bucket contents.
+exists, the *input set* is replaces the existing contents. Use
+`--union` to also retain the existing contents of the bucket.
 
 *Key Concept*: Bucket names are arbitrary strings. They can be as
 short or as long as you like. As meaningful or meaningless as you
@@ -414,7 +414,7 @@ pending posts:
 	
 Now you want to actually write the post:
 
-	gtd from posts choose into --replace current_post
+	gtd from posts choose into current_post
 	gtd from current_post datum post mkdir
 	gtd from current_post datum post/post.md edit
 	
@@ -495,8 +495,8 @@ project.
 ### Real-time Visualizations
 
 	gtd follow is_active dot all | dot -Tx11 &
-	gtd inbox choose into --replace target
-	gtd is_active choose into --replace source
+	gtd inbox choose into target
+	gtd is_active choose into source
 	gtd link subtask source target
 	
 You can combine a live query with visualization to observe real-time
@@ -507,13 +507,13 @@ changes to the database (or some subset of it).
 You can combine *live queries* with *buckets* to interactively
 visualize the result of different queries:
 
-	gtd inbox into --replace live
+	gtd inbox into live
 	gtd follow from live dot dep | dot -Tx11 &
 	
 This creates a live query which starts with the current contents of
 the inbox. To see your next-actions instead:
 
-	gtd is_next into --replace live
+	gtd is_next into live
 
 *Note*: when using this method, you must manually refresh the bucket
 contents if subsequent changes to the database would change the query
@@ -580,16 +580,16 @@ database.
 
 Read-only Consumers:
 
-| Command                                                | Description                                                                       |
-|--------------------------------------------------------|-----------------------------------------------------------------------------------|
-| `datum` *datum* `read`                                 | print the specified datum for each node in the input set.                         |
-| `datum` *datum* `path`                                 | print the path to the specified datum for each node in the input set.             |
-| `dot`                                                  | convert the subgraph covered by the input set into graphviz syntax                |
-| `into` [`--replace`] *bucket*                          | save nodes into named bucket, optionally replacing existing contents (see `from`) |
-| `project`                                              | same as `tree dep outgoing`                                                       |
-| `summarize`                                            | print a short summary of each node in the input set.                              |
-| `tree` (`dep` \| `context`) (`incoming` \| `outgoing`) | produces the *tree expansion* of each node in the *input set*                     |
-| `indent`                                               | formats the output as an indented list. only used with `tree`                     |
+| Command                                                | Description                                                                     |
+|--------------------------------------------------------|---------------------------------------------------------------------------------|
+| `datum` *datum* `read`                                 | print the specified datum for each node in the input set.                       |
+| `datum` *datum* `path`                                 | print the path to the specified datum for each node in the input set.           |
+| `dot`                                                  | convert the subgraph covered by the input set into graphviz syntax              |
+| `into` [`--keep`] *bucket*                             | save nodes into named bucket, optionally keeping existing contents (see `from`) |
+| `project`                                              | same as `tree dep outgoing`                                                     |
+| `summarize`                                            | print a short summary of each node in the input set.                            |
+| `tree` (`dep` \| `context`) (`incoming` \| `outgoing`) | produces the *tree expansion* of each node in the *input set*                   |
+| `indent`                                               | formats the output as an indented list. only used with `tree`                   |
 
 Updating Consumers:
 

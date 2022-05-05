@@ -1179,17 +1179,17 @@ function dot {
     echo "}"
 }
 
-# add node ids to the named bucket
+# Add node ids to the named bucket
 #
-# if --replace is given, the new ids replace the old bucket contents.
+# By default, the new contents replace the old contents. Give `--union`
+# is this is undesired.
 function into {
     case "$1" in
-	--replace)
-	    local bucket="${BUCKET_DIR}/$2";
-	    rm -rf "${bucket}";;
+	--union)
+	    local bucket="${BUCKET_DIR}/$2";;
 	*)
 	    local bucket="${BUCKET_DIR}/$1";
-	    ;;
+	    rm -rf "${bucket}";;
     esac
     
     mkdir -p "${bucket}"
