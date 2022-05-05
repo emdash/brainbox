@@ -986,7 +986,9 @@ function inbox { all | is_new | graph_filter_chain "$@" ;}
 
 # output the last captured node
 function last_captured {
-    test -e "${DATA_DIR}/last_captured" && cat "${DATA_DIR}/last_captured"
+    if test -e "${DATA_DIR}/last_captured"; then
+	cat "${DATA_DIR}/last_captured"
+    fi | graph_filter_chain "$@"
 }
 
 # output the last read-only query that was executed.
