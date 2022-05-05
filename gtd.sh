@@ -947,7 +947,6 @@ function end_filter_chain {
     if test -n "$*"; then
 	error "${name} does not allow further filtering"
     fi
-    __last_query_maybe_save
 }
 
 # disables destructive operations in preview mode
@@ -955,9 +954,6 @@ function forbid_preview {
     if test -v GTD_PREVIEW_MODE; then
 	error "Disabled in preview mode."
     fi
-    
-    # we modified the database, so don't save this query.
-    __last_query_prevent_save
 }
 
 ## Query Commands *************************************************************
@@ -990,26 +986,6 @@ function last_captured {
     if test -e "${DATA_DIR}/last_captured"; then
 	cat "${DATA_DIR}/last_captured"
     fi | graph_filter_chain "$@"
-}
-
-# output the last read-only query that was executed.
-function last_query {
-    __last_query_prevent_save
-    if test -e "${DATA_DIR}/last_query"; then
-	$(cat "${DATA_DIR}/last_query") | graph_filter_chain "$@"
-    fi
-}
-
-function __last_query_maybe_save {
-    if test -e "${DATA_DIR}/DO_NOT_SAVE_QUERY"; then
-	rm "${DATA_DIR}/DO_NOT_SAVE_QUERY"
-    else
-	echo "${SAVED_ARGV[@]}" > "${DATA_DIR}/last_query"
-    fi
-}
-
-function __last_query_prevent_save {
-    touch "${DATA_DIR}/DO_NOT_SAVE_QUERY"
 }
 
 # select every actionable project root

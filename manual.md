@@ -139,10 +139,6 @@ Initializes a new graph database.
 Allows you to build non-destructive queries with an interactive
 preview.
 
-### `last_query`
-
-Re-execute the the last read-only query.
-
 ### `link`
 
 Create *task dependencies* and *context assignments*. See the
