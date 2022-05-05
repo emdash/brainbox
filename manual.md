@@ -555,26 +555,27 @@ database.
 
 ## Filters ##
 
-| Command                  | Description                                                                        |
-|--------------------------|------------------------------------------------------------------------------------|
-| `assigned`               | output all tasks assigned to each context in the input set, including subcontexts. |
-| `choose` [ `-m` \| `-s`] | interactively select one or many nodes                                             |
-| `datum` *datum* `exists` | keep only nodes for which the given datum is defined                               |
-| `is_actionable`          | keep only nodes considered actionable (omits WAITING nodes)                        |
-| `is_active`              | keep only nodes considered active (includes status WAITING)                        |
-| `is_complete`            | keep only nodes considered completed                                               |
-| `is_context`             | keep only nodes with at least one outgoing context edge.                           |
-| `is_new`                 | keep only nodes with status NEW                                                    |
-| `is_next`                | keep only nodes considered *next actions*                                          |
-| `is_orphan`              | keep only orphaned nodes                                                           |
-| `is_project`             | keep only nodes with at least one subtask and at least one supertask.              |
-| `is_root`                | keep only nodes which have no supertask.                                           |
-| `is_unassigned`          | keep only nodes not assigned to any context                                        |
-| `is_waiting`             | keep only waiting in state WAITING                                                 |
-| `is_someday`             | keep only nodes with status SOMEDAY                                                |
-| `projects`               | output the ancestors of each node in the input set                                 |
-| `subtasks`               | output all substasks (including transitive) of each node in the input set.         |
-| `search`                 | keep nodes whose description matches *pattern*                                     |
+| Command                                                      | Description                                                                        |
+|--------------------------------------------------------------|------------------------------------------------------------------------------------|
+| `adjacent` ( `dep` \| `context` ) (`outgoing` \| `incoming`) | output immediately adjacent nodes for each node in the input set                   |
+| `assigned`                                                   | output all tasks assigned to each context in the input set, including subcontexts. |
+| `choose` [ `-m` \| `-s`]                                     | interactively select one or many nodes                                             |
+| `datum` *datum* `exists`                                     | keep only nodes for which the given datum is defined                               |
+| `is_actionable`                                              | keep only nodes considered actionable (omits WAITING nodes)                        |
+| `is_active`                                                  | keep only nodes considered active (includes status WAITING)                        |
+| `is_complete`                                                | keep only nodes considered completed                                               |
+| `is_context`                                                 | keep only nodes with at least one outgoing context edge.                           |
+| `is_new`                                                     | keep only nodes with status NEW                                                    |
+| `is_next`                                                    | keep only nodes considered *next actions*                                          |
+| `is_orphan`                                                  | keep only orphaned nodes                                                           |
+| `is_project`                                                 | keep only nodes with at least one subtask and at least one supertask.              |
+| `is_root`                                                    | keep only nodes which have no supertask.                                           |
+| `is_unassigned`                                              | keep only nodes not assigned to any context                                        |
+| `is_waiting`                                                 | keep only waiting in state WAITING                                                 |
+| `is_someday`                                                 | keep only nodes with status SOMEDAY                                                |
+| `projects`                                                   | output the supertassks of each node in the input set                               |
+| `subtasks`                                                   | output all substasks (including transitive) of each node in the input set.         |
+| `search`                                                     | keep nodes whose description matches *pattern*                                     |
 
 ## Consumers ##
 
