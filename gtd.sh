@@ -854,6 +854,7 @@ function graph_filter_is_valid {
     # of filters and consumers. Keep it in sync with these sections.
     case "$1" in
 	# filters
+	adjacent)          return 0;;
 	assigned)          return 0;;
 	choose)            return 0;;
 	# datum exists
@@ -1011,8 +1012,31 @@ function __last_query_prevent_save {
     touch "${DATA_DIR}/DO_NOT_SAVE_QUERY"
 }
 
+# select every actionable project root
+#
+# in a well-maintained database, these will correspond to one's core
+# values, or the "view from 30k ft" in GTD terminology.
+function values {
+    all | is_actionable is_root "$@"
+}
+
+# select every actionable project root whose parent is a value
+#
+# in a well-maintained database, these will correspond to long-term
+# on which one places the highest priority.
+function life_goals {
+    values adjacent dep outgoing | graph_filter_chain "$@"
+}
+
 
 ### Query Filters *************************************************************
+
+# output the nodes adjacent to each input node
+function adjacent {
+    while read id; do
+	graph_node_adjacent "${id}" "$@"
+    done
+}
 
 # insert tasks assigned to each incoming context id
 function assigned {
