@@ -46,6 +46,11 @@ function error {
     exit 1
 }
 
+# Return true if stdin is empty
+function empty {
+    xargs -rn 1 false
+}
+
 # Subclass of error for umimplemented features.
 function not_implemented {
     error "$1 is not implemented."
@@ -80,7 +85,6 @@ function database_init {
 	done
 	mkdir -p "${HIST_DIR}"
 	git init -q --bare "${HIST_DIR}"
-	graph_dot_py
     else
 	echo "Already initialized"
 	return 1
@@ -349,46 +353,26 @@ function graph_node_create {
 function graph_node_adjacent {
     database_ensure_init
 
-    # XXX: See `graph_dot_py` in the helpers section. I tried to write
-    # this all in bash, but bash can be *shockingly* slow, and it's
-    # not always clear why. The python script that replaces it is
-    # *orders of magnitude* faster, despite doing essentially the same
-    # thing, and even accounting for python interpreter overhead. We
-    # are shelling out after all. This realy starts to matter when
-    # your DB grows to several hundred nodes.
-    "${DATA_DIR}/graph.py" graph_node_adjacent "$@"
-    return "$?"
-
-    # XXX: The code below is the bash implementation at the point I
-    # gave. I leave it here so that it's clear what it is I was trying
-    # to do originally. Normally I don't like leaving unreachable code
-    # in place. But ultimately I want to remove the python hack, and I
-    # consider this a priority.
     local node="$1"
     local edge_set="$2"
     local direction="$3"
 
     case "${edge_set}" in
-	dep)     pushd "${DEPS_DIR}" > /dev/null;;
-	context) pushd "${CTXT_DIR}" > /dev/null;;
+	dep)     local -r dir="${DEPS_DIR}";;
+	context) local -r dir="${CTXT_DIR}";;
 	*)       error "${edge_set} is not one of dep | context"
     esac
 
     case "${direction}" in
-	incoming)
-	    local -a edges=( *:"${node}" )
-	    local linked="graph_edge_u";;
-	outgoing)
-	    local -a edges=( "${node}":* )
-	    local linked="graph_edge_v";;
-	*) error "${direction} is not one of incoming | outgoing";;
+	incoming) local -r pat="*:${node}" field="1";;
+	outgoing) local -r pat="${node}:*" field="2";;
+	*)        error "${direction} is not one of incoming | outgoing";;
     esac
 
-    popd > /dev/null
-    
-    for edge in ${edges}; do
-	"${linked}" "${edge}"
-    done
+    # would like to have used `filter` with `graph_edge_*` here but,
+    # this would be slower, and also it doesn't seem to work right for
+    # reasons I don't understand.
+    find "${dir}" -name "${pat}" -printf '%P\n' | cut -d ':' -f "${field}"
 }
 
 # Print the internal edge representation for nodes u and v to stdout.
@@ -650,12 +634,12 @@ function task_gloss {
 
 # returns true if a task is the root of a project subgraph
 function task_is_root {
-    test -z "$(graph_node_adjacent "$1" dep incoming)"
+    graph_node_adjacent "$1" dep incoming | empty
 }
 
 # returns true if a task is a leaf node
 function task_is_leaf {
-    test -z "$(graph_node_adjacent "$1" dep outgoing)"
+    graph_node_adjacent "$1" dep outgoing | empty
 }
 
 # returns true if a task is orphaned: is a root with no dependencies

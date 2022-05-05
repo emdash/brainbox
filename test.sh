@@ -210,6 +210,13 @@ function test_assert_false_true {
 # implementation detail of some other function, usually a recursion
 # helper. these do not need to be tested separately.
 
+function test_empty {
+    { echo -n ''         | gtd empty ; } || error "should be true"
+    { echo foo           | gtd empty ; } && error "should be false"
+    { echo -e 'foo\nbar' | gtd empty ; } && error "should be false"
+    true
+}
+
 function test_filter {
     local actual="$(printf 'yes\nno\nyes\n\yes\no' | gtd filter ../test.sh isYes)"
     local expected="$(printf 'yes\nyes\nyes')"
@@ -948,7 +955,8 @@ function run_all_tests {
     should_pass test_assert_true_true
     should_pass test_assert_false_false
     should_fail test_assert_false_true
-    
+
+    should_pass test_empty
     should_pass test_filter
     should_pass test_map
 
