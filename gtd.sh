@@ -219,7 +219,7 @@ function database_commit {
     # commit the changes. arguments interpreted as message.
     database_git commit -am "$*"
 
-    # if all the above succeeded, trigger update of any live queries.
+    # trigger update of any live queries.
     notify_follow
 }
 
@@ -946,6 +946,7 @@ function end_filter_chain {
     if test -n "$*"; then
 	error "${name} does not allow further filtering"
     fi
+    __last_query_maybe_save
 }
 
 # disables destructive operations in preview mode
@@ -953,6 +954,9 @@ function forbid_preview {
     if test -v GTD_PREVIEW_MODE; then
 	error "Disabled in preview mode."
     fi
+    
+    # we modified the database, so don't save this query.
+    __last_query_prevent_save
 }
 
 ## Query Commands *************************************************************
@@ -979,6 +983,32 @@ function from {
 
 # output all new tasks
 function inbox { all | is_new | graph_filter_chain "$@" ;}
+
+# output the last captured node
+function last_captured {
+    test -e "${DATA_DIR}/last_captured" && cat "${DATA_DIR}/last_captured"
+}
+
+# output the last read-only query that was executed.
+function last_query {
+    __last_query_prevent_save
+    if test -e "${DATA_DIR}/last_query"; then
+	$(cat "${DATA_DIR}/last_query") | graph_filter_chain "$@"
+    fi
+}
+
+function __last_query_maybe_save {
+    if test -e "${DATA_DIR}/DO_NOT_SAVE_QUERY"; then
+	rm "${DATA_DIR}/DO_NOT_SAVE_QUERY"
+    else
+	echo "${SAVED_ARGV[@]}" > "${DATA_DIR}/last_query"
+    fi
+}
+
+function __last_query_prevent_save {
+    touch "${DATA_DIR}/DO_NOT_SAVE_QUERY"
+}
+
 
 ### Query Filters *************************************************************
 
@@ -1165,6 +1195,9 @@ function into {
     while read id; do
 	touch "${bucket}/${id}"
     done
+
+    # into doesn't create a commit, so we need to explicitly notify.
+    notify_follow
 }
 
 # Print a one-line summary for each task id
@@ -1332,6 +1365,8 @@ function capture {
     fi
 
     database_commit "${SAVED_ARGV}"
+
+    echo "${node}" > "${DATA_DIR}/last_captured"
 }
 
 # Clobber the database
@@ -1492,6 +1527,7 @@ function follow {
 	# the line don't matter.
 	while true; do
 	    "$0" --preview ${query}
+	    printf '\0'
 	    read -r ignored < "${fifo}" || true
 	done
     fi

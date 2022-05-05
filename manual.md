@@ -97,7 +97,9 @@ most productivity tools are tree-based, if they go beyond flat lists
 at all. GtdGraph tames this complexity with a simple, post-fix query
 language.
 
-See [examples](#Examples) below.
+Queries are created by combining one or more *query commands*. See
+[examples](#Examples) below. Each *query command* is documented in
+[Appendix A](#appendix-a)
 
 ## Non-Query Commands
 
@@ -136,6 +138,10 @@ Initializes a new graph database.
 
 Allows you to build non-destructive queries with an interactive
 preview.
+
+### `last_query`
+
+Re-execute the the last read-only query.
 
 ### `link`
 
@@ -314,6 +320,11 @@ short or as long as you like. As meaningful or meaningless as you
 prefer. In the remainder of this document, bucket names are chosen to
 help elucidate examples.
 
+#### Buckets are Ephemeral.
+
+Buckets are intended for short-term use. Bucket contents are not
+stored in the database history, and are not affected by `undo` and
+`redo`. Avoid the long-term use of buckets.
 
 ### Using Saved Query Results ###
 
@@ -433,7 +444,35 @@ This will copy `mcguffin.svg` alongside your `post.md` file.
 This will navigate directly to the `post` subdirectory within your
 database. When you are finished, you can return to where you started
 with `popd`.
+
+### Watching the Database for Changes {#live-queries}
+
+GtdGraph supports *live queries*. These are automatically re-evaluated
+whenever the database updates.
+
+	gtd follow inbox summarize &
+	gtd capture "I added something to the database"
+	gtd undo
 	
+Notice the query is reprinted each time. This is particularly useful
+in conjunction with the `dot` query consumer:
+
+*key concepts* Live queries get re-run wach time the database changes.
+	
+Live queries are the exception to rule of "at most one `gtd` process
+operating on the database" at a time. This is is because they are
+synchronized to occur after a successful database commit, ensuring
+they always have a consistent view of the database.
+
+At the moment, only one live query is supported at any given time. So
+the per-database currenncy rule is:
+
+- at most one live query, plus
+- at most one additional command
+
+As this is confusing and complicated to explain, I aim to improve this
+situation in future releases.
+
 ### Visualizing your Projects
 
 While GtdGraph is primarily textual, you may prefer to examine a
@@ -453,36 +492,33 @@ The `dot` *query consumer* can be combined with *filters*, as with
 This will limit the output to subtasks of the "Kitchen Remodel"
 project.
 
-### Live Queries {#live-queries}
-
-GtdGraph supports *live queries*. These are automatically re-evaluated
-whenever the database updates.
-
-	gtd follow inbox summarize &
-	gtd capture "I added something to the database"
-	gtd undo
-	
-Notice the query is reprinted each time. This is particularly useful
-in conjunction with the `dot` query consumer:
+### Real-time Visualizations
 
 	gtd follow is_active dot all | dot -Tx11 &
 	gtd inbox choose into --replace target
 	gtd is_active choose into --replace source
 	gtd link subtask source target
 	
-Live queries are the exception to rule of "at most one `gtd` process
-operating on the database" at a time. This is is because they are
-synchronized to occur after a successful database commit, ensuring
-they always have a consistent view of the database.
+You can combine a live query with visualization to observe real-time
+changes to the database (or some subset of it).
 
-At the moment, only one live query is supported at any given time. So
-the per-database currenncy rule is:
+### Interactive Query Visualization
 
-- at most one live query, plus
-- at most one additional command
+You can combine *live queries* with *buckets* to interactively
+visualize the result of different queries:
 
-As this is confusing and complicated to explain, I aim to improve this
-situation in future releases.
+	gtd inbox into --replace live
+	gtd follow from live dot dep | dot -Tx11 &
+	
+This creates a live query which starts with the current contents of
+the inbox. To see your next-actions instead:
+
+	gtd is_next into --replace live
+
+*Note*: when using this method, you must manually refresh the bucket
+contents if subsequent changes to the database would change the query
+set. As this is confusing and complicated to explain, I aim to remedy
+this in future releases.
 
 ## Conclusion
 
@@ -492,7 +528,7 @@ what is possible, particularly when combined with shell programming.
 I hope you will give GtdGraph a try. Please feel free to submit bug
 reports, feedback, and feature requests via *GitHub Issues*.
 
-# Appendix A: Query Language Reference #
+# Appendix A: Query Language Reference # {#appendix-a}
 
 The basic syntax: [ *producer* [args...] ]  [ (*filter*
 [args...])... ] [ *consumer* [args ... ] ]
@@ -514,7 +550,8 @@ database.
 | `all`           | select all nodes. implied if the query begins with a filter   |
 | `from` *bucket* | select the node ids contained in  *bucket* (see also: `into`) |
 | `inbox`         | alias for `all is_new`                                        |
-
+| `last_captured` | output the id of the last captured node                       |
+	
 
 ## Filters ##
 
