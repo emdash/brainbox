@@ -122,8 +122,17 @@ undone.**
 
 ### `follow` *read-only query*
 
-Creates a *live query*. See [the example](#live-queries). The query
-must be not modify the database.
+Create or update a *live query*. See [the example](#live-queries). The
+query must be not modify the database.
+
+When first given, a job is spawned. Each time `follow_notify` is
+invoked, the given query will be re-evaluated.
+
+### `follow_notify`
+
+Force re-evaluation of the current *live query*. This is implicitly
+called after every successful database transaction, or `into` write
+query.
 
 ### `history`
 

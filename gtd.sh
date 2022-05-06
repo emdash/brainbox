@@ -155,7 +155,7 @@ function database_commit {
     database_git commit -am "$*"
 
     # trigger update of any live queries.
-    notify_follow
+    follow_notify
 }
 
 # list all the changes to the db from the beginning of time
@@ -193,7 +193,7 @@ function database_redo {
 	    rm "${DATA_DIR}/tmp"
 	fi
 	# if all the above succeeded, trigger update of any live queries.
-	notify_follow
+	follow_notify
     else
 	echo "nothing to redo"
     fi
@@ -211,13 +211,13 @@ function database_undo {
 
     database_current_commit >> "${DATA_DIR}/undo_stack"
     database_git reset --hard HEAD^
-    notify_follow
+    follow_notify
 }
 
 # revert any uncommitted changes
 function database_revert {
     database_git reset --hard HEAD
-    notify_follow
+    follow_notify
 }
 
 # generate random UUIDs.
@@ -1128,7 +1128,7 @@ function into {
     done
 
     # into doesn't create a commit, so we need to explicitly notify.
-    notify_follow
+    follow_notify
 }
 
 # Print a one-line summary for each task id
@@ -1441,14 +1441,20 @@ function __triage_buckets {
 
 ## Live Queries ***************************************************************
 
-# evaluate the given non-interactive query each time the database changes
+# evaluate read-only queries each time the database changes
+#
+# the arguments are interpreted as the *initial query*.
+#
+# only one live query is supported per database. if called multiple
+# times, the *initial query* is replaced.
 function follow {
     local -r query="$@"
     local -r fifo="${DATA_DIR}/follow"
 
-    # tbd: allow multiple live queries. just one will do for now.
+    echo "${query}" > "${DATA_DIR}/query"
+
     if test -e "${fifo}"; then
-	error "at most live query at is supported"
+	follow_notify
     else
 	trap __follow_exit EXIT
 	mkfifo "${fifo}"
@@ -1457,8 +1463,9 @@ function follow {
 	# fifo, re-running the query each time we do. the contents of
 	# the line don't matter.
 	while true; do
-	    "$0" --preview ${query}
-	    printf '\0'
+	    local query
+	    "$0" --preview $(cat "${DATA_DIR}/query")
+	    echo -ne '\0'
 	    read -r ignored < "${fifo}" || true
 	done
     fi
@@ -1469,7 +1476,7 @@ function __follow_exit {
 }
 
 # notify live queries to re-run after database commits.
-function notify_follow {
+function follow_notify {
     local -r fifo="${DATA_DIR}/follow"
     if test -e "${fifo}"; then
 	echo "notify" > "${fifo}"
