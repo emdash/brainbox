@@ -58,7 +58,8 @@ function not_implemented {
 
 # Filter each line of stdin according to the exit status of "$@"
 function filter {
-    while read input; do	
+    local input
+    while IFS="" read -r input; do	
 	if "$@" "${input}"; then
 	    echo "${input}"
 	fi
@@ -67,7 +68,8 @@ function filter {
 
 # Apply "$@" to each line of stdin.
 function map {
-    while read input; do
+    local input
+    while IFS="" read -r input; do
 	"$@" "${input}"
     done
 }
@@ -102,7 +104,8 @@ function database_ensure_init {
 # Clobber our GTD database; useful for tests.
 function database_clobber {
     echo "This action cannot be undone. Really delete database (yes/no)?"
-    read -e confirm
+    local confirm
+    read -re confirm
     case "${confirm}" in
 	yes) rm -rf "${DATA_DIR}";;
 	*)   echo "Not wiping database."; return 1;;
@@ -414,12 +417,13 @@ function graph_edge_list {
 function graph_edge_touches {
     local edge nodes
     local -A nodes
+    local edge
 
     for node in "$@"; do
 	nodes["${node}"]="1"
     done
 
-    while read -r edge; do
+    while IFS="" read -r edge; do
 	local u v
 	u="$(graph_edge_u "${edge}")"
 	v="$(graph_edge_v "${edge}")"
@@ -865,6 +869,7 @@ function tree_filter_chain {
 
 # forbid further chaining of filters
 function end_filter_chain {
+    local -r name="${FUNCNAME[1]}"
     if test -n "$*"; then
 	error "${name} does not allow further filtering"
     fi
@@ -933,14 +938,16 @@ function adjacent {
     local edges="$1"
     local direction="$2"
     shift 2
-    while read id; do
+    local id
+    while IFS="" read -r id; do
 	graph_node_adjacent "${id}" "${edges}" "${direction}"
     done | graph_filter_chain "$@"
 }
 
 # insert tasks assigned to each incoming context id
 function assigned {
-    while read id; do
+    local id
+    while IFS="" read -r id; do
 	graph_traverse "${id}" context outgoing
     done | graph_filter_chain "$@"
 }
@@ -1021,14 +1028,16 @@ function is_waiting {
 
 # insert parents of each incoming task id
 function projects {
-    while read id; do
+    local id
+    while IFS="" read -r id; do
 	graph_traverse "${id}" dep incoming
     done | graph_filter_chain "$@"
 }
 
 # insert subtasks of each incoming parent task id
 function subtasks {
-    while read id; do
+    local id
+    while IFS="" read -r id; do
 	graph_traverse "${id}" dep outgoing
     done | graph_filter_chain "$@"
 }
@@ -1038,7 +1047,8 @@ function subtasks {
 # tbd: make this more configurable
 function search {
     local pattern="$1"; shift
-    while read id; do
+    local id
+    while IFS="" read -r id; do
 	if graph_datum contents read "${id}" | grep -q "${pattern}" -; then
 	    echo "${id}"
 	fi
@@ -1122,8 +1132,9 @@ function into {
     esac
     
     mkdir -p "${bucket}"
+    local id
 
-    while read id; do
+    while IFS="" read -r id; do
 	touch "${bucket}/${id}"
     done
 
@@ -1153,7 +1164,8 @@ function tree {
 
     shift 2
 
-    while read root; do
+    local root
+    while IFS="" read -r root; do
 	graph_expand \
 	    --depth \
 	    "${root}" \
@@ -1178,7 +1190,8 @@ function indent {
 
     end_filter_chain "$@"
 
-    while read id depth; do
+    local depth
+    while IFS="" read -r id depth; do
 	if test ! -v no_meta; then
 	   printf "%7s" "$(task_state read "${id}")"
 	fi
@@ -1242,7 +1255,8 @@ function edit {
     end_filter_chain "$@"
 
     if test -v sequential; then
-	datum contents path | while read -r line; do
+	local line
+	datum contents path | while IFS="" read -r line; do
 	    # xargs -o: reopens stdin / stdout as tty in the child process.
 	    echo "${line}" | xargs -o "${EDITOR}"
 	done
@@ -1381,7 +1395,8 @@ function unlink {
 # interactively distribute items in the input set into buckets
 function triage {
     local -a choice
-    while read id; do
+    local id
+    while IFS="" read -r id; do
 	if choices=( $(__triage "${id}" "$@" ) ); then
 	    for choice in "${choices[@]}"; do
 		echo "triaging $(task_gloss "${id}") as ${choice}"
@@ -1448,10 +1463,10 @@ function __triage_buckets {
 # only one live query is supported per database. if called multiple
 # times, the *initial query* is replaced.
 function follow {
-    local -r query="$@"
+    local -r initial_query="$@"
     local -r fifo="${DATA_DIR}/follow"
 
-    echo "${query}" > "${DATA_DIR}/query"
+    echo "${initial_query}" > "${DATA_DIR}/query"
 
     if test -e "${fifo}"; then
 	follow_notify
