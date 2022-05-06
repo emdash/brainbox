@@ -647,6 +647,11 @@ function task_is_orphan {
     task_is_root "$1" && task_is_leaf "$1"
 }
 
+# returns true of the project is in state PERSIST
+function task_is_persistent {
+    test "$(task_state read "$1")" = "PERSIST"
+}
+
 # returns true if a task is a project
 function task_is_project {
     ! { task_is_root "$1" || task_is_leaf "$1" ; }
@@ -781,6 +786,7 @@ function graph_filter_is_valid {
 	is_new)            return 0;;
 	is_next)           return 0;;
 	is_orphan)         return 0;;
+	is_persistent)     return 0;;
 	is_project)        return 0;;
 	is_root)           return 0;;
 	is_unassigned)     return 0;;
@@ -986,6 +992,11 @@ function is_next {
 # Keep only tasks not associated with any other tasks
 function is_orphan {
     filter task_is_orphan | graph_filter_chain "$@"
+}
+
+# Keep only tasks in state PERSIST
+function is_persistent {
+    filter task_is_persistent | graph_filter_chain "$@"
 }
 
 # Keep only tasks which are considered projects

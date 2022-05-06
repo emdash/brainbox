@@ -564,6 +564,7 @@ database.
 | `is_new`                                                     | keep only nodes with status NEW                                                    |
 | `is_next`                                                    | keep only nodes considered *next actions*                                          |
 | `is_orphan`                                                  | keep only orphaned nodes                                                           |
+| `is_persistent`                                              | keep only nodes with status PERSIST                                                |
 | `is_project`                                                 | keep only nodes with at least one subtask and at least one supertask.              |
 | `is_root`                                                    | keep only nodes which have no supertask.                                           |
 | `is_unassigned`                                              | keep only nodes not assigned to any context                                        |
