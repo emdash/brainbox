@@ -1092,30 +1092,81 @@ function __datum_mkdir_cp {
 
 # dotfile export for graphviz
 function dot {
-    case "$1" in
-	dep|context|all) local edge_set="$1"; shift;;
-	*) error "$1 not one of dep | context";;
-    esac
-
     end_filter_chain "$@"
 
+    local -A nodes
     echo "digraph {"
-
     echo "rankdir=LR;"
 
-    declare -A nodes
-
-    # output an entry for each node
-    while read id; do
-	printf "\"${id}\" [label=\"%q\", shape=\"box\",width=1];\n" "$(task_gloss "${id}")"
+    local id
+    while IFS="" read -r id; do
+	__dot_node "${id}"
 	nodes["$id"]=""
     done
 
-    graph_edge_list "${edge_set}" | graph_edge_touches "${!nodes[@]}" | while read edge; do
-	echo "\"$(graph_edge_u "${edge}")\" -> \"$(graph_edge_v "${edge}")\";"
-    done
+    __dot_edges dep     solid
+    __dot_edges context dashed
 
     echo "}"
+}
+
+function __dot_quote {
+    local value="$*"
+    printf '"'
+    echo -n "${value}" | tr '"' "'"
+    printf '"'
+}
+
+function __dot_attrs {
+    printf '['
+    while test -n "$*"; do
+	local id="$1" value="$2"; shift 2
+	printf '%s=%s' "${id}" "$(__dot_quote "${value}")"
+	if test -n "$*"; then
+	   printf ", "
+	fi
+    done
+    printf ']'
+}
+
+function __dot_node {
+    case "$(task_state read "$1")" in
+	NEW)     local -r fill="deeppink" label="black"  ;;
+	TODO)    local -r fill="grey90"   label="black"  ;;
+	DONE)    local -r fill="grey95"   label="grey76" ;;
+	DROPPED) local -r fill="grey95"   label="grey76" ;;
+	WAITING) local -r fill="red"      label="black"  ;;
+	SOMEDAY) local -r fill="grey95"   label="black"  ;;
+	PERSIST) local -r fill="green"    label="black"  ;;
+    esac
+
+    __dot_quote "$1"
+    printf ' '
+    __dot_attrs "label"     "$(task_gloss "${id}")" \
+		"style"     "filled"                \
+		"shape"     "box"                   \
+		"fillcolor" "${fill}"               \
+		"fontcolor" "${label}"
+    printf ';\n'
+}
+
+function __dot_edges {
+    local edge
+    graph_edge_list "$1"                    \
+	| graph_edge_touches "${!nodes[@]}" \
+	| while IFS="" read -r edge
+    do
+	__dot_edge "$2"
+    done
+}
+
+function __dot_edge {
+    __dot_quote "$(graph_edge_u "${edge}")"
+    printf ' -> '
+    __dot_quote "$(graph_edge_v "${edge}")"
+    printf ' '
+    __dot_attrs "style" "$1"
+    printf ';\n'
 }
 
 # Add node ids to the named bucket
@@ -1475,12 +1526,20 @@ function follow {
 	mkfifo "${fifo}"
 
 	# the protocol is really simple. we just read a line from the
-	# fifo, re-running the query each time we do. the contents of
-	# the line don't matter.
+	# fifo, re-running the query each time
 	while true; do
-	    local query
-	    "$0" --preview $(cat "${DATA_DIR}/query")
+	    local ignored
+	    # read the query into an array
+	    local -a query
+	    read -ra query < "${DATA_DIR}/query"
+
+	    # run the query
+	    "$0" --preview "${query[@]}"
+
+	    # output the record delimiter
 	    echo -ne '\0'
+
+	    # wait for the next notification
 	    read -r ignored < "${fifo}" || true
 	done
     fi
@@ -1495,6 +1554,22 @@ function follow_notify {
     local -r fifo="${DATA_DIR}/follow"
     if test -e "${fifo}"; then
 	echo "notify" > "${fifo}"
+    fi
+}
+
+# short for follow *query* *filter*... dot all | xdot --streaming-mode
+#
+# --streaming-mode is a customization I added, it's not available on
+# --the official xdot. PR submitted
+function visualize {
+    if test -z "$*"; then
+	error "An initial query is required"
+    else
+	if test -e "${DATA_DIR}/follow"; then
+	    follow "$@" dot
+	else
+	    follow "$@" dot | xdot --streaming-mode
+	fi
     fi
 }
 

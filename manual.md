@@ -499,7 +499,7 @@ project.
 
 ### Real-time Visualizations
 
-	gtd follow is_active dot all | dot -Tx11 &
+	gtd follow is_active dot | dot -Tx11 &
 	gtd inbox choose into target
 	gtd is_active choose into source
 	gtd link subtask source target
@@ -513,7 +513,7 @@ You can combine *live queries* with *buckets* to interactively
 visualize the result of different queries:
 
 	gtd inbox into live
-	gtd follow from live dot dep | dot -Tx11 &
+	gtd follow from live dot | dot -Tx11 &
 	
 This creates a live query which starts with the current contents of
 the inbox. To see your next-actions instead:
