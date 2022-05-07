@@ -478,52 +478,75 @@ the per-database currenncy rule is:
 As this is confusing and complicated to explain, I aim to improve this
 situation in future releases.
 
-### Visualizing your Projects
+### Database Visualization
 
 While GtdGraph is primarily textual, you may prefer to examine a
-visual representation of your database from time to time.
+visual representation of your database from time to time. The `dot`
+*query consumer* converts the *input set* into the *dot* language
+understood by graphviz:
 
-	gtd dot | dot -Tx11
+	gtd dot
 	
-This will produce a visualization you can view interactively. Consult
-the [graphviz](https://graphviz.org/) documentation for more on `dot`
-and related commands.
+If you have graphviz installed, can view this directly:
+	
+	gtd dot | dot -Tx11
 
 The `dot` *query consumer* can be combined with *filters*, as with
 `summarize`. For example:
 
-	gtd search "Kitchen Remodel" subtasks dot
+	gtd search "Kitchen Remodel" subtasks dot | dot -Tx11
 	
 This will limit the output to subtasks of the "Kitchen Remodel"
 project.
 
+I prefer [`xdot.py`](link:tbd) for visualizations:
+
+	gtd search "Kitchen Remodel" subtasks dot | xdot -
+
 ### Real-time Visualizations
 
-	gtd follow is_active dot | dot -Tx11 &
-	gtd inbox choose into target
-	gtd is_active choose into source
-	gtd link subtask source target
-	
-You can combine a live query with visualization to observe real-time
-changes to the database (or some subset of it).
-
-### Interactive Query Visualization
-
-You can combine *live queries* with *buckets* to interactively
-visualize the result of different queries:
+If you have [my version of `xdot`](link:tbd), which supports streaming
+input, you can use the `visualize` command instead.
 
 	gtd inbox into live
-	gtd follow from live dot | dot -Tx11 &
+	gtd visualize from live
 	
-This creates a live query which starts with the current contents of
-the inbox. To see your next-actions instead:
+This creates a *live query* which starts with the current contents of
+the inbox. To see your next-actions instead. *Note*: The `visualize`
+prefix implies the `dot` query consumer, and so the query may not
+contain any query consumers.
+
+Try changing one of the nodes:
+	
+	gtd inbox choose activate
+	
+You will see the color of the item change. You can change the set of
+nodes visualized in one of two ways: either by replacing the bucket
+contents...
 
 	gtd is_next into live
+	
+...or by specifying a new query directly.
 
-*Note*: when using this method, you must manually refresh the bucket
-contents if subsequent changes to the database would change the query
-set. As this is confusing and complicated to explain, I aim to remedy
-this in future releases.
+	gtd visualize is_next
+	
+The choice depends on:
+
+- whether you want nodes which no longer satisfy the query to remain visible
+- how patient you are waiting for the query to be processed.
+
+Node colors:
+
+- light grey: active nodes
+- muted grey: inactive 
+- green: persistent nodes
+- hot pink: inbox nodes
+- off-wite: deferred nodes
+
+Edge Styles:
+
+- solid: dependency
+- dashed: context
 
 ## Conclusion
 
