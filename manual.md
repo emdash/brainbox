@@ -90,6 +90,9 @@ its documentation for details on configuration and use.
 That is all you need to get started. When your task list has grown to
 the point where it no longer fits on one screen, read on.
 
+**TBD**: include navigation examples
+**TBD**: show how `cur` affects behavior of `capture`
+
 ## Queries ##
 
 Graphs are more complex to manage than trees. I suspect this is why
@@ -106,19 +109,29 @@ Queries are created by combining one or more *query commands*. See
 There is a short list of non-query commands whose naming should be
 self-explanatory.
 
+### `add` [*tasks* [*subtasks*] ]
+
+Links subtasks to supertasks.  Where *tasks* and *subtasks* are
+buckets, defaulting to `source` and `target` respectively
+
+### `assign` [*tasks* [*contexts*] ]
+
+Links tasks to contexts, where *tasks* and *contexts* are buckets,
+defaulting to `target` and `source` respectively. Note this order is
+swapped from `add`, because context assignment is an *incoming* edge.
+
 ### `buckets`
 
 List all known buckets.
-
-### `capture`
-
-Create a node and place it in the inbox, as described
-[above](#Overview).
 
 ### `clobber`
 
 Deletes the database forever, with confirmation. This **cannot be
 undone.**
+
+### `down`
+
+Move to one of current node's children
 
 ### `follow` *read-only query*
 
@@ -139,6 +152,10 @@ query.
 List the history and commit id of each command which has altered the
 database.
 
+### `home` 
+
+Unset the current node.
+
 ### `init`
 
 Initializes a new graph database.
@@ -153,9 +170,20 @@ preview.
 Create *task dependencies* and *context assignments*. See the
 [example](#link-example). See `unlink` below.
 
+### `remove` [*source* [*target*] ]
+
+Unlinks subtasks from supertasks.  Where *source* and *target* are
+buckets, defaulting to `source` and `target` respectively
+
 ### `redo`
 
 Restores the last undone operation. See `undo` below.
+
+### `unassign` [*tasks* [*contexts*] ]
+
+Unlinks tasks from contexts, where *tasks* and *contexts* are buckets,
+defaulting to `target` and `source` respectively. Note this order is
+swapped from `add`, because context assignment is an *incoming* edge.
 
 ### `unlink`
 
@@ -165,6 +193,10 @@ above.
 ### `undo`
 
 Undoes the last change to the database. See `redo` above.
+
+### `up`
+
+Move to one of current node's parents.
 
 ## Examples {#Examples}
 
@@ -176,19 +208,11 @@ You can try the following examples on a sample database:
 
 ### Viewing your *Inbox* ###
 
-	gtd inbox summarize
-	
+	gtd inbox summarize	
  
 ### Triaging your Inbox
 
-	gtd inbox triage
-
-This will interactively distribute the input set into buckets. If no
-buckets exist, you can create them on the fly, or give them as
-additional arguments.
-
-**TBD** Verify the behavior of `triage` with buckets given. I have not
-tried it yet.
+**TBD**: rework this example
 
 ### Reviewing your *Next Actions* ###
 
@@ -353,20 +377,16 @@ will appear in unfiltered output.
 
 ### Assigning tasks and contexts. {#link-example}
 
-	gtd choose into project
-	gtd choose into tasks
-	gtd link task project tasks
+	gtd choose into source
+	gtd choose into target
+	gtd add
 	
 Choose a *project*. Then choose one or more *subtasks*. Finally, add
 the *subtasks* tasks to the *project*.
 
-Here, `project` is a *bucket*, not a *query consumer*. This is fine,
-because *into* is a *query consumer* with a required argument, and so
-there is no abiguity.
-
 	gtd inbox search milk into shopping
-	gtd search "Grocery Store" into context
-	gtd link shopping context
+	gtd search "Grocery Store" into target
+	gtd assign shopping
 
 Link the task labeled `"buy milk"` to the context labeled `"Grocery
 Store"`.
@@ -394,9 +414,9 @@ This will show all the *Errands* that can be done right now. Note that
 this does not include the *Grocery Store* items we added in the
 previous section. Let's fix that:
 
-	gtd search "Grocery Store" into sub
-	gtd search Errands into super
-	gtd link context sub super
+	gtd search "Grocery Store" into target
+	gtd search Errands into source
+	gtd link context
 	
 Find the context named "Grocery Store", and add it as a subcontext of
 "Errands".
@@ -579,6 +599,7 @@ database.
 | `from` *bucket* | select the node ids contained in  *bucket* (see also: `into`) |
 | `inbox`         | alias for `all is_new`                                        |
 | `last_captured` | output the id of the last captured node                       |
+| `null`          | output an empty set                                           |
 	
 
 ## Filters ##
@@ -587,6 +608,7 @@ database.
 |--------------------------------------------------------------|------------------------------------------------------------------------------------|
 | `adjacent` ( `dep` \| `context` ) (`outgoing` \| `incoming`) | output immediately adjacent nodes for each node in the input set                   |
 | `assigned`                                                   | output all tasks assigned to each context in the input set, including subcontexts. |
+| `children`                                                   | output immediate children of input set                                             |
 | `choose` [ `-m` \| `-s`]                                     | interactively select one or many nodes                                             |
 | `datum` *datum* `exists`                                     | keep only nodes for which the given datum is defined                               |
 | `is_actionable`                                              | keep only nodes considered actionable (omits WAITING nodes)                        |
@@ -602,6 +624,7 @@ database.
 | `is_unassigned`                                              | keep only nodes not assigned to any context                                        |
 | `is_waiting`                                                 | keep only waiting in state WAITING                                                 |
 | `is_someday`                                                 | keep only nodes with status SOMEDAY                                                |
+| `parents`                                                    | output immediate parents of input set                                              |
 | `projects`                                                   | output the supertassks of each node in the input set                               |
 | `subtasks`                                                   | output all substasks (including transitive) of each node in the input set.         |
 | `search`                                                     | keep nodes whose description matches *pattern*                                     |
@@ -610,30 +633,34 @@ database.
 
 Read-only Consumers:
 
-| Command                                                | Description                                                                     |
-|--------------------------------------------------------|---------------------------------------------------------------------------------|
-| `datum` *datum* `read`                                 | print the specified datum for each node in the input set.                       |
-| `datum` *datum* `path`                                 | print the path to the specified datum for each node in the input set.           |
-| `dot`                                                  | convert the subgraph covered by the input set into graphviz syntax              |
-| `into` [`--keep`] *bucket*                             | save nodes into named bucket, optionally keeping existing contents (see `from`) |
-| `project`                                              | same as `tree dep outgoing`                                                     |
-| `summarize`                                            | print a short summary of each node in the input set.                            |
-| `tree` (`dep` \| `context`) (`incoming` \| `outgoing`) | produces the *tree expansion* of each node in the *input set*                   |
-| `indent`                                               | formats the output as an indented list. only used with `tree`                   |
+| Command                                                  | Description                                                           |
+|----------------------------------------------------------|-----------------------------------------------------------------------|
+| `datum` *datum* `read`                                   | print the specified datum for each node in the input set.             |
+| `datum` *datum* `path`                                   | print the path to the specified datum for each node in the input set. |
+| `dot`                                                    | convert the subgraph covered by the input set into graphviz syntax    |
+| `into` *flags* *bucket*                                  | update the named bucket, according to *flags*                         |
+| `project`                                                | same as `tree dep outgoing`                                           |
+| `summarize`                                              | print a short summary of each node in the input set.                  |
+| `tree` (`dep` \| `context`) (`incoming` \| `outgoing`)   | produces the *tree expansion* of each node in the *input set*         |
+| `indent`                                                 | formats the output as an indented list. only used with `tree`         |
+
+Where *flags* is: `--union` \|`--subtract` \| `--intersect` \| `--noempty`
 
 Updating Consumers:
 
-| Command                                         | Description                                                      |
-|-------------------------------------------------|------------------------------------------------------------------|
-| `activate`                                      | mark tasks as TODO                                               |
-| `complete`                                      | mark tasks as COMPLETED                                          |
-| `datum` *datum* `mkdir`                         | create the specified datum directory                             |
-| `datum` *datum* `cp` [ *flags*...] [ *path*...] | copy given paths into datum directory                            |
-| `defer`                                         | mark tasks as SOMEDAY                                            |
-| `drop`                                          | mark tasks as DROPPED                                            |
-| `edit` [ `--sequential` ]                       | invoke `${EDITOR}` on each node, simultaneously or sequentially. |
-| `persist`                                       | mark tasks as PERSIST                                            |
-| `triage` [ bucket... ]                          | interactively distribute tasks into buckets.                     |
+| Command                                         | Description                                                                   |
+|-------------------------------------------------|-------------------------------------------------------------------------------|
+| `capture`                                       | captures a new thought. if `cur` is nonempty, new node becomes subtask of cur |
+| `activate`                                      | mark tasks as TODO                                                            |
+| `complete`                                      | mark tasks as COMPLETED                                                       |
+| `datum` *datum* `mkdir`                         | create the specified datum directory                                          |
+| `datum` *datum* `cp` [ *flags*...] [ *path*...] | copy given paths into datum directory                                         |
+| `defer`                                         | mark tasks as SOMEDAY                                                         |
+| `drop`                                          | mark tasks as DROPPED                                                         |
+| `edit` [ `--sequential` ]                       | invoke `${EDITOR}` on each node, simultaneously or sequentially.              |
+| `goto`                                          | choose a single node from the input to become the new current node            |
+| `persist`                                       | mark tasks as PERSIST                                                         |
+| `triage` [ bucket... ]                          | interactively distribute tasks into buckets.                                  |
 
 # Appendix B: Recovering from Database Corruption
 

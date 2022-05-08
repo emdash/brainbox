@@ -712,40 +712,6 @@ function task_activate {
     echo "TODO" | task_state write "$1"
 }
 
-# Add a dependency to an existing task
-#
-# $1: the existing task
-# $2: the dependency
-function task_add_subtask {
-    task_auto_triage "$2"
-    graph_edge_create "$1" "$2" dep
-}
-
-# Assign task to the given context.
-#
-# Note that this creates an edge in the opposite direction to
-# add_subtask: from the context to the node.
-#
-# $1: the existing task
-# $2: the context
-function task_assign {
-    task_auto_triage "$1"
-    graph_edge_create "$2" "$1" context
-}
-
-# Remove the dependency between task and subtask
-#
-# $1: the existing task
-# $2: the dependency
-function task_remove_subtask {
-    graph_edge_delete "$1" "$2" dep
-}
-
-# Remove the dependency between task and context
-function task_unassign {
-    graph_edge_delete "$2" "$1" context
-}
-
 # mark the given task as dropped
 function task_drop {
     echo "DROPPED" | task_state write "$1"
@@ -772,55 +738,72 @@ function task_persist {
 
 ## Helpers ********************************************************************
 
-# returns true if "$@" is recognized as a valid filter keyword
-function graph_filter_is_valid {
-    # XXX: this table has to be maintained manually. It is the union
-    # of filters and consumers. Keep it in sync with these sections.
+function graph_filter_default {
     case "$1" in
-	# filters
-	adjacent)          return 0;;
-	assigned)          return 0;;
-	choose)            return 0;;
+	adjacent)          echo "from" "cur";;
+	assigned)          echo "from" "cur";;
+	children)          echo "from" "cur";;
+	choose)            echo "all";;
 	# datum exists
-	datum)             return 0;;
-	is_actionable)     return 0;;
-	is_active)         return 0;;
-	is_complete)       return 0;;
-	is_context)        return 0;;
-	is_new)            return 0;;
-	is_next)           return 0;;
-	is_orphan)         return 0;;
-	is_persistent)     return 0;;
-	is_project)        return 0;;
-	is_root)           return 0;;
-	is_unassigned)     return 0;;
-	is_waiting)        return 0;;
-	persist)           return 0;;
-	project)           return 0;;
-	projects)          return 0;;
-	subtasks)          return 0;;
-	search)            return 0;;
-	someday)           return 0;;
-	# nondestructive consumers
+	datum)             echo "from" "target";;
+	is_actionable)     echo "all";;
+	is_active)         echo "all";;
+	is_complete)       echo "all";;
+	is_context)        echo "all";;
+	is_new)            echo "all";;
+	is_next)           echo "all";;
+	is_orphan)         echo "all";;
+	is_persistent)     echo "all";;
+	is_project)        echo "all";;
+	is_root)           echo "all";;
+	is_unassigned)     echo "all";;
+	is_waiting)        echo "all";;
+	parents)           echo "from" "cur";;
+	project)           echo "from" "cur";;
+	projects)          echo "from" "cur";;
+	subtasks)          echo "from" "cur";;
+	search)            echo "all";;
+	someday)           echo "from" "target";;
+	# formatters
 	# datum read
 	# datum path
-	dot)               return 0;;
-	into)              return 0;;
-	summarize)         return 0;;
-	tree)              return 0;;
-	triage)            return 0;;
-	# destructive consumers
-	activate)          return 0;;
-	complete)          return 0;;
+	dot)               echo "all";;
+	into)              echo "all" "choose";;
+	summarize)         echo "all";;
+	tree)              echo "from" "cur";;
+	# updates
+	activate)          echo "from" "target";;
+	capture)           echo "from" "cur";;
+	complete)          echo "from" "target";;
 	# datum write
 	# datum append
 	# datum mkdir
 	# datum cp
-	defer)             return 0;;
-	drop)              return 0;;
-	edit)              return 0;;
-	*)                 return 1;;
+	defer)             echo "from" "target";;
+	drop)              echo "from" "target";;
+	edit)              echo "from" "cur";;
+	goto)              echo "all";;
+	persist)           echo "from" "target";;
     esac
+}
+
+# returns true if "$@" is recognized as a valid filter keyword
+function graph_filter_is_valid {
+    test -n "$(graph_filter_default "$1")"
+}
+
+# execute a query from the given arguments
+function graph_filter_begin {
+    local default
+
+    if graph_filter_is_valid "$1"; then
+	$(graph_filter_default "$1") "$@"
+    elif test "$1" = "-"; then
+	shift
+	graph_filter_chain "$@"
+    else
+	"$@"
+    fi
 }
 
 # returns true if "$@" is recognized as a valid filter keyword
@@ -898,9 +881,7 @@ function all { graph_node_list | graph_filter_chain "$@" ; }
 # output tasks from named bucket
 function from {
     local bucket="${BUCKET_DIR}/$1"; shift;
-
-    test -e "${bucket}" || error "No bucket named ${bucket}";
-
+    test -e "${bucket}" || mkdir -p "${bucket}"
     ls "${bucket}" | graph_filter_chain "$@"
 }
 
@@ -912,6 +893,11 @@ function last_captured {
     if test -e "${DATA_DIR}/last_captured"; then
 	cat "${DATA_DIR}/last_captured"
     fi | graph_filter_chain "$@"
+}
+
+# output an empty set
+function null {
+    : | graph_filter_chain "$@"
 }
 
 # select every actionable project root
@@ -952,6 +938,11 @@ function assigned {
     done | graph_filter_chain "$@"
 }
 
+# immediate subtasks of the input set
+function children {
+    adjacent dep outgoing | graph_filter_chain "$@"
+}
+
 # keep only the node selected by the user
 function choose {
     # can't preview because this also uses FZF.
@@ -962,8 +953,8 @@ function choose {
        -s|--single) local opt=""  ; shift;;
        *)           local opt="-m"       ;;
     esac
-				  
-    summarize | fzf "${opt}" | cut -d ' ' -f 1 | graph_filter_chain "$@"
+
+    summarize | fzf ${opt} | cut -d ' ' -f 1 | graph_filter_chain "$@"
 }
 
 # Keep only actionable tasks.
@@ -1026,6 +1017,11 @@ function is_waiting {
     filter task_is_waiting | graph_filter_chain "$@"
 }
 
+# immediate supertasks of input set
+function parents {
+    adjacent dep incoming | graph_filter_chain "$@"
+}
+
 # insert parents of each incoming task id
 function projects {
     local id
@@ -1055,7 +1051,41 @@ function search {
     done | graph_filter_chain "$@"
 }
 
-## Non-destructive Query Consumers ********************************************
+## Formatters *****************************************************************
+
+# Create a new task.
+#
+# If arguments are given, they are written as the node contents.
+#
+# If no arguments are given:
+# - and stdin is a tty, invokes $EDITOR to create the node contents.
+# - otherwise, stdin is written to the contents file.
+function capture {
+    forbid_preview
+
+    local node="$(graph_node_create)"
+    echo "NEW" | graph_datum state write "${node}"
+
+    # no need to call "end filter chain", as we consume all arguments.
+    if test -z "$*"; then
+	if tty > /dev/null; then
+	    graph_datum contents edit "${node}"
+	else
+	    echo "from stdin"
+	    graph_datum contents write "${node}"
+	fi
+    else
+	echo "$*" | graph_datum contents write "${node}"
+    fi
+
+    database_commit "${SAVED_ARGV}"
+
+    echo "${node}" > "${DATA_DIR}/last_captured"
+
+    while IFS="" read -r parent; do
+	graph_edge_create "${parent}" "${node}" dep
+    done
+}
 
 # runs graph_datum $1 $2 ${id} for each id
 function datum {
@@ -1174,23 +1204,59 @@ function __dot_edge {
 # By default, the new contents replace the old contents. Give `--union`
 # is this is undesired.
 function into {
+    # copy stdin into demp dir
+    local temp="${DATA_DIR}/temp"
+    test -e "${temp}" && rm -r "${temp}"
+    mkdir -p "${temp}"
+    while IFS="" read -r id; do
+	touch "${temp}/${id}"
+    done
+    
     case "$1" in
 	--union)
-	    local bucket="${BUCKET_DIR}/$2";;
+	    __into_copy "$2"
+	    ;;
+	--subtract)
+	    ls "${temp}" | while read -r id; do
+		if test -e "${BUCKET_DIR}/$2/${id}"; then
+		    rm -r "${BUCKET_DIR}/$2/${id}"
+		fi
+	    done
+	    ;;
+	--intersect)
+	    ls "${BUCKET_DIR}/$2" | while read -r id; do
+		if test ! -e "${temp}/${id}"; then
+		    rm -r "${BUCKET_DIR}/$2/${id}"
+		fi
+	    done
+	    ;;
+	--noempty)
+	    if test -s "${temp}"; then
+		__into_clear "$2"
+		__into_copy "$2"
+	    else
+		return 1
+	    fi
+	    ;;
 	*)
-	    local bucket="${BUCKET_DIR}/$1";
-	    rm -rf "${bucket}";;
+	    __into_clear "$1"
+	    __into_copy "$1"
+	    ;;
     esac
-    
-    mkdir -p "${bucket}"
-    local id
-
-    while IFS="" read -r id; do
-	touch "${bucket}/${id}"
-    done
-
-    # into doesn't create a commit, so we need to explicitly notify.
     follow_notify
+}
+
+function __into_clear {
+    if test -e "${BUCKET_DIR}/$1/${id}"; then
+	rm -r "${BUCKET_DIR}/$1/${id}"
+    fi
+    mkdir -p "${BUCKET_DIR}/$1/${id}"
+}
+
+function __into_copy {
+    ls "${temp}" | while read -r id; do
+	touch "${BUCKET_DIR}/$1/${id}"
+    done
 }
 
 # Print a one-line summary for each task id
@@ -1261,7 +1327,7 @@ function project {
     tree dep outgoing indent "$@"
 }
 
-## Destructive Query Commands *************************************************
+## Updates ********************************************************************
 
 # Reactivate each task id
 function activate {
@@ -1279,19 +1345,19 @@ function complete {
     database_commit "${SAVED_ARGV}"
 }
 
-# Drop each task id
-function drop {
-    forbid_preview
-    end_filter_chain "$@"
-    map task_drop
-    database_commit "${SAVED_ARGV}"
-}
-
 # Defer each task id
 function defer {
     forbid_preview
     end_filter_chain "$@"
     map task_defer
+    database_commit "${SAVED_ARGV}"
+}
+
+# Drop each task id
+function drop {
+    forbid_preview
+    end_filter_chain "$@"
+    map task_drop
     database_commit "${SAVED_ARGV}"
 }
 
@@ -1320,6 +1386,13 @@ function edit {
     database_commit "${SAVED_ARGV}"
 }
 
+# set the current node
+function goto {
+    forbid_preview
+    end_filter_chain "$@"
+    choose --single into --noempty cur
+}
+
 # persist each task
 function persist {
     forbid_preview
@@ -1331,44 +1404,40 @@ function persist {
 
 # Non-query commands **********************************************************
 
+# add subtasks to target
+function add {
+    link subtask "$@"
+}
+
+# assign tasks to contexts
+function assign {
+    case "$#" in
+	1) link context target "$1";;
+	2) link context "$2" "$1";;
+	*) link context target source;;
+    esac
+}
+
 # List all known buckets
 function buckets {
     ls "${BUCKET_DIR}"
-}
-
-# Create a new task.
-#
-# If arguments are given, they are written as the node contents.
-#
-# If no arguments are given:
-# - and stdin is a tty, invokes $EDITOR to create the node contents.
-# - otherwise, stdin is written to the contents file.
-function capture {
-    forbid_preview
-    local node="$(graph_node_create)"
-
-    echo "NEW" | graph_datum state write "${node}"
-
-    if test -z "$*"; then
-	if tty > /dev/null; then
-	    graph_datum contents edit "${node}"
-	else
-	    echo "from stdin"
-	    graph_datum contents write "${node}"
-	fi
-    else
-	echo "$*" | graph_datum contents write "${node}"
-    fi
-
-    database_commit "${SAVED_ARGV}"
-
-    echo "${node}" > "${DATA_DIR}/last_captured"
 }
 
 # Clobber the database
 function clobber {
     forbid_preview
     database_clobber;
+}
+
+# move downward from cur
+function down {
+    forbid_preview
+    graph_filter_begin children goto
+}
+
+# unset the current node
+function home {
+    graph_filter_begin null into cur
 }
 
 # Initialize the database
@@ -1404,21 +1473,35 @@ function link {
     forbid_preview
 
     case "$1" in
-	subtask) local link="task_add_subtask";;
-	context) local link="task_assign";;
+	subtask) local edge_set="dep";;
+	context) local edge_set="context";;
 	*)       error "Not one of subtask | context";;
     esac
 
-    local from_ids="$(from "$2")"
-    local into_ids="$(from "$3")"
+    local from_ids="$(from "${2:-source}")"
+    local into_ids="$(from "${3:-target}")"
 
     for u in ${from_ids}; do
 	for v in ${into_ids}; do
-	    "${link}" "${u}" "${v}" "${edge_set}"
+	    graph_edge_create "${u}" "${v}" "${edge_set}"
 	done
     done
 
     database_commit "${SAVED_ARGV}"
+}
+
+# remove subtasks
+function remove {
+    unlink subtask "$@"
+}
+
+# unassign tasks and contexts
+function unassign {
+    case "$#" in
+	1) unlink context target "$1";;
+	2) unlink context "$2" "$1";;
+	*) unlink context target source;;
+    esac
 }
 
 # remove edges between sets of nodes in different buckets
@@ -1426,83 +1509,28 @@ function unlink {
     forbid_preview
 
     case "$1" in
-	subtask) local link="task_remove_subtask";;
-	context) local link="task_unassign";;
+	subtask) local edge_set="dep";;
+	context) local edge_set="context";;
 	*)       error "Not one of subtask | context";;
     esac
 
-    local from_ids="$(from "$2")"
-    local into_ids="$(from "$3")"
+
+    local from_ids="$(from "${2:-source}")"
+    local into_ids="$(from "${3:-target}")"
 
     for u in ${from_ids}; do
 	for v in ${into_ids}; do
-	    "${link}" "${u}" "${v}" "${edge_set}"
+	    graph_edge_delete "${u}" "${v}" "${edge_set}"
 	done
     done
 
     database_commit "${SAVED_ARGV}"
 }
 
-# interactively distribute items in the input set into buckets
-function triage {
-    local -a choice
-    local id
-    while IFS="" read -r id; do
-	if choices=( $(__triage "${id}" "$@" ) ); then
-	    for choice in "${choices[@]}"; do
-		echo "triaging $(task_gloss "${id}") as ${choice}"
-		echo "${id}" | into "${choice}"
-	    done
-	else
-	    return 1
-	fi
-    done
-}
-
-function __triage {
-    local choice
-    local -a choices
-    while true; do
-	if choice="$(__triage_select "$@")"; then
-	    if test "${choice}" = '<done>'; then
-		break
-	    elif test "${choice}" = '<new>'; then
-		choices+=( "$(__triage_new)" )
-	    else
-		choices+=( "${choice}" )
-	    fi
-	else
-	    return 1
-	fi
-    done
-    for choice in "${choices[@]}"; do
-	echo "${choice}"
-    done
-}
-
-function __triage_select {
-    local id="$1"; shift
-    __triage_buckets "$@" \
-	| fzf \
-	      --tac \
-	      --no-sort \
-	      --preview "echo '${choices[*]}'; $0 task_contents read ${id}"
-}
-
-function __triage_new {
-    : | fzf --print-query --prompt="New Bucket: "
-}
-
-function __triage_buckets {
-    if test -z "$*"; then
-	buckets
-    else
-	for bucket in "$@"; do
-	    echo "${bucket}"
-	done
-    fi
-    echo '<new>'
-    echo '<done>'
+# Move upward from cur
+function up {
+    forbid_preview
+    graph_filter_begin parents goto
 }
 
 ## Live Queries ***************************************************************
@@ -1604,9 +1632,4 @@ if test "$1" = "--preview"; then
    declare GTD_PREVIEW_MODE=""; shift
 fi
 
-case "$1" in
-    # handle the case where we actually want to read nodes from `stdin`
-    -) shift; graph_filter_chain "$@" ;;
-    # if the first argument is a query filter, `all` is the implied producer
-    *) if graph_filter_is_valid "$1"; then all | "$@" ; else "$@" ; fi ;;
-esac
+graph_filter_begin "$@"
