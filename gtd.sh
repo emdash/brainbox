@@ -779,7 +779,6 @@ function graph_filter_default {
 	tree)              echo "from" "cur";;
 	# updates
 	activate)          echo "from" "target";;
-	capture)           echo "from" "cur";;
 	complete)          echo "from" "target";;
 	# datum write
 	# datum append
@@ -1074,6 +1073,16 @@ function search {
 function capture {
     forbid_preview
 
+    case "$1" in
+	-b|--bucket)
+	    local bucket="$2"
+	    shift 2
+	    ;;
+	*)
+	    local bucket="cur"
+	    ;;
+    esac
+
     local node="$(graph_node_create)"
     echo "NEW" | graph_datum state write "${node}"
 
@@ -1093,7 +1102,7 @@ function capture {
 
     echo "${node}" > "${DATA_DIR}/last_captured"
 
-    while IFS="" read -r parent; do
+    from "${bucket}" | while IFS="" read -r parent; do
 	graph_edge_create "${parent}" "${node}" dep
     done
 }
