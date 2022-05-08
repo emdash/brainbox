@@ -1158,7 +1158,15 @@ function dot {
     __dot_edges dep     solid
     __dot_edges context dashed
 
-    for bucket in $(buckets); do
+    # XXX: would like to render all buckets, but we need union queries
+    # to make this more useful.
+    #
+    # a query like "from live" ends up entirely contained within its
+    # bucket, which isn't really what we want
+    #
+    # for now the answer is to whitelist just the buckets used by
+    # one-word commands.
+    for bucket in "source" "dest" "target" "cur"; do
 	__dot_bucket "${bucket}"
     done
 
