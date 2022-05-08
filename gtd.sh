@@ -622,6 +622,11 @@ function task_is_context {
     test -n "$(graph_node_adjacent "$1" context outgoing)"
 }
 
+# returns true if a task has state deferred
+function task_is_deferred {
+    test "$(task_state read "$1")" = "SOMEDAY"
+}
+
 
 ## define task data ***********************************************************
 
@@ -750,6 +755,7 @@ function graph_filter_default {
 	is_active)         echo "all";;
 	is_complete)       echo "all";;
 	is_context)        echo "all";;
+	is_deferred)       echo "all";;
 	is_new)            echo "all";;
 	is_next)           echo "all";;
 	is_orphan)         echo "all";;
@@ -977,6 +983,11 @@ function is_context {
     filter task_is_context | graph_filter_chain "$@"
 }
 
+# Keep only deferred nodes
+function is_deferred {
+    filter task_is_deferred | graph_filter_chain "$@"
+}
+
 # keep only new tasks
 function is_new {
     filter task_is_new | graph_filter_chain "$@"
@@ -1126,7 +1137,8 @@ function dot {
 
     local -A nodes
     echo "digraph {"
-    echo "rankdir=LR;"
+    echo "rankdir = LR;"
+    echo "fontname = monospace;"
 
     local id
     while IFS="" read -r id; do
@@ -1136,6 +1148,10 @@ function dot {
 
     __dot_edges dep     solid
     __dot_edges context dashed
+
+    for bucket in $(buckets); do
+	__dot_bucket "${bucket}"
+    done
 
     echo "}"
 }
@@ -1159,22 +1175,43 @@ function __dot_attrs {
     printf ']'
 }
 
+function __dot_bucket {
+    echo "subgraph $(__dot_quote "cluster_$1") {"
+    echo "label = $(__dot_quote "$1");"
+    echo "style = rounded;"
+    echo "color = grey90;"
+    echo "bgcolor = grey90;"
+    echo "fontname = \"italic\";"
+    echo "fontsize = \"9pt\"";
+    from "$1" | while read -r id; do
+	__dot_quote "${id}" 
+    done
+    echo "}"
+}
+
 function __dot_node {
     case "$(task_state read "$1")" in
 	NEW)     local -r fill="deeppink" label="black"  ;;
-	TODO)    local -r fill="grey90"   label="black"  ;;
-	DONE)    local -r fill="grey95"   label="grey76" ;;
-	DROPPED) local -r fill="grey95"   label="grey76" ;;
+	TODO)    local -r fill="grey95"   label="black"  ;;
+	DONE)    local -r fill="#CCFFCC"  label="#99CC99" ;;
+	DROPPED) local -r fill="#FFDDDD"  label="#FF9999" ;;
 	WAITING) local -r fill="red"      label="black"  ;;
-	SOMEDAY) local -r fill="grey95"   label="black"  ;;
+	SOMEDAY) local -r fill="#DDAAFF"  label="#99AA99"  ;;
 	PERSIST) local -r fill="green"    label="black"  ;;
     esac
+
+    local style="filled"
+    local shape="box"
+    local color="${fill}"
+    local penwidth="2"
 
     __dot_quote "$1"
     printf ' '
     __dot_attrs "label"     "$(task_gloss "${id}")" \
-		"style"     "filled"                \
-		"shape"     "box"                   \
+		"style"     "${style}"              \
+		"shape"     "${shape}"              \
+		"color"     "${color}"              \
+		"penwidth"  "${penwidth}"           \
 		"fillcolor" "${fill}"               \
 		"fontcolor" "${label}"
     printf ';\n'

@@ -615,6 +615,7 @@ database.
 | `is_active`                                                  | keep only nodes considered active (includes status WAITING)                        |
 | `is_complete`                                                | keep only nodes considered completed                                               |
 | `is_context`                                                 | keep only nodes with at least one outgoing context edge.                           |
+| `is_deferred`                                                | keep only nodes with state SOMEDAY                                                 |
 | `is_new`                                                     | keep only nodes with status NEW                                                    |
 | `is_next`                                                    | keep only nodes considered *next actions*                                          |
 | `is_orphan`                                                  | keep only orphaned nodes                                                           |
