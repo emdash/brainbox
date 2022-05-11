@@ -93,13 +93,15 @@ distribution.
 
 #### Dependencies
 
-GtdGraph relies on a small number of dependencies which anyone
-interested in a shell-based productivity *probably* already has
-installed (except maybe uuid).
+GtdGraph relies on a small number of dependencies.
 
 - python3, for some targeted "optimizations"
-- fzf, or a compatible alternative, for interactive search
+- fzf, or a compatible alternative, for some interactive search
 - git, for history managment
+- graphviz for static visualization
+- [my fork of xdot](http://github.com/emdash/xdot) for interactive
+  visualization.
+  - I have submitted a PR which is still awaiting review.
 
 #### Recommended
 

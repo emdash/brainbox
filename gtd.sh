@@ -5,12 +5,12 @@ shopt -s failglob
 
 # name-prefixed variable here, but ...
 if test -v GTD_DATA_DIR; then
-    # ... prefer to keep the short name in the rest of the code for
-    # now.
+    # ... prefer to keep the short name in the rest of the code.
     export DATA_DIR="${GTD_DATA_DIR}"
 else
     export DATA_DIR="./gtdgraph"
 fi
+
 
 # Important directories
 # XXX: how to make lib dir point to directory containing this script?
@@ -29,6 +29,7 @@ EDGE_DIRS=("${DEPS_DIR}" "${CTXT_DIR}")
 
 
 # Helpers *********************************************************************
+
 
 # print to stderr
 function debug {
@@ -1078,9 +1079,6 @@ function capture {
 	    local bucket="$2"
 	    shift 2
 	    ;;
-	*)
-	    local bucket="cur"
-	    ;;
     esac
 
     local node="$(graph_node_create)"
@@ -1102,9 +1100,12 @@ function capture {
 
     echo "${node}" > "${DATA_DIR}/last_captured"
 
-    from "${bucket}" | while IFS="" read -r parent; do
-	graph_edge_create "${parent}" "${node}" dep
-    done
+    if test -n "${bucket}"; then
+	from "${bucket}" | while IFS="" read -r parent; do
+	    graph_edge_create "${parent}" "${node}" dep
+	    task_auto_triage "${node}"
+	done
+    fi
 }
 
 # runs graph_datum $1 $2 ${id} for each id
@@ -1142,115 +1143,7 @@ function __datum_mkdir_cp {
 
 # dotfile export for graphviz
 function dot {
-    end_filter_chain "$@"
-
-    local -A nodes
-    echo "digraph {"
-    echo "rankdir = LR;"
-    echo "fontname = monospace;"
-
-    local id
-    while IFS="" read -r id; do
-	__dot_node "${id}"
-	nodes["$id"]=""
-    done
-
-    __dot_edges dep     solid
-    __dot_edges context dashed
-
-    # XXX: would like to render all buckets, but we need union queries
-    # to make this more useful.
-    #
-    # a query like "from live" ends up entirely contained within its
-    # bucket, which isn't really what we want
-    #
-    # for now the answer is to whitelist just the buckets used by
-    # one-word commands.
-    for bucket in "source" "dest" "target" "cur"; do
-	__dot_bucket "${bucket}"
-    done
-
-    echo "}"
-}
-
-function __dot_quote {
-    local value="$*"
-    printf '"'
-    echo -n "${value}" | tr '"' "'"
-    printf '"'
-}
-
-function __dot_attrs {
-    printf '['
-    while test -n "$*"; do
-	local id="$1" value="$2"; shift 2
-	printf '%s=%s' "${id}" "$(__dot_quote "${value}")"
-	if test -n "$*"; then
-	   printf ", "
-	fi
-    done
-    printf ']'
-}
-
-function __dot_bucket {
-    echo "subgraph $(__dot_quote "cluster_$1") {"
-    echo "label = $(__dot_quote "$1");"
-    echo "style = rounded;"
-    echo "color = grey90;"
-    echo "bgcolor = grey90;"
-    echo "fontname = \"italic\";"
-    echo "fontsize = \"9pt\"";
-    from "$1" | while read -r id; do
-	__dot_quote "${id}" 
-    done
-    echo "}"
-}
-
-function __dot_node {
-    case "$(task_state read "$1")" in
-	NEW)     local -r fill="deeppink" label="black"  ;;
-	TODO)    local -r fill="grey95"   label="black"  ;;
-	DONE)    local -r fill="#CCFFCC"  label="#99CC99" ;;
-	DROPPED) local -r fill="#FFDDDD"  label="#FF9999" ;;
-	WAITING) local -r fill="red"      label="black"  ;;
-	SOMEDAY) local -r fill="#DDAAFF"  label="#99AA99"  ;;
-	PERSIST) local -r fill="green"    label="black"  ;;
-    esac
-
-    local style="filled"
-    local shape="box"
-    local color="${fill}"
-    local penwidth="2"
-
-    __dot_quote "$1"
-    printf ' '
-    __dot_attrs "label"     "$(task_gloss "${id}")" \
-		"style"     "${style}"              \
-		"shape"     "${shape}"              \
-		"color"     "${color}"              \
-		"penwidth"  "${penwidth}"           \
-		"fillcolor" "${fill}"               \
-		"fontcolor" "${label}"
-    printf ';\n'
-}
-
-function __dot_edges {
-    local edge
-    graph_edge_list "$1"                    \
-	| graph_edge_touches "${!nodes[@]}" \
-	| while IFS="" read -r edge
-    do
-	__dot_edge "$2"
-    done
-}
-
-function __dot_edge {
-    __dot_quote "$(graph_edge_u "${edge}")"
-    printf ' -> '
-    __dot_quote "$(graph_edge_v "${edge}")"
-    printf ' '
-    __dot_attrs "style" "$1"
-    printf ';\n'
+    "${GTD_DIR}/graph.py" dot
 }
 
 # Add node ids to the named bucket
@@ -1538,6 +1431,7 @@ function link {
     for u in ${from_ids}; do
 	for v in ${into_ids}; do
 	    graph_edge_create "${u}" "${v}" "${edge_set}"
+	    task_auto_triage "${v}"
 	done
     done
 

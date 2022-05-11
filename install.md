@@ -1,10 +1,9 @@
 # Installation
 
-GtdGraph is a stand-alone shell script. There's no need to install it
-in any particular location, so long as the
-[dependencies](README.md#dependencies) are installed on your
-system. All you need do is clone the source in your preferred
-location.
+GtdGraph is a collection of scripts. There's no compilation step, and
+no need to install it in any particular location. All you need do is
+clone the source in your preferred location, and install the the
+[dependencies](README.md#dependencies) on your system.
 
 ## Shell Configuration
 
@@ -12,12 +11,14 @@ I suggest adding something equivalent to the following `bash` snippet
 to your shell initialization file (if you are unsure, this is probably
 `.bashrc`):
 
-    GTD_DIR="/path/to/gtd" # change me
-    if test -d "/proc/$$/cwd/gtdgraph"; then
-        "${GTD_DIR}/gtd.sh" "$@"
-    else
-        GTD_DATA_DIR="${HOME}/.gtdgraph" "${GTD_DIR}/gtd.sh" "$@"
-    fi
+    export GTD_DIR="/path/to/gtd"
+    function gtd {
+        if test -d "/proc/$$/cwd/gtdgraph"; then
+            "${GTD_DIR}/gtd.sh" "$@"
+        else
+            GTD_DATA_DIR="${HOME}/.gtdgraph" "${GTD_DIR}/gtd.sh" "$@"
+        fi
+    }
 
 Where `/path/to/gtd` points to the root of this source tree.
 
