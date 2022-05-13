@@ -441,9 +441,6 @@ function graph_edge_path {
     local v="$2"
     local edge_set="$3"
 
-    test -e "$(graph_node_path "${u}")" || error "invalid node id ${u}"
-    test -e "$(graph_node_path "${v}")" || error "invalid node id ${v}"
-
     case "${edge_set}" in
 	dep)     echo  "${DEPS_DIR}/$(graph_edge "${u}" "${v}")";;
 	context) echo  "${CTXT_DIR}/$(graph_edge "${u}" "${v}")";;
