@@ -1339,8 +1339,9 @@ function edit {
 # set the current node
 function goto {
     forbid_preview
+    local bucket="$1"; shift
     end_filter_chain "$@"
-    choose --single into --noempty cur
+    choose into --noempty "${bucket}"
 }
 
 # persist each task
@@ -1382,7 +1383,7 @@ function clobber {
 # move downward from cur
 function down {
     forbid_preview
-    graph_filter_begin children goto
+    from "$1" children goto "$1"
 }
 
 # unset the current node
@@ -1481,7 +1482,7 @@ function unlink {
 # Move upward from cur
 function up {
     forbid_preview
-    graph_filter_begin parents goto
+    from "$1" parents goto "$1"
 }
 
 ## Live Queries ***************************************************************
