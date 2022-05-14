@@ -744,9 +744,10 @@ function task_persist {
 function graph_filter_default {
     case "$1" in
 	adjacent)          echo "from" "cur";;
-	assigned)          echo "from" "cur";;
+	assignees)         echo "from" "cur";;
 	children)          echo "from" "cur";;
 	choose)            echo "all";;
+	contexts)          echo "from" "cur";;
 	# datum exists
 	datum)             echo "from" "target";;
 	is_actionable)     echo "all";;
@@ -934,7 +935,7 @@ function adjacent {
 }
 
 # insert tasks assigned to each incoming context id
-function assigned {
+function assignees {
     local id
     while IFS="" read -r id; do
 	graph_traverse "${id}" context outgoing
@@ -944,6 +945,11 @@ function assigned {
 # immediate subtasks of the input set
 function children {
     adjacent dep outgoing | graph_filter_chain "$@"
+}
+
+# immediate context edgres
+function contexts {
+    adjacent context incoming | graph_filter_chain "$@"
 }
 
 # keep only the node selected by the user
