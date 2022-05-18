@@ -835,80 +835,6 @@ function test_task_auto_triage {
     assert "$(gtd task_state read fake-uuid)" = "COMPLETE"
 }
 
-function test_task_add_subtask {
-    gtd init
-
-    local t1="$(make_test_node t1)"
-    local t2="$(make_test_node t2)"
-    local t3="$(make_test_node t3)"
-    local t4="$(make_test_node t4)"
-    local t5="$(make_test_node t5)"
-
-    echo NEW | gtd task_state write "${t1}"
-    echo NEW | gtd task_state write "${t2}"
-    echo NEW | gtd task_state write "${t3}"
-    echo NEW | gtd task_state write "${t4}"
-    echo NEW | gtd task_state write "${t5}"
-
-    assert_true gtd task_is_new "${t1}"
-    assert_true gtd task_is_new "${t2}"
-    assert_true gtd task_is_new "${t3}"
-    assert_true gtd task_is_new "${t4}"
-    assert_true gtd task_is_new "${t5}"
-
-    gtd task_add_subtask "${t1}" "${t2}"
-    gtd task_add_subtask "${t1}" "${t3}"
-    gtd task_add_subtask "${t2}" "${t4}"
-    gtd task_add_subtask "${t3}" "${t4}"
-    gtd task_add_subtask "${t4}" "${t5}"
-
-    assert_true  gtd task_is_new "${t1}"
-    assert_false gtd task_is_new "${t2}"
-    assert_false gtd task_is_new "${t3}"
-    assert_false gtd task_is_new "${t4}"
-    assert_false gtd task_is_new "${t5}"
-
-    local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map task_gloss))
-    local -a expected=("t1 t2 t4 t5 t3")
-    assert "${actual[*]}" = "${expected[*]}"
-}
-
-function test_task_assign {
-    gtd init
-
-    local t1="$(make_test_node t1)"
-    local t2="$(make_test_node t2)"
-    local t3="$(make_test_node t3)"
-    local t4="$(make_test_node t4)"
-    local t5="$(make_test_node t5)"
-
-    echo NEW | gtd task_state write "${t1}"
-    echo NEW | gtd task_state write "${t2}"
-    echo NEW | gtd task_state write "${t3}"
-    echo NEW | gtd task_state write "${t4}"
-    echo NEW | gtd task_state write "${t5}"
-
-    assert_true gtd task_is_new "${t1}"
-    assert_true gtd task_is_new "${t2}"
-    assert_true gtd task_is_new "${t3}"
-    assert_true gtd task_is_new "${t4}"
-    assert_true gtd task_is_new "${t5}"
-
-    gtd task_assign "${t1}" "${t5}"
-    gtd task_assign "${t3}" "${t5}"
-    gtd task_assign "${t4}" "${t5}"
-
-    assert_false gtd task_is_new "${t1}"
-    assert_true  gtd task_is_new "${t2}"
-    assert_false gtd task_is_new "${t3}"
-    assert_false gtd task_is_new "${t4}"
-    assert_true  gtd task_is_new "${t5}"
-
-    local -a actual=($(gtd graph_traverse "${t5}" context outgoing | gtd map task_gloss))
-    local -a expected=("t5 t1 t3 t4")
-    assert "${actual[*]}" = "${expected[*]}"
-}
-
 function test_task_activate {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
@@ -997,8 +923,6 @@ function run_all_tests {
     should_pass test_task_is_next_action
     should_pass test_task_is_orphan
     should_pass test_task_is_waiting
-    should_pass test_task_add_subtask
-    should_pass test_task_assign
     should_pass test_task_summary
     should_pass test_task_drop
     should_pass test_task_activate

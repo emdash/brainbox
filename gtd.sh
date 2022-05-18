@@ -241,6 +241,9 @@ function gen_uuid {
 
 # Graph Database **************************************************************
 
+# wraps a python script which is used to "accelerate" some operations.
+function graph { "${GTD_DIR}/graph.py" "$@" ; }
+
 
 # print the path to the data directory of a given node id.
 #
@@ -350,35 +353,6 @@ function graph_node_create {
     fi
 }
 
-# print the set of child nodes for the given node to stdout.
-#
-# if predicate is given, then edges will be filtered according to this
-# command.
-function graph_node_adjacent {
-    database_ensure_init
-
-    local node="$1"
-    local edge_set="$2"
-    local direction="$3"
-
-    case "${edge_set}" in
-	dep)     local -r dir="${DEPS_DIR}";;
-	context) local -r dir="${CTXT_DIR}";;
-	*)       error "${edge_set} is not one of dep | context"
-    esac
-
-    case "${direction}" in
-	incoming) local -r pat="*:${node}" field="1";;
-	outgoing) local -r pat="${node}:*" field="2";;
-	*)        error "${direction} is not one of incoming | outgoing";;
-    esac
-
-    # would like to have used `filter` with `graph_edge_*` here but,
-    # this would be slower, and also it doesn't seem to work right for
-    # reasons I don't understand.
-    find "${dir}" -name "${pat}" -printf '%P\n' | cut -d ':' -f "${field}"
-}
-
 # Print the internal edge representation for nodes u and v to stdout.
 function graph_edge {
     local u="$1"
@@ -394,44 +368,6 @@ function graph_edge_u {
 # For the given internal edge representatoin, print the target node
 function graph_edge_v {
     echo "$1" | cut -d ':' -f 2
-}
-
-# Print all graph edges to stdout
-function graph_edge_list {
-    case "$1" in
-	dep)     local -a dirs=("${DEPS_DIR}");;
-	context) local -a dirs=("${CTXT_DIR}");;
-	all)     local -a dirs=("${DEPS_DIR}" "${CTXT_DIR}");;
-
-	*) error "$1 not one of dep | context | all"
-    esac
-    ls -t "${dirs[@]}"
-}
-
-# Return true if the given edge touches the input set.
-#
-# XXX: also, this function consumes edges from stdin, and nodes from
-# "$@".
-#
-# XXX: this should probably be renamed to reflect the fact that both
-# ends of the edge must like in the input set.
-function graph_edge_touches {
-    local edge nodes
-    local -A nodes
-    local edge
-
-    for node in "$@"; do
-	nodes["${node}"]="1"
-    done
-
-    while IFS="" read -r edge; do
-	local u v
-	u="$(graph_edge_u "${edge}")"
-	v="$(graph_edge_v "${edge}")"
-	if test -v "nodes[${u}]" -a -v "nodes[${v}]"; then
-	   echo "${edge}"
-	fi
-    done
 }
 
 # Print the path to the edge connecting nodes u and v, if it exists.
@@ -451,6 +387,10 @@ function graph_edge_path {
 # Link two nodes in the graph.
 function graph_edge_create {
     database_ensure_init
+
+    test -d "$(graph_node_path "$1")" || error "Invalid ID $1"
+    test -d "$(graph_node_path "$2")" || error "Invalid ID $2"
+    
     mkdir -p "$(graph_edge_path "$1" "$2" "$3")"
 }
 
@@ -460,169 +400,6 @@ function graph_edge_create {
 function graph_edge_delete {
     database_ensure_init
     rm -rf "$(graph_edge_path "$1" "$2" "$3")"
-}
-
-# traverse the graph depth first, starting from `root`, with cycle checking.
-#
-# this is a text-book algorithm, implemented in bash. we parameterize
-# on the same arguments as graph_adjacent.
-#
-# if a cycle is detected, the algorithm terminates early with nonzero
-# status.
-function graph_traverse {
-    database_ensure_init
-
-    local root="$1"
-    local edge_set="$2"
-    local direction="$3"
-    local -A nodes_on_stack
-    local -A seen
-
-    # would be a closure if bash scope was lexical.
-    __graph_traverse_rec "${root}"
-}
-
-function __graph_traverse_rec {
-    local cur="$1"
-
-    if test -v "nodes_on_stack[${cur}]"; then
-	error "Graph contains a cycle"
-	return 1
-    fi
-
-    # add this node to the cycle checking set
-    nodes_on_stack["${cur}"]=""
-
-    if test ! -v "seen[${cur}]"; then
-	echo "${cur}"
-	seen["${cur}"]="1"
-
-	for a in $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}"); do
-	    __graph_traverse_rec "${a}" || return 1
-	done
-    fi
-
-    # remove node from cycle checking set
-    unset "nodes_on_stack[${cur}]"
-}
-
-# similar to above, but performing a "tree expansion"
-#
-# the difference is that shared nodes will be duplicated in the output.
-#
-# if --depth is given, then the second field will be an integer
-# representing the tree depth of the given node.
-#
-# this is a text-book algorithm, implemented in bash. we parameterize
-# on the same arguments as graph_adjacent.
-#
-# if a cycle is detected, the algorithm terminates early with nonzero
-# status.
-function graph_expand {
-    database_ensure_init
-
-    case "$1" in
-	-d|--depth) shift; local print_depth="";;
-    esac
-
-    local root="$1"
-    local edge_set="$2"
-    local direction="$3"
-    local -A nodes_on_stack
-
-    # would be a closure if bash scope was lexical.
-    __graph_expand_rec "${root}" 0
-}
-
-function __graph_expand_rec {
-    local cur="$1"
-    local depth="$2"
-
-    if test -v "nodes_on_stack[${cur}]"; then
-	error "Graph contains a cycle"
-	return 1
-    fi
-
-    # add this node to the cycle checking set
-    nodes_on_stack["${cur}"]=""
-
-    if test -v print_depth; then
-	echo "${cur}" "${depth}"
-    else
-	echo "${cur}"
-    fi
-
-    for a in $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}"); do
-	__graph_expand_rec "${a}" "$((depth + 1))" || return 1
-    done
-
-    # remove node from cycle checking set
-    unset "nodes_on_stack[${cur}]"
-}
-
-
-# Tasks ***********************************************************************
-
-
-# In GTD, A task is anything that needs to be done.
-#
-# Some aspects of task state are tracked explicitly, while others are
-# inferred from graph edges.
-#
-# this section defines functions for working at the task level.
-#
-# a task is implemented as a node using the generic graph logic
-# defined in the previous section.
-
-## task state helper functions ************************************************
-
-# return true if the given task state is a valid one.
-function task_state_is_valid {
-    case "$1" in
-	NEW)      return 0;;
-	TODO)     return 0;;
-	DONE)     return 0;;
-	DROPPED)  return 0;;
-	WAITING)  return 0;;
-	SOMEDAY)  return 0;;
-	PERSIST)  return 0;;
-	*)        return 1;;
-    esac
-}
-
-# returns true if the given task state can be considered active
-function task_state_is_active {
-    case "$1" in
-	NEW)     return 0;;
-	TODO)    return 0;;
-	WAITING) return 0;;
-	PERSIST) return 0;;
-	*)       return 1;;
-    esac
-}
-
-# returns true if the given task state can be acted on
-function task_state_is_actionable {
-    case "$1" in
-	WAITING) return 1;;
-	PERSIST) return 1;;
-	*)    task_state_is_active "$1";;
-    esac
-}
-
-# returns true if the given task is in the DONE state
-function task_is_complete {
-    test "$(task_state read "$1")" = "DONE"
-}
-
-# returns true if a task has at least one outgoing context edge
-function task_is_context {
-    test -n "$(graph_node_adjacent "$1" context outgoing)"
-}
-
-# returns true if a task has state deferred
-function task_is_deferred {
-    test "$(task_state read "$1")" = "SOMEDAY"
 }
 
 
@@ -637,61 +414,6 @@ function task_state    { graph_datum state    "$@"; }
 function task_gloss {
     # tbd: truncate length to "$2"
     task_contents read "$1" | head -n 1 || echo "[no contents]"
-}
-
-# returns true if a task is the root of a project subgraph
-function task_is_root {
-    graph_node_adjacent "$1" dep incoming | empty
-}
-
-# returns true if a task is a leaf node
-function task_is_leaf {
-    graph_node_adjacent "$1" dep outgoing | empty
-}
-
-# returns true if a task is orphaned: is a root with no dependencies
-function task_is_orphan {
-    task_is_root "$1" && task_is_leaf "$1"
-}
-
-# returns true of the project is in state PERSIST
-function task_is_persistent {
-    test "$(task_state read "$1")" = "PERSIST"
-}
-
-# returns true if a task is a project
-function task_is_project {
-    ! { task_is_root "$1" || task_is_leaf "$1" ; }
-}
-
-# returns true if task has state NEW
-function task_is_new {
-    test "$(task_state read "$1")" = "NEW"
-}
-
-# return true if the given task is active
-function task_is_active {
-    task_state_is_active "$(task_state read $1)"
-}
-
-# return true if the given task is actionable
-function task_is_actionable {
-    task_state_is_actionable "$(task_state read $1)"
-}
-
-# returns true if the given task is a "next action"
-function task_is_next_action {
-    task_is_actionable "$1" && task_is_leaf "$1"
-}
-
-# returns true if a task is not assigned to any context
-function task_is_unassigned {
-    test -z "$(graph_node_adjacent "$1" context incoming)"
-}
-
-# returns true if a task is marked as waiting
-function task_is_waiting {
-    test "$(task_state read "$1")" = "WAITING"
 }
 
 # summarize the current task: id, status, and gloss
@@ -890,7 +612,7 @@ function from {
 }
 
 # output all new tasks
-function inbox { all | is_new | graph_filter_chain "$@" ;}
+function inbox { all | is_new | graph_filter_chain "$@" ; }
 
 # output the last captured node
 function last_captured {
@@ -900,57 +622,34 @@ function last_captured {
 }
 
 # output an empty set
-function null {
-    : | graph_filter_chain "$@"
-}
-
-# select every actionable project root
-#
-# in a well-maintained database, these will correspond to one's core
-# values, or the "view from 30k ft" in GTD terminology.
-function values {
-    all | is_actionable is_root "$@"
-}
-
-# select every actionable project root whose parent is a value
-#
-# in a well-maintained database, these will correspond to long-term
-# on which one places the highest priority.
-function life_goals {
-    values adjacent dep outgoing | graph_filter_chain "$@"
-}
-
+function null { : | graph_filter_chain "$@" ; }
 
 ### Query Filters *************************************************************
+
+# output nodes reachable from each node in the input set
+function reachable {
+    local edges="$1"
+    local direction="$2"
+    shift 2
+    graph reachable "${edges}" "${direction}" | graph_filter_chain "$@"
+}
 
 # output the nodes adjacent to each input node
 function adjacent {
     local edges="$1"
     local direction="$2"
     shift 2
-    local id
-    while IFS="" read -r id; do
-	graph_node_adjacent "${id}" "${edges}" "${direction}"
-    done | graph_filter_chain "$@"
+    graph adjacent "${edges}" "${direction}" | graph_filter_chain "$@"
 }
 
 # insert tasks assigned to each incoming context id
-function assignees {
-    local id
-    while IFS="" read -r id; do
-	graph_traverse "${id}" context outgoing
-    done | graph_filter_chain "$@"
-}
+function assignees { reachable context outgoing "$@" ; }
 
 # immediate subtasks of the input set
-function children {
-    adjacent dep outgoing | graph_filter_chain "$@"
-}
+function children { adjacent dependencies outgoing "$@" ; } 
 
 # immediate context edgres
-function contexts {
-    adjacent context incoming | graph_filter_chain "$@"
-}
+function contexts { adjacent context incoming "$@" ; }
 
 # keep only the node selected by the user
 function choose {
@@ -968,89 +667,62 @@ function choose {
 
 # Keep only actionable tasks.
 function is_actionable {
-    filter task_is_actionable | graph_filter_chain "$@"
+    graph filter_state NEW TODO | graph_filter_chain "$@"
 }
 
 # Keep only active tasks.
 function is_active {
-    filter task_is_active | graph_filter_chain "$@"
+    graph filter_state \
+	NEW \
+	TODO \
+	WAITING \
+	PERSIST \
+    | graph_filter_chain "$@"
 }
 
 # Keep only completed tasks
-function is_complete {
-    filter task_is_complete | graph_filter_chain "$@"
-}
+function is_complete { graph filter_state DONE | graph_filter_chain "$@" ; }
 
 # Keep only context nodes
-function is_context {
-    filter task_is_context | graph_filter_chain "$@"
-}
+function is_context { graph is_context | graph_filter_chain "$@" ; }
 
 # Keep only deferred nodes
-function is_deferred {
-    filter task_is_deferred | graph_filter_chain "$@"
-}
+function is_deferred {  graph filter_state SOMEDAY | graph_filter_chain "$@" ; }
 
 # keep only new tasks
-function is_new {
-    filter task_is_new | graph_filter_chain "$@"
-}
+function is_new { graph filter_state NEW | graph_filter_chain "$@" ; }
 
 # Keep only next actions
-function is_next {
-    filter task_is_next_action | graph_filter_chain "$@"
-}
+function is_next { graph is_next | is_actionable "$@" ; }
 
 # Keep only tasks not associated with any other tasks
-function is_orphan {
-    filter task_is_orphan | graph_filter_chain "$@"
-}
+function is_orphan { graph is_orphan | graph_filter_chain "$@" ; }
 
 # Keep only tasks in state PERSIST
 function is_persistent {
-    filter task_is_persistent | graph_filter_chain "$@"
+    graph filter_state PERSIST | graph_filter_chain "$@"
 }
 
 # Keep only tasks which are considered projects
-function is_project {
-    filter task_is_project | graph_filter_chain "$@"
-}
+function is_project { graph is_project | graph_filter_chain "$@" ; }
 
 # Keep only tasks which are the root of a subgraph
-function is_root {
-    filter task_is_root | graph_filter_chain "$@"
-}
+function is_root { graph is_root | graph_filter_chain "$@" ; }
 
 # Keep only tasks not assigned to any context
-function is_unassigned {
-    filter task_is_unassigned | graph_filter_chain "$@"
-}
+function is_unassigned { graph is_unassigned | graph_filter_chain "$@" ; }
 
 # Keep only waiting tasks
-function is_waiting {
-    filter task_is_waiting | graph_filter_chain "$@"
-}
+function is_waiting { graph filter_state WAITING | graph_filter_chain "$@" ; }
 
-# immediate supertasks of input set
-function parents {
-    adjacent dep incoming | graph_filter_chain "$@"
-}
+# adjacent incoming dependencies of input set
+function parents { adjacent dependencies incoming "$@" ; }
 
 # insert parents of each incoming task id
-function projects {
-    local id
-    while IFS="" read -r id; do
-	graph_traverse "${id}" dep incoming
-    done | graph_filter_chain "$@"
-}
+function projects { reachable dependencies incoming "$@" ; }
 
 # insert subtasks of each incoming parent task id
-function subtasks {
-    local id
-    while IFS="" read -r id; do
-	graph_traverse "${id}" dep outgoing
-    done | graph_filter_chain "$@"
-}
+function subtasks { reachable dependencies outgoing "$@" ; }
 
 # keep only nodes whose contents matches the given *pattern*.
 #
@@ -1146,7 +818,7 @@ function __datum_mkdir_cp {
 
 # dotfile export for graphviz
 function dot {
-    "${GTD_DIR}/graph.py" dot
+    graph dot
 }
 
 # Add node ids to the named bucket
@@ -1218,32 +890,9 @@ function summarize {
 # tree expansion of project rooted at the given node for given edge set and direction.
 #
 # tree filters can be chained onto this, but not graph filters
-function tree {
-    case "$1" in
-	dep|context) local edge_set="$1";;
-	*)           error "$1 not one of: dep | context";;
-    esac
-
-    case "$2" in
-	incoming|outgoing) local direction="$2";;
-	*)                 error "$2 is not one of: incoming | outgoing";;
-    esac
-
-    shift 2
-
-    local root
-    while IFS="" read -r root; do
-	graph_expand \
-	    --depth \
-	    "${root}" \
-	    "${edge_set}" \
-	    "${direction}"
-    done | tree_filter_chain "$@"
-}
+function tree { graph expand "$1" "$2" | indent "$@" ; }
 
 # indent tree expansion
-#
-# TBD: merge this functionality into summarize?
 function indent {
     if test "$1" = "--gloss-only"; then
 	local no_meta=""; shift;
@@ -1260,7 +909,7 @@ function indent {
     local depth
     while IFS="" read -r id depth; do
 	if test ! -v no_meta; then
-	   printf "%7s" "$(task_state read "${id}")"
+	   printf "%s %7s" "${id}" "$(task_state read "${id}")"
 	fi
 
 	# indent the line.
@@ -1272,10 +921,6 @@ function indent {
     done
 }
 
-# Shorthand for formatting a project as a tree
-function project {
-    tree dep outgoing indent "$@"
-}
 
 ## Updates ********************************************************************
 
@@ -1386,26 +1031,11 @@ function down {
     from "$1" children goto "$1"
 }
 
-# unset the current node
-function home {
-    graph_filter_begin null into cur
-}
-
 # Initialize the database
 function init {
     forbid_preview
     database_init;
     mkdir -p "${BUCKET_DIR}"
-}
-
-# interactively build query
-function interactive {
-    forbid_preview
-    # inspired by https://github.com/paweluda/fzf-live-repl
-    : | fzf \
-	    --print-query \
-	    --preview "$0 --preview \$(echo {q})" \
-	| into interactive "$@"
 }
 
 # Create edges between sets of nodes in the given named buckets.
