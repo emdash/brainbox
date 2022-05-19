@@ -463,14 +463,15 @@ function task_persist {
 
 ## Helpers ********************************************************************
 
-function graph_filter_default {
-    case "$1" in
+# maps query filters and consumer to default dproducers.
+function query_default_producer {
+    case "$*" in
 	adjacent)          echo "from" "cur";;
 	assignees)         echo "from" "cur";;
 	children)          echo "from" "cur";;
 	choose)            echo "all";;
 	contexts)          echo "from" "cur";;
-	# datum exists
+	"datum exists")    echo "all";;
 	datum)             echo "from" "target";;
 	is_actionable)     echo "all";;
 	is_active)         echo "all";;
@@ -491,9 +492,11 @@ function graph_filter_default {
 	subtasks)          echo "from" "cur";;
 	search)            echo "all";;
 	someday)           echo "from" "target";;
+	# binary queries
+	union)             echo "null";;
 	# formatters
-	# datum read
-	# datum path
+	"datum read")      echo "all";;
+	"datum path")      echo "all";;
 	dot)               echo "all";;
 	into)              echo "all" "choose";;
 	summarize)         echo "all";;
@@ -514,21 +517,135 @@ function graph_filter_default {
 }
 
 # returns true if "$@" is recognized as a valid filter keyword
-function graph_filter_is_valid {
-    test -n "$(graph_filter_default "$1")"
+function query_command_is_filter {
+    case "$1" in
+	adjacent)          echo "from" "cur";;
+	assignees)         echo "from" "cur";;
+	children)          echo "from" "cur";;
+	choose)            echo "all";;
+	contexts)          echo "from" "cur";;
+	"datum exists")    echo "all";;
+	datum)             echo "from" "target";;
+	is_actionable)     echo "all";;
+	is_active)         echo "all";;
+	is_complete)       echo "all";;
+	is_context)        echo "all";;
+	is_deferred)       echo "all";;
+	is_new)            echo "all";;
+	is_next)           echo "all";;
+	is_orphan)         echo "all";;
+	is_persistent)     echo "all";;
+	is_project)        echo "all";;
+	is_root)           echo "all";;
+	is_unassigned)     echo "all";;
+	is_waiting)        echo "all";;
+	parents)           echo "from" "cur";;
+	project)           echo "from" "cur";;
+	projects)          echo "from" "cur";;
+	subtasks)          echo "from" "cur";;
+	search)            echo "all";;
+	someday)           echo "from" "target";;
+	# binary queries
+	union)             echo "null";;
+	# formatters
+	"datum read")      echo "all";;
+	"datum path")      echo "all";;
+    esac
 }
 
-# execute a query from the given arguments
-function graph_filter_begin {
-    local default
+# returns true if "$@" is recognized as a valid filter keyword
+function query_command_is_chainable {
+    test -n "$(query_default_producer "$1")"
+}
 
-    if graph_filter_is_valid "$1"; then
-	$(graph_filter_default "$1") "$@"
-    elif test "$1" = "-"; then
-	shift
-	graph_filter_chain "$@"
+# tbd: refactor the big table such that this can be implemented like
+# query_command_is_filter.
+function query_command_is_consumer {
+    case "$*" in
+	activate)          return 0;;
+	complete)          return 0;;
+	"datum write")	   return 0;;
+	"datum append")	   return 0;;
+	"datum mkdir")	   return 0;;
+	"datum cp")	   return 0;;
+	defer)             return 0;;
+	drop)              return 0;;
+	edit)              return 0;;
+	goto*)             return 0;;
+	into*)             return 0;;
+	persist)           return 0;;
+	summarize)         return 0;;
+	*)                 return 1;;
+    esac
+}
+
+# find the index of the first filter in the query
+function query_find_first_filter {
+    local -i i=0
+    local cur
+    while test -n "$*"; do
+	if query_command_is_filter "$1"; then
+	    echo "${i}"
+	    return 0
+	else
+	    shift
+	    i="$((i + 1))"
+	fi
+    done
+    return 1
+}
+
+# print the index into which the 
+function query_find_consumer {
+    local -i i=0
+    while test -n "$*"; do
+	if query_command_is_consumer "$@"; then
+	    echo "${i}"
+	    return 0
+	else
+	    shift
+	    i="$((i + 1))"
+	fi
+    done
+    return 1
+}
+
+# split command into `query` and `consumer` arrays
+#
+# where `query` is the pure part of the query
+# and `consumer` is a downstream formatter or action
+#
+# returns 1 if no consumer is found, meaning the query is pure.
+function query_split_consumer {
+    local -ir query_length="$#"
+    local -i  tail_start
+
+    if tail_start="$(query_find_consumer "$@")"; then
+	query=( "${@:1:tail_start + 1}" )
+	consumer=( "${@:tail_start + 1:query_length - tail_start}" )
+	return 0
     else
-	"$@"
+	return 1
+    fi
+}
+
+# convert a query to its canonical form, inserting implicit prodcers if needed.
+#
+# to avoid quoting issues, the canoncical query is placed into the
+# `canonical` array, rather than printed to stdout.
+function query_canonicalize {
+    local -ir query_length="$#"
+    local -i  tail_start
+
+    if tail_start="$(query_find_first_filter "$@")"; then
+	local -a producer=( "${@:1:tail_start}" )
+	local -a filters=( "${@:tail_start + 1:query_length - tail_start}" )
+	if test "${#producer}" -eq 0; then
+	    producer=( $(query_default_producer "${filters[0]}") )
+	fi
+	canonical=( "${producer[@]}" "${filters[@]}" )
+    else
+	canonical=( "$@" )
     fi
 }
 
@@ -546,9 +663,9 @@ function tree_filter_is_valid {
 # into the pipeline.
 #
 # if no args are given, forward stdin to stdout
-function graph_filter_chain {
+function query_filter_chain {
     if test -n "$*"; then
-	if graph_filter_is_valid "$1"; then
+	if query_command_is_chainable "$1"; then
 	    "$@"
 	else
 	    error "$1 is not a valid graph query filter"
@@ -602,27 +719,27 @@ function forbid_preview {
 # These appear at the start of a filter chain, but are not themselves filters.
 
 # all tasks
-function all { graph_node_list | graph_filter_chain "$@" ; }
+function all { graph_node_list | query_filter_chain "$@" ; }
 
 # output tasks from named bucket
 function from {
     local bucket="${BUCKET_DIR}/$1"; shift;
     test -e "${bucket}" || mkdir -p "${bucket}"
-    ls "${bucket}" | graph_filter_chain "$@"
+    ls "${bucket}" | query_filter_chain "$@"
 }
 
 # output all new tasks
-function inbox { all | is_new | graph_filter_chain "$@" ; }
+function inbox { all | is_new | query_filter_chain "$@" ; }
 
 # output the last captured node
 function last_captured {
     if test -e "${DATA_DIR}/last_captured"; then
 	cat "${DATA_DIR}/last_captured"
-    fi | graph_filter_chain "$@"
+    fi | query_filter_chain "$@"
 }
 
 # output an empty set
-function null { : | graph_filter_chain "$@" ; }
+function null { : | query_filter_chain "$@" ; }
 
 ### Query Filters *************************************************************
 
@@ -631,7 +748,7 @@ function reachable {
     local edges="$1"
     local direction="$2"
     shift 2
-    graph reachable "${edges}" "${direction}" | graph_filter_chain "$@"
+    graph reachable "${edges}" "${direction}" | query_filter_chain "$@"
 }
 
 # output the nodes adjacent to each input node
@@ -639,7 +756,7 @@ function adjacent {
     local edges="$1"
     local direction="$2"
     shift 2
-    graph adjacent "${edges}" "${direction}" | graph_filter_chain "$@"
+    graph adjacent "${edges}" "${direction}" | query_filter_chain "$@"
 }
 
 # insert tasks assigned to each incoming context id
@@ -662,12 +779,12 @@ function choose {
        *)           local opt="-m"       ;;
     esac
 
-    summarize | fzf ${opt} | cut -d ' ' -f 1 | graph_filter_chain "$@"
+    summarize | fzf ${opt} | cut -d ' ' -f 1 | query_filter_chain "$@"
 }
 
 # Keep only actionable tasks.
 function is_actionable {
-    graph filter_state NEW TODO | graph_filter_chain "$@"
+    graph filter_state NEW TODO | query_filter_chain "$@"
 }
 
 # Keep only active tasks.
@@ -677,43 +794,43 @@ function is_active {
 	TODO \
 	WAITING \
 	PERSIST \
-    | graph_filter_chain "$@"
+    | query_filter_chain "$@"
 }
 
 # Keep only completed tasks
-function is_complete { graph filter_state DONE | graph_filter_chain "$@" ; }
+function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
 
 # Keep only context nodes
-function is_context { graph is_context | graph_filter_chain "$@" ; }
+function is_context { graph is_context | query_filter_chain "$@" ; }
 
 # Keep only deferred nodes
-function is_deferred {  graph filter_state SOMEDAY | graph_filter_chain "$@" ; }
+function is_deferred {  graph filter_state SOMEDAY | query_filter_chain "$@" ; }
 
 # keep only new tasks
-function is_new { graph filter_state NEW | graph_filter_chain "$@" ; }
+function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
 
 # Keep only next actions
 function is_next { graph is_next | is_actionable "$@" ; }
 
 # Keep only tasks not associated with any other tasks
-function is_orphan { graph is_orphan | graph_filter_chain "$@" ; }
+function is_orphan { graph is_orphan | query_filter_chain "$@" ; }
 
 # Keep only tasks in state PERSIST
 function is_persistent {
-    graph filter_state PERSIST | graph_filter_chain "$@"
+    graph filter_state PERSIST | query_filter_chain "$@"
 }
 
 # Keep only tasks which are considered projects
-function is_project { graph is_project | graph_filter_chain "$@" ; }
+function is_project { graph is_project | query_filter_chain "$@" ; }
 
 # Keep only tasks which are the root of a subgraph
-function is_root { graph is_root | graph_filter_chain "$@" ; }
+function is_root { graph is_root | query_filter_chain "$@" ; }
 
 # Keep only tasks not assigned to any context
-function is_unassigned { graph is_unassigned | graph_filter_chain "$@" ; }
+function is_unassigned { graph is_unassigned | query_filter_chain "$@" ; }
 
 # Keep only waiting tasks
-function is_waiting { graph filter_state WAITING | graph_filter_chain "$@" ; }
+function is_waiting { graph filter_state WAITING | query_filter_chain "$@" ; }
 
 # adjacent incoming dependencies of input set
 function parents { adjacent dependencies incoming "$@" ; }
@@ -734,7 +851,22 @@ function search {
 	if graph_datum contents read "${id}" | grep -q "${pattern}" -; then
 	    echo "${id}"
 	fi
-    done | graph_filter_chain "$@"
+    done | query_filter_chain "$@"
+}
+
+## Binary queries *************************************************************
+
+function union {
+    local -a canonical
+    canonicalize "$@"
+
+    # parse_command should take care of this, but it makes sense to
+    # include this guard rail.
+    if query_find_consumer "${canonical[@]}"; then
+	error "unpossible"
+    fi
+
+    cat - <( "${canonical[@]}" )
 }
 
 ## Formatters *****************************************************************
@@ -798,7 +930,7 @@ function __datum_exists {
     local datum="$1";
     # dropping second argument
     shift 2
-    filter graph_datum "${datum}" exists | graph_filter_chain "$@"
+    filter graph_datum "${datum}" exists | query_filter_chain "$@"
 }
 
 function __datum_path_read {
@@ -817,9 +949,7 @@ function __datum_mkdir_cp {
 }
 
 # dotfile export for graphviz
-function dot {
-    graph dot
-}
+function dot { graph dot; }
 
 # Add node ids to the named bucket
 #
@@ -1214,4 +1344,29 @@ if test "$1" = "--preview"; then
    declare GTD_PREVIEW_MODE=""; shift
 fi
 
-graph_filter_begin "$@"
+# I painted myself into a bit of a corner here, with the postfix
+# syntax.
+function parse_command {
+    # these all need to be arrays in order to preserve argument
+    # boundaries, thanks to word splitting.
+    local -a canonical
+    local -a query
+    local -a consumer
+
+    # first, get the canonical form of the command, which meeans
+    # inserting implicit producers if needed.
+    query_canonicalize "$@"
+
+    if query_split_consumer "${canonical[@]}"; then
+	# if the command contains a consumer, we want to split it off
+	# and pipe to it at this level. this is needed so that binary
+	# queries can work correctly.
+	"${query[@]}" | "${consumer[@]}"
+    else
+	# if the command doesn't contain a consumer, we can just
+	# dispatch directly.
+	"${canonical[@]}"
+    fi
+}
+
+parse_command "$@"

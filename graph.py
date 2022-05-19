@@ -35,7 +35,12 @@ def union(lhs, rhs):
 def edge_list(edge_set):
     try:
         path = os.path.join(os.getenv("STATE_DIR"), edge_set)
-        return {tuple(edge.split(':')) for edge in os.listdir(path)}
+        ret = {
+            tuple(edge.split(':'))
+            for edge in os.listdir(path)
+            if ':' in edge
+        }
+        return ret
     except OSError:
         return set()
 
