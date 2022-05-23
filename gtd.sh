@@ -308,10 +308,8 @@ function graph_datum {
 	exists) test -e        "${path}";;
 	path)   echo           "${path}";;
 	read)   __datum_read            ;;
-	# XXX: remove these two uuocs once you figure out how.
-	# it seems like a `:` should work here, but it breaks the tests.
-	write)   cat >          "${path}";;
-	append)  cat >>         "${path}";;
+	write)  cat >          "${path}";;
+	append) cat >>         "${path}";;
 	edit)   "${EDITOR}"    "${path}";;
 	mkdir)  mkdir -p       "${path}";;
 	cp)     cp "$@"        "${path}";;
@@ -463,125 +461,129 @@ function task_persist {
 
 ## Helpers ********************************************************************
 
+
+# These associative arrays store meta-data about query commands that
+# is used to help parse queries. The helper functions below read or
+# modify these arrays.
+declare -A GTD_QUERY_DEFAULT_FUNC
+declare -A GTD_QUERY_TYPE_FUNC
+declare -A GTD_QUERY_ARG_FUNC
+# set the "default query function" for the given query filter
+function query_declare_default_func {
+    GTD_QUERY_DEFAULT_FUNC["$1"]="${@:2:$# - 1}"
+}
+
+# set the default func to the given static query
+function query_declare_default_producer {
+    query_declare_default_func "$1" echo "${@:2:$# - 1}"
+}
+
 # maps query filters and consumer to default dproducers.
 function query_default_producer {
-    case "$*" in
-	adjacent)          echo "from" "cur";;
-	assignees)         echo "from" "cur";;
-	children)          echo "from" "cur";;
-	choose)            echo "all";;
-	contexts)          echo "from" "cur";;
-	"datum exists")    echo "all";;
-	datum)             echo "from" "target";;
-	is_actionable)     echo "all";;
-	is_active)         echo "all";;
-	is_complete)       echo "all";;
-	is_context)        echo "all";;
-	is_deferred)       echo "all";;
-	is_new)            echo "all";;
-	is_next)           echo "all";;
-	is_orphan)         echo "all";;
-	is_persistent)     echo "all";;
-	is_project)        echo "all";;
-	is_root)           echo "all";;
-	is_unassigned)     echo "all";;
-	is_waiting)        echo "all";;
-	parents)           echo "from" "cur";;
-	project)           echo "from" "cur";;
-	projects)          echo "from" "cur";;
-	subtasks)          echo "from" "cur";;
-	search)            echo "all";;
-	someday)           echo "from" "target";;
-	# binary queries
-	union)             echo "null";;
-	# formatters
-	"datum read")      echo "all";;
-	"datum path")      echo "all";;
-	dot)               echo "all";;
-	into)              echo "all" "choose";;
-	summarize)         echo "all";;
-	tree)              echo "from" "cur";;
-	# updates
-	activate)          echo "from" "target";;
-	complete)          echo "from" "target";;
-	# datum write
-	# datum append
-	# datum mkdir
-	# datum cp
-	defer)             echo "from" "target";;
-	drop)              echo "from" "target";;
-	edit)              echo "from" "cur";;
-	goto)              echo "all";;
-	persist)           echo "from" "target";;
-    esac
+    "GTD_QUERY_DEFAULT_FUNC[$1]" "${@:2:$# - 1}"
 }
 
-# returns true if "$@" is recognized as a valid filter keyword
+# set the default type function for the given query command
+function query_declare_type_func {
+    GTD_QUERY_TYPE_FUNC["$1"]="${@:2:$# - 1}"
+}
+
+# set the type function to the given constant type
+function query_declare_type {
+    query_declare_type_func "$1" echo "${@:2:$# - 1}"
+}
+
+# set the default argument arity function
+function query_declare_arg_func {
+    GTD_QUERY_ARG_FUNC["$1"]="${@:2:$# - 1}"
+}
+
+# set the default type function for the given query command
+function query_declare_positional {
+    GTD_QUERY_POSITIONAL["$1"]="${@:2:$# - 1}"
+    query_declare_arg_func "$1" __default_arg_func
+}
+
+# set the default type function for the given query command
+function query_declare_option {
+    GTD_QUERY_OPTIONS["$1:$2"]="${@:3:$# - 2}"
+    query_declare_arg_func "$1" __default_arg_func
+}
+
+function __default_arg_func {
+    error "not implemented"
+}
+
+
+# declare a subcommand under the given command
+# the type and defaults delegate to func `func`
+function query_declare_subcommand {
+    local parent="$1"
+    local subcommand="$2"
+    local func="$3"
+
+    GTD_QUERY_SUBCOMMANDS["${parent}:${subcommand}"]="${func}"
+
+    query_declare_type_func    __subcommand_type_func
+    query_declare_default_func __subcommand_default_func
+    query_declare_arg_func     __subcommand_arg_func
+}
+
+function __subcommand_type_func {
+    query_command_type "GTD_QUERY_SUBCOMMANDS[$1:$2]" "${@:3:$# - 2}"
+}
+
+function __subcommand_default_func {
+    query_default_producer "GTD_QUERY_SUBCOMMANDS[$1:$2]" "${@:3:$# - 2}"
+}
+
+function __subcommand_arg_func {
+    query_command_arity "GTD_QUERY_SUBCOMMANDS[$1:$2]" "${@:3:$# - 2}"
+}
+
+
+# output the type of the query command
+function query_command_type {
+    "GTD_QUERY_COMMAND_TYPE_FUNC[$1]" "${@:2:$# - 1}"
+}
+
+# output the number of arguments consumed by this command
+function query_command_arity {
+    "GTD_QUERY_COMMAND_ARITY_FUNC[$1]" "${@:2:$# - 1}"
+}
+
+# returns true if the given query command is counts as a filter
 function query_command_is_filter {
-    case "$1" in
-	adjacent)          echo "from" "cur";;
-	assignees)         echo "from" "cur";;
-	children)          echo "from" "cur";;
-	choose)            echo "all";;
-	contexts)          echo "from" "cur";;
-	"datum exists")    echo "all";;
-	datum)             echo "from" "target";;
-	is_actionable)     echo "all";;
-	is_active)         echo "all";;
-	is_complete)       echo "all";;
-	is_context)        echo "all";;
-	is_deferred)       echo "all";;
-	is_new)            echo "all";;
-	is_next)           echo "all";;
-	is_orphan)         echo "all";;
-	is_persistent)     echo "all";;
-	is_project)        echo "all";;
-	is_root)           echo "all";;
-	is_unassigned)     echo "all";;
-	is_waiting)        echo "all";;
-	parents)           echo "from" "cur";;
-	project)           echo "from" "cur";;
-	projects)          echo "from" "cur";;
-	subtasks)          echo "from" "cur";;
-	search)            echo "all";;
-	someday)           echo "from" "target";;
-	# binary queries
-	union)             echo "null";;
-	# formatters
-	"datum read")      echo "all";;
-	"datum path")      echo "all";;
+    case "$(query_command_type $@)" in
+	filter) return 0;;
+	binop)  return 0;;
+	*)      return 1;;
     esac
 }
 
-# returns true if "$@" is recognized as a valid filter keyword
+# returns true if the given query command allows further filtering
 function query_command_is_chainable {
-    test -n "$(query_default_producer "$1")"
+    case "$(query_command_type "$@")" in
+	producer) return 0;;
+	filter)   return 0;;
+	binop)    return 0;;
+	*)        return 1;;
+    esac
 }
 
-# tbd: refactor the big table such that this can be implemented like
-# query_command_is_filter.
+# return true if the given query command does not allow further filtering
 function query_command_is_consumer {
-    case "$*" in
-	activate)          return 0;;
-	complete)          return 0;;
-	"datum write")	   return 0;;
-	"datum append")	   return 0;;
-	"datum mkdir")	   return 0;;
-	"datum cp")	   return 0;;
-	defer)             return 0;;
-	drop)              return 0;;
-	edit)              return 0;;
-	goto*)             return 0;;
-	into*)             return 0;;
-	persist)           return 0;;
-	summarize)         return 0;;
-	*)                 return 1;;
+    case "$(query_command_type "$@")" in
+	formatter) return 0;;
+	update)    return 0;;
+	selection) return 0;;
+	*)         return 1;;
     esac
 }
 
 # find the index of the first filter in the query
 function query_find_first_filter {
-    local -i i=0
+    local -i i=1
     local cur
     while test -n "$*"; do
 	if query_command_is_filter "$1"; then
@@ -597,7 +599,7 @@ function query_find_first_filter {
 
 # print the index into which the 
 function query_find_consumer {
-    local -i i=0
+    local -i i=1
     while test -n "$*"; do
 	if query_command_is_consumer "$@"; then
 	    echo "${i}"
@@ -621,15 +623,16 @@ function query_split_consumer {
     local -i  tail_start
 
     if tail_start="$(query_find_consumer "$@")"; then
-	query=( "${@:1:tail_start + 1}" )
-	consumer=( "${@:tail_start + 1:query_length - tail_start}" )
+	query=( "${@:1:tail_start - 1}" )
+	consumer=( "${@:tail_start:query_length - tail_start + 1}" )
 	return 0
     else
 	return 1
     fi
 }
 
-# convert a query to its canonical form, inserting implicit prodcers if needed.
+# convert a query to its canonical form, inserting implicit prodcers
+# if needed.
 #
 # to avoid quoting issues, the canoncical query is placed into the
 # `canonical` array, rather than printed to stdout.
@@ -649,14 +652,6 @@ function query_canonicalize {
     fi
 }
 
-# returns true if "$@" is recognized as a valid filter keyword
-function tree_filter_is_valid {
-    case "$1" in
-	indent) return 0;;
-	*)      return 1;;
-    esac
-}
-
 # allow further chaining of graph query filters.
 #
 # if args are given, and a valid filter, then fold the given command
@@ -669,24 +664,6 @@ function query_filter_chain {
 	    "$@"
 	else
 	    error "$1 is not a valid graph query filter"
-	fi
-    else
-	 cat
-    fi
-}
-
-# allow further chaining of tree query filters.
-#
-# if args are given, and a valid filter, then fold the given command
-# into the pipeline.
-#
-# if no args are given, forward stdin to stdout
-function tree_filter_chain {
-    if test -n "$*"; then
-	if tree_filter_is_valid "$1"; then
-	    "$@"
-	else
-	    error "$1 is not a valid tree query filter"
 	fi
     else
 	 cat
@@ -720,8 +697,12 @@ function forbid_preview {
 
 # all tasks
 function all { graph_node_list | query_filter_chain "$@" ; }
+query_declare_type all producer
+function all { graph_node_list ; }
 
 # output tasks from named bucket
+query_declare_type       from producer
+query_declare_positional from 1
 function from {
     local bucket="${BUCKET_DIR}/$1"; shift;
     test -e "${bucket}" || mkdir -p "${bucket}"
@@ -730,8 +711,11 @@ function from {
 
 # output all new tasks
 function inbox { all | is_new | query_filter_chain "$@" ; }
+query_declare_type inbox producer
+function inbox { all | is_new ; }
 
 # output the last captured node
+query_declare_type last_captured producer
 function last_captured {
     if test -e "${DATA_DIR}/last_captured"; then
 	cat "${DATA_DIR}/last_captured"
@@ -740,6 +724,8 @@ function last_captured {
 
 # output an empty set
 function null { : | query_filter_chain "$@" ; }
+query_declare_type null producer
+function null { : ; }
 
 ### Query Filters *************************************************************
 
@@ -752,6 +738,9 @@ function reachable {
 }
 
 # output the nodes adjacent to each input node
+query_declare_type             adjacent filter
+query_declare_default_producer adjacent from cur
+query_declare_positional       adjacent 2
 function adjacent {
     local edges="$1"
     local direction="$2"
@@ -761,14 +750,23 @@ function adjacent {
 
 # insert tasks assigned to each incoming context id
 function assignees { reachable context outgoing "$@" ; }
+query_declare_type             asignees filter
+query_declare_default_producer asignees from cur
+function assignees { reachable asignees outgoing "$@" ; }
 
 # immediate subtasks of the input set
 function children { adjacent dependencies outgoing "$@" ; } 
+query_declare_type             children filter
+query_declare_default_producer children from cur
 
 # immediate context edgres
+query_declare_type             contexts filter
+query_declare_default_producer contexts from cur
 function contexts { adjacent context incoming "$@" ; }
 
 # keep only the node selected by the user
+query_declare_type             choose   filter
+query_declare_default_producer choose   all
 function choose {
     # can't preview because this also uses FZF.
     forbid_preview
@@ -783,11 +781,15 @@ function choose {
 }
 
 # Keep only actionable tasks.
+query_declare_type             is_actionable filter
+query_declare_default_producer is_actionable all
 function is_actionable {
     graph filter_state NEW TODO | query_filter_chain "$@"
 }
 
 # Keep only active tasks.
+query_declare_type             is_active filter
+query_declare_default_producer is_active all
 function is_active {
     graph filter_state \
 	NEW \
@@ -799,51 +801,85 @@ function is_active {
 
 # Keep only completed tasks
 function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
+query_declare_type             is_complete filter
+query_declare_default_producer is_complete all
 
 # Keep only context nodes
 function is_context { graph is_context | query_filter_chain "$@" ; }
+query_declare_type             is_context filter
+query_declare_default_producer is_context all
 
 # Keep only deferred nodes
 function is_deferred {  graph filter_state SOMEDAY | query_filter_chain "$@" ; }
+query_declare_type             is_deferred filter
+query_declare_default_producer is_deferred all
 
 # keep only new tasks
 function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
+query_declare_type             is_new filter
+query_declare_default_producer is_new all
 
 # Keep only next actions
+query_declare_type             is_next filter
+query_declare_default_producer is_next all
 function is_next { graph is_next | is_actionable "$@" ; }
 
 # Keep only tasks not associated with any other tasks
 function is_orphan { graph is_orphan | query_filter_chain "$@" ; }
+query_declare_type             is_orphan filter
+query_declare_default_producer is_orphan all
 
 # Keep only tasks in state PERSIST
 function is_persistent {
     graph filter_state PERSIST | query_filter_chain "$@"
 }
+query_declare_type             is_persistent filter
+query_declare_default_producer is_persistent all
 
 # Keep only tasks which are considered projects
 function is_project { graph is_project | query_filter_chain "$@" ; }
+query_declare_type             is_project filter
+query_declare_default_producer is_project all
 
 # Keep only tasks which are the root of a subgraph
 function is_root { graph is_root | query_filter_chain "$@" ; }
+query_declare_type             is_root filter
+query_declare_default_producer is_root all
 
 # Keep only tasks not assigned to any context
 function is_unassigned { graph is_unassigned | query_filter_chain "$@" ; }
+query_declare_type             is_unassigned filter
+query_declare_default_producer is_unassigned all
 
 # Keep only waiting tasks
 function is_waiting { graph filter_state WAITING | query_filter_chain "$@" ; }
+query_declare_type             is_waiting filter
+query_declare_default_producer is_waiting all
 
 # adjacent incoming dependencies of input set
+query_declare_type             parents filter
+query_declare_default_producer parents from cur
 function parents { adjacent dependencies incoming "$@" ; }
 
 # insert parents of each incoming task id
+query_declare_type             projects filter
+query_declare_default_producer projects from cur
 function projects { reachable dependencies incoming "$@" ; }
 
+query_declare_type             reachable filter
+query_declare_default_producer reachable from cur
+query_declare_positional       reachable 2
 # insert subtasks of each incoming parent task id
+query_declare_type             subtasks filter
+query_declare_default_producer subtasks from cur
 function subtasks { reachable dependencies outgoing "$@" ; }
 
 # keep only nodes whose contents matches the given *pattern*.
 #
 # tbd: make this more configurable
+query_declare_type             search filter
+query_declare_default_producer search all
+query_declare_positional       search 1
 function search {
     local pattern="$1"; shift
     local id
@@ -856,6 +892,8 @@ function search {
 
 ## Binary queries *************************************************************
 
+query_declare_type             union binop
+query_declare_default_producer union null
 function union {
     local -a canonical
     canonicalize "$@"
@@ -871,51 +909,13 @@ function union {
 
 ## Formatters *****************************************************************
 
-# Create a new task.
-#
-# If arguments are given, they are written as the node contents.
-#
-# If no arguments are given:
-# - and stdin is a tty, invokes $EDITOR to create the node contents.
-# - otherwise, stdin is written to the contents file.
-function capture {
-    forbid_preview
-
-    case "$1" in
-	-b|--bucket)
-	    local bucket="$2"
-	    shift 2
-	    ;;
-    esac
-
-    local node="$(graph_node_create)"
-    echo "NEW" | graph_datum state write "${node}"
-
-    # no need to call "end filter chain", as we consume all arguments.
-    if test -z "$*"; then
-	if tty > /dev/null; then
-	    graph_datum contents edit "${node}"
-	else
-	    echo "from stdin"
-	    graph_datum contents write "${node}"
-	fi
-    else
-	echo "$*" | graph_datum contents write "${node}"
-    fi
-
-    database_commit "${SAVED_ARGV}"
-
-    echo "${node}" > "${DATA_DIR}/last_captured"
-
-    if test -n "${bucket}"; then
-	from "${bucket}" | while IFS="" read -r parent; do
-	    graph_edge_create "${parent}" "${node}" dep
-	    task_auto_triage "${node}"
-	done
-    fi
-}
-
-# runs graph_datum $1 $2 ${id} for each id
+# datum accepts subcommands.
+# TBD: maybe I can factor out the boiler plate somehow?
+query_declare_subcommand datum exists __datum_exists
+query_declare_subcommand datum path   __datum_path_read
+query_declare_subcommand datum read   __datum_path_read
+query_declare_subcommand datum mkdir  __datum_mkdir_cp
+query_declare_subcommand datum cp     __datum_mkdir_cp
 function datum {
     test -z "$1" && error "a datum is required"
     case "$2" in
@@ -926,6 +926,8 @@ function datum {
     esac
 }
 
+query_declare_type             __datum_exists filter
+query_declare_default_producer __datum_exists all
 function __datum_exists {
     local datum="$1";
     # dropping second argument
@@ -1012,6 +1014,8 @@ function __into_copy {
 }
 
 # Print a one-line summary for each task id
+query_declare_type             summarize formatter
+query_declare_default_producer summarize inbox
 function summarize {
     end_filter_chain "$@"
     map task_summary
@@ -1020,27 +1024,16 @@ function summarize {
 # tree expansion of project rooted at the given node for given edge set and direction.
 #
 # tree filters can be chained onto this, but not graph filters
-function tree { graph expand "$1" "$2" | indent "$@" ; }
+query_declare_type             tree formatter
+query_declare_default_producer tree inbox
+function tree { graph expand "$1" "$2" | __tree_indent "$@" ; }
 
-# indent tree expansion
-function indent {
-    if test "$1" = "--gloss-only"; then
-	local no_meta=""; shift;
-    fi
-    
-    if test -n "$1"; then
-	local marker="$(echo "$1")"; shift
-    else
-	local marker='  '
-    fi
-
-    end_filter_chain "$@"
+function __tree_indent {
+    local marker='  '
 
     local depth
     while IFS="" read -r id depth; do
-	if test ! -v no_meta; then
-	   printf "%s %7s" "${id}" "$(task_state read "${id}")"
-	fi
+	printf "%s %7s" "${id}" "$(task_state read "${id}")"
 
 	# indent the line.
 	for i in $(seq $(("${depth}"))); do
@@ -1112,6 +1105,8 @@ function edit {
 }
 
 # set the current node
+query_declare_default_producer goto selection
+query_declare_positional       goto 1
 function goto {
     forbid_preview
     local bucket="$1"; shift
@@ -1120,6 +1115,8 @@ function goto {
 }
 
 # persist each task
+query_declare_default_producer persist update
+query_declare_default_producer persist from target
 function persist {
     forbid_preview
     end_filter_chain "$@"

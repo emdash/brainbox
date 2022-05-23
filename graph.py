@@ -196,6 +196,7 @@ def dot_edge(u, v, style):
     return f"{dot_quote(u)} -> {dot_quote(v)} [style={dot_quote(style)}];"
 
 def dot_edges(edges, nodes, style):
+
     for (u, v) in edge_list(edges):
         if edge_touches(u, v, nodes):
             print(dot_edge(u, v, style))
