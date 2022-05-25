@@ -158,17 +158,18 @@ def dot_attrs(*args):
 
 def dot_bucket(name):
     items = "\n".join(dot_quote(id) for id in bucket_list(name))
-    return \
-f"""subgraph \"cluster_{name}\" {{ 
-label = {dot_quote(name)};
-style = rounded;
-color = grey90;
-bgcolor = grey90;
-fontname = "italic";
-fontsize = "9pt"
-{items}}}
-"""
-
+    print(
+          f"""subgraph \"cluster_{name}\" {{ 
+          label = {dot_quote(name)};
+          style = rounded;
+          color = grey90;
+          bgcolor = grey90;
+          fontname = "italic";
+          fontsize = "9pt"
+          {items}}}
+          """
+    )
+    
 def dot_state_colors(state):
     if   state == "NEW":     return ("deeppink", "black")
     elif state == "TODO":    return ("grey95",   "black"  )

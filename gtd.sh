@@ -874,7 +874,10 @@ function get {
 # dotfile export for graphviz
 query_declare_type             dot formatter
 query_declare_default_producer dot all
-function dot { graph dot; }
+function dot {
+    end_filter_chain "$@"
+    graph dot
+}
 
 # select nodes from input set to be placed into the given bucket
 query_declare_type             goto selection
