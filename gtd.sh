@@ -1092,7 +1092,49 @@ function buckets {
     ls "${BUCKET_DIR}"
 }
 
+# Create a new task.
+#
+# If arguments are given, they are written as the node contents.
+#
+# If no arguments are given:
+# - and stdin is a tty, invokes $EDITOR to create the node contents.
+# - otherwise, stdin is written to the contents file.
+function capture {
+    forbid_preview
 
+    case "$1" in
+	-b|--bucket)
+	    local bucket="$2"
+	    shift 2
+	    ;;
+    esac
+
+    local node="$(graph_node_create)"
+    echo "NEW" | graph_datum state write "${node}"
+
+    # no need to call "end filter chain", as we consume all arguments.
+    if test -z "$*"; then
+	if tty > /dev/null; then
+	    graph_datum contents edit "${node}"
+	else
+	    echo "from stdin"
+	    graph_datum contents write "${node}"
+	fi
+    else
+	echo "$*" | graph_datum contents write "${node}"
+    fi
+
+    database_commit "${SAVED_ARGV}"
+
+    echo "${node}" > "${DATA_DIR}/last_captured"
+
+    if test -n "${bucket}"; then
+	from "${bucket}" | while IFS="" read -r parent; do
+	    graph_edge_create "${parent}" "${node}" dep
+	    task_auto_triage "${node}"
+	done
+    fi
+}
 
 # Clobber the database
 function clobber {
