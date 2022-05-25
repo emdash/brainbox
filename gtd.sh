@@ -3,6 +3,13 @@
 set -eo pipefail
 shopt -s failglob
 
+if test "$1" = "--trace"
+then
+    shift
+    set -x
+fi
+
+
 # name-prefixed variable here, but ...
 if test -v GTD_DATA_DIR; then
     # ... prefer to keep the short name in the rest of the code.
