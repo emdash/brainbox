@@ -866,9 +866,15 @@ function union {
 query_declare_type             get formatter
 query_declare_default_producer get all
 function get {
-    echo "foo"
+    if test -z "$1"
+    then
+	local datum="contents"
+    else
+	local datum="$1"
+	shift
+    fi
     end_filter_chain "$@"
-    map graph_datum "$1" read
+    map graph_datum "${datum}" read
 }
 
 # dotfile export for graphviz
@@ -1027,28 +1033,14 @@ function drop {
 
 # edit the contents of node in the input set in turn.
 query_declare_type             edit update
-query_declare_default_producer edit update
+query_declare_default_producer edit last_captured
 function edit {
     forbid_preview
 
-    if test "$1" = "--sequential"; then
-	local sequential=1; shift;
-    fi
-
-    end_filter_chain "$@"
-
-    if test -v sequential; then
-	local line
-	datum contents path | while IFS="" read -r line; do
-	    # xargs -o: reopens stdin / stdout as tty in the child process.
-	    echo "${line}" | xargs -o "${EDITOR}"
-	done
-    elif test -z "$1"; then
-	# xargs -o: reopens stdin / stdout as tty in the child process.
-	datum contents path | xargs -o "${EDITOR}"
-    else
-	error "invalid argument: $1"
-    fi
+    # xargs -o: reopens stdin / stdout as tty in the child
+    # process, allowing the editor to function even though stdin
+    # is the query result.
+    map graph_datum "${1:-contents}" path | xargs -o "${EDITOR}"
     database_commit "${SAVED_ARGV}"
 }
 
@@ -1067,7 +1059,10 @@ query_declare_type             set formatter
 query_declare_default_producer set all
 function set {
     forbid_preview
-    map graph_datum "$1" write "${@:1}"
+    while IFS='' read -r id
+    do
+	echo "${@:2}" | graph_datum "$1" write "${id}"
+    done
 }
 
 
@@ -1337,7 +1332,6 @@ function dispatch {
     if query_command_is_valid "$1"; then
 	local -a canonical
 	if query_canonicalize "$@"; then
-	    debug "${canonical[@]}"
 	    "${canonical[@]}"
 	else
 	    "$@"
