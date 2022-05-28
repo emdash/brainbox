@@ -107,10 +107,10 @@ def is_project():
                  has_adjacent(n, e, "outgoing"))
 
 def is_unassigned():
-    filter_adjacency("contexts", lambda n, e: not has_adjacent(n, e, "incoming"))
+    filter_edges("contexts", lambda n, e: not has_adjacent(n, e, "incoming"))
 
 def is_context():
-    filter_adjacency("contexts", lambda n, e: not has_adjacent(n, e, "outgoing"))
+    filter_edges("contexts", lambda n, e: has_adjacent(n, e, "outgoing"))
 
 def reachable(edges, direction):
     edges = edge_list(edges)
@@ -233,9 +233,10 @@ if __name__ == "__main__":
         "reachable":     reachable,
         "union":         union,
         "filter_state":  filter_state,
-        "is_root":       is_root,
+        "is_context":    is_context,
         "is_leaf":       is_leaf,
         "is_project":    is_project,
+        "is_root":       is_root,
         "is_unassigned": is_unassigned,
         "dot":           dot
     }[sys.argv[1]](*sys.argv[2:])

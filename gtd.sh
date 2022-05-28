@@ -585,7 +585,7 @@ function query_canonicalize {
     local -i  tail_start
 
     if query_command_is_chainable "$1"; then
-	canonical=( "$(query_default_producer "$@")" "$@" )
+	canonical=( $(query_default_producer "$@") "$@" )
 	return 0
     else
 	return 1
@@ -722,7 +722,9 @@ function choose {
 query_declare_type             has filter
 query_declare_default_producer has all
 function has {
-    filter graph_datum "$1" exists | query_filter_chain "$@"
+    local -r datum="$1"
+    shift
+    filter graph_datum "${datum}" exists | query_filter_chain "$@"
 }
 
 # Keep only actionable tasks.
@@ -767,7 +769,7 @@ function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
 # Keep only next actions
 query_declare_type             is_next filter
 query_declare_default_producer is_next all
-function is_next { graph is_next | is_actionable "$@" ; }
+function is_next { graph is_leaf | is_actionable "$@" ; }
 
 # Keep only tasks not associated with any other tasks
 query_declare_type             is_orphan filter
@@ -890,9 +892,18 @@ query_declare_type             goto selection
 query_declare_default_producer goto from cur
 function goto {
     forbid_preview
-    local bucket="$1"; shift
+
+    case "$1" in
+	--*) local -r opt="$1"; shift;;
+	*)   local -r opt="--noempty";;
+    esac
+    
+    echo "$@"
+    local bucket="$1"
+    shift
+
     end_filter_chain "$@"
-    choose into --noempty "${bucket}"
+    choose into "${opt}" "${bucket}"
 }
 
 # Add node ids to the named bucket
@@ -993,7 +1004,7 @@ function __tree_indent {
 
 # Reactivate each task id
 query_declare_type             activate update
-query_declare_default_producer activate update
+query_declare_default_producer activate from target
 function activate {
     forbid_preview
     end_filter_chain "$@"
@@ -1003,7 +1014,7 @@ function activate {
 
 # Complete each task id
 query_declare_type             complete update
-query_declare_default_producer complete update
+query_declare_default_producer complete from target
 function complete {
     forbid_preview
     end_filter_chain "$@"
@@ -1013,7 +1024,7 @@ function complete {
 
 # Defer each task id
 query_declare_type             defer update
-query_declare_default_producer defer update
+query_declare_default_producer defer from target
 function defer {
     forbid_preview
     end_filter_chain "$@"
@@ -1023,7 +1034,7 @@ function defer {
 
 # drop each task in the input set
 query_declare_type             drop update
-query_declare_default_producer drop update
+query_declare_default_producer drop from target
 function drop {
     forbid_preview
     end_filter_chain "$@"
@@ -1045,7 +1056,7 @@ function edit {
 }
 
 # persist each task
-query_declare_default_producer persist update
+query_declare_type             persist update
 query_declare_default_producer persist from target
 function persist {
     forbid_preview
@@ -1056,7 +1067,7 @@ function persist {
 
 # set the given datum on the input set to the given args or stdin.
 query_declare_type             set formatter
-query_declare_default_producer set all
+query_declare_default_producer set from target
 function set {
     forbid_preview
     while IFS='' read -r id
@@ -1140,7 +1151,16 @@ function clobber {
 # move downward from cur
 function down {
     forbid_preview
-    from "$1" children goto "$1"
+
+    if test "$1" = "--union"
+    then
+	local -r opt="$1"
+	shift
+    else
+	local -r opt="--noempty"
+    fi
+
+    from "$1" children goto "${opt}" "$1"
 }
 
 # Initialize the database
@@ -1224,7 +1244,16 @@ function unlink {
 # Move upward from cur
 function up {
     forbid_preview
-    from "$1" parents goto "$1"
+
+    if test "$1" = "--union"
+    then
+	local -r opt="$1"
+	shift
+    else
+	local -r opt="--noempty"
+    fi
+
+    from "$1" parents goto "${opt}" "$1"
 }
 
 ## Live Queries ***************************************************************
