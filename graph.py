@@ -115,7 +115,6 @@ def is_context():
 def reachable(edges, direction):
     edges = edge_list(edges)
     seen = set()
-
     for node in read_ids():
         for subtask in traverse(node, edges, direction, set(), seen):
             if subtask not in seen:

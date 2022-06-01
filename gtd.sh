@@ -1,5 +1,6 @@
 #! /usr/bin/env bash
 
+
 set -eo pipefail
 shopt -s failglob
 
@@ -472,6 +473,7 @@ function task_persist {
 # help in command parsing.
 declare -A GTD_QUERY_DEFAULT
 declare -A GTD_QUERY_TYPE
+declare -A GTD_QUERY_CANONICAL_NAME
 
 
 # set the "default query function" for the given query filter
@@ -487,6 +489,16 @@ function query_default_producer {
     else
 	error "$1 defines no default producer"
     fi
+}
+
+# declare the canonical name of of the query command
+function query_declare_canonical_name {
+    if test -v "GTD_QUERY_CANONICAL_NAME[$2]"
+    then
+	error "a canonical name for $2 is already defined"
+    fi
+
+    GTD_QUERY_CANONICAL_NAME["$2"]="$1"
 }
 
 
@@ -584,11 +596,21 @@ function query_canonicalize {
     local -ir query_length="$#"
     local -i  tail_start
 
+    canonical=( "$@" )
+
+    local -i i=0
+    while test "${i}" -lt "${query_length}"
+    do
+	local cmd="${canonical[${i}]}"
+	if test -v "GTD_QUERY_CANONICAL_NAME[${cmd}]"
+	then
+	    canonical["${i}"]="${GTD_QUERY_CANONICAL_NAME[${cmd}]}"
+	fi
+	i="$((i + 1))"
+    done
+
     if query_command_is_chainable "$1"; then
 	canonical=( $(query_default_producer "$@") "$@" )
-	return 0
-    else
-	return 1
     fi
 }
 
@@ -686,10 +708,10 @@ function adjacent {
 }
 
 # insert tasks assigned to each incoming context id
-query_declare_type             asignees filter
-query_declare_default_producer asignees from cur
+query_declare_type             assignees filter
+query_declare_default_producer assignees from cur
 function assignees {
-    reachable asignees outgoing "$@" | query_filter_chain "$@"
+    reachable contexts outgoing "$@" | query_filter_chain "$@"
 }
 
 # immediate subtasks of the input set
@@ -1066,14 +1088,16 @@ function persist {
 }
 
 # set the given datum on the input set to the given args or stdin.
-query_declare_type             set formatter
-query_declare_default_producer set from target
-function set {
+query_declare_type             set_ formatter
+query_declare_default_producer set_ from target
+query_declare_canonical_name   set_ set
+function set_ {
     forbid_preview
     while IFS='' read -r id
     do
 	echo "${@:2}" | graph_datum "$1" write "${id}"
     done
+    database_commit "${SAVED_ARGV}"
 }
 
 
@@ -1202,6 +1226,32 @@ function link {
     done
 
     database_commit "${SAVED_ARGV}"
+}
+
+# shortcut for:
+# - capture into bucket
+# - persist
+# - set date (defaults to today)
+function log {
+    if test "$1" = "--date"
+    then
+	local -r d="$2"
+	shift 2
+    else
+	local -r d="$(date --iso)"
+    fi
+
+    if test -n "$1"
+    then
+	local bucket="$1"
+	shift
+    else
+	error "A bucket is required"
+    fi
+
+    capture -b "${bucket}" "$@"
+    last_captured persist
+    last_captured set_ date "${d}"
 }
 
 # remove subtasks
@@ -1373,7 +1423,9 @@ function dispatch {
 if test "$1" = "--debug"
 then
     shift
-    for name in GTD_QUERY_DEFAULT GTD_QUERY_TYPE
+    for name in GTD_QUERY_DEFAULT \
+		    GTD_QUERY_TYPE \
+		    GTD_QUERY_CANONICAL_NAME
     do
 	declare -n arr="${name}"
 	echo "${name}"
@@ -1382,6 +1434,11 @@ then
 	    echo "    ${key} = ${arr[${key}]}"
 	done
     done
-fi
 
-dispatch "$@"
+    declare -a canonical
+    query_canonicalize "$@"
+    echo "Canonical query"
+    echo "${canonical[@]}"
+else
+    dispatch "$@"
+fi
