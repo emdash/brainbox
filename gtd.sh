@@ -791,7 +791,7 @@ function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
 # Keep only next actions
 query_declare_type             is_next filter
 query_declare_default_producer is_next all
-function is_next { graph is_leaf | is_actionable "$@" ; }
+function is_next { graph is_next | is_actionable "$@" ; }
 
 # Keep only tasks not associated with any other tasks
 query_declare_type             is_orphan filter

@@ -101,6 +101,9 @@ def is_root():
 def is_leaf():
     filter_edges("dependencies", lambda n, e: not has_adjacent(n, e, "outgoing"))
 
+def is_next():
+    filter_edges("dependencies", lambda n, e: not any(task_state(o) in {"NEW", "TODO"} for o in node_adjacent(n, e, "outgoing")))
+
 def is_project():
     filter_edges("dependencies", lambda n, e:
                  has_adjacent(n, e, "incoming") and
@@ -222,7 +225,6 @@ def dot():
     dot_bucket("cur")
 
     print("}")
-    
 
 
 if __name__ == "__main__":
@@ -234,6 +236,7 @@ if __name__ == "__main__":
         "filter_state":  filter_state,
         "is_context":    is_context,
         "is_leaf":       is_leaf,
+        "is_next":       is_next,
         "is_project":    is_project,
         "is_root":       is_root,
         "is_unassigned": is_unassigned,
