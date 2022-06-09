@@ -89,7 +89,7 @@ def adjacent(edge_set, direction):
     edges = edge_list(edge_set)
     seen = set()
     for node in read_ids():
-        print (node)
+        print(node)
         for node in node_adjacent(node, edges, direction):
             if not node in seen:
                 seen.add(node)
@@ -229,8 +229,8 @@ def dot():
 
 if __name__ == "__main__":
     dispatch = {
-        "from":          bucket_list,
         "adjacent":      adjacent,
+        "from":          bucket_list,
         "reachable":     reachable,
         "union":         union,
         "filter_state":  filter_state,

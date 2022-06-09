@@ -78,7 +78,7 @@ function filter {
 # Apply "$@" to each line of stdin.
 function map {
     local input
-    while IFS="" read -r input; do
+    while IFS='' read -r input; do
 	"$@" "${input}"
     done
 }
