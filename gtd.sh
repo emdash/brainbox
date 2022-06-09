@@ -366,16 +366,6 @@ function graph_edge {
     echo "${u}:${v}"
 }
 
-# For the given internal edge representation, print the source node
-function graph_edge_u {
-    echo "$1" | cut -d ':' -f 1
-}
-
-# For the given internal edge representatoin, print the target node
-function graph_edge_v {
-    echo "$1" | cut -d ':' -f 2
-}
-
 # Print the path to the edge connecting nodes u and v, if it exists.
 function graph_edge_path {
     database_ensure_init
@@ -476,12 +466,12 @@ declare -A GTD_QUERY_TYPE
 declare -A GTD_QUERY_CANONICAL_NAME
 
 
-# set the "default query function" for the given query filter
+# annotate a query filter or consumer with its "default query"
 function query_declare_default_producer {
     GTD_QUERY_DEFAULT["$1"]="${@:2:$# - 1}"
 }
 
-# set the "default query function" for the given query filter
+# print the "default query" for the given filter or consumer
 function query_default_producer {
     if test -v "GTD_QUERY_TYPE[$1]"
     then
@@ -501,7 +491,6 @@ function query_declare_canonical_name {
     GTD_QUERY_CANONICAL_NAME["$2"]="$1"
 }
 
-
 # set the type function to the given constant type
 function query_declare_type {
     GTD_QUERY_TYPE["$1"]="${@:2:$# - 1}"
@@ -517,6 +506,7 @@ function query_command_type {
     fi
 }
 
+# exit true if the given query command is valid.
 function query_command_is_valid {
     test ! "$(query_command_type $@)" = "invalid"
 }
