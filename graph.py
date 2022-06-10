@@ -24,8 +24,12 @@ def bucket_list(bucket):
     except OSError:
         return []
 
-def union(lhs, rhs):
-    for node in set(read_ids(open(lhs, "r"))) | set(read_ids(open(rhs, "r"))):
+def union(rhs):
+    for node in set(read_ids()) | set(read_ids(open(rhs, "r"))):
+        print(node)
+
+def difference(rhs):
+    for node in set(read_ids()) - set(read_ids(open(rhs, "r"))):
         print(node)
 
 

@@ -861,16 +861,16 @@ function union {
 
     test -z "${query[*]}" && error "union must have RHS query"
 
-    if query_canonicalize "${query}"
+    if query_canonicalize "${query[@]}"
     then
-	query=( "${canonical}" )
+	query=( "${canonical[@]}" )
     fi
 
     if test -z "${consumer[*]}"
     then
-	cat - <("${query[@]}") | sort | uniq
+	graph union <("${query[@]}")
     else
-	cat - <("${query[@]}") | sort | uniq | "${consumer[@]}"
+	graph union <("${query[@]}") | "${consumer[@]}"
     fi
 }
 
