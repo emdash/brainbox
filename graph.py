@@ -217,22 +217,28 @@ def dot_edges(edges, nodes, style):
 def dot():
     nodes = set([])
 
+    buckets = {
+        b for b in os.listdir(os.getenv("BUCKET_DIR"))
+    }
+
     print("digraph {")
     print("rankdir = LR;")
     print("fontname = monospace;")
 
     for line in sys.stdin:
-        id = line.strip()
-        print(dot_node(id))
-        nodes.add(id)
+        node = line.strip()
+        print(dot_node(node))
+        nodes.add(node)
+
+    for bucket in buckets:
+        for node in bucket_list(bucket):
+            if node not in nodes:
+                print(dot_node(node))
+                nodes.add(node)
+        dot_bucket(bucket)
 
     dot_edges("dependencies", nodes, "solid")
     dot_edges("contexts", nodes, "dashed")
-
-    dot_bucket("source")
-    dot_bucket("dest")
-    dot_bucket("target")
-    dot_bucket("cur")
 
     print("}")
 

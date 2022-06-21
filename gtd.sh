@@ -967,6 +967,7 @@ function into {
 	    __into_copy "$1"
 	    ;;
     esac
+    __into_delete_empty
     follow_notify
 }
 
@@ -981,6 +982,10 @@ function __into_copy {
     ls "${temp}" | while read -r id; do
 	touch "${BUCKET_DIR}/$1/${id}"
     done
+}
+
+function __into_delete_empty {
+    find "${BUCKET_DIR}" -maxdepth 1 -mindepth 1 -empty -delete
 }
 
 # Print a one-line summary for each task id
