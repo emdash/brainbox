@@ -25,11 +25,11 @@ def bucket_list(bucket):
         return []
 
 def union(rhs):
-    for node in set(read_ids()) | set(read_ids(open(rhs, "r"))):
+    for node in sorted(set(read_ids()) | set(read_ids(open(rhs, "r")))):
         print(node)
 
 def difference(rhs):
-    for node in set(read_ids()) - set(read_ids(open(rhs, "r"))):
+    for node in sorted(set(read_ids()) - set(read_ids(open(rhs, "r")))):
         print(node)
 
 
@@ -104,6 +104,12 @@ def is_root():
 
 def is_leaf():
     filter_edges("dependencies", lambda n, e: not has_adjacent(n, e, "outgoing"))
+
+def is_orphan():
+    filter_edges("dependencies", lambda n, e: not (
+        has_adjacent(n, e, "outgoing") or
+        has_adjacent(n, e, "incoming")
+    ))
 
 def is_next():
     filter_edges("dependencies", lambda n, e: not any(task_state(o) in {"NEW", "TODO"} for o in node_adjacent(n, e, "outgoing")))
@@ -241,6 +247,7 @@ if __name__ == "__main__":
         "is_context":    is_context,
         "is_leaf":       is_leaf,
         "is_next":       is_next,
+        "is_orphan":     is_orphan,
         "is_project":    is_project,
         "is_root":       is_root,
         "is_unassigned": is_unassigned,

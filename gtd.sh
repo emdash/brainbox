@@ -700,9 +700,12 @@ function adjacent {
 # insert tasks assigned to each incoming context id
 query_declare_type             assignees filter
 query_declare_default_producer assignees from cur
-function assignees {
-    reachable contexts outgoing "$@" | query_filter_chain "$@"
-}
+function assignees { reachable contexts outgoing | query_filter_chain "$@" ; }
+
+# insert contexts to which we have been directly assigned
+query_declare_type             assignments filter
+query_declare_default_producer assignments from cur
+function assignments { adjacent contexts incoming | query_filter_chain "$@" ; }
 
 # immediate subtasks of the input set
 query_declare_type             children filter
@@ -712,7 +715,7 @@ function children { adjacent dependencies outgoing "$@" ; }
 # immediate context edgres
 query_declare_type             contexts filter
 query_declare_default_producer contexts from cur
-function contexts { adjacent context incoming "$@" ; }
+function contexts { adjacent contexts incoming "$@" ; }
 
 # keep only the node selected by the user
 query_declare_type             choose   filter
@@ -1093,6 +1096,18 @@ function set_ {
 
 # Non-query commands **********************************************************
 
+function swap {
+    case "$#" in
+	1) local a="source" b="$1";;
+	2) local a="$1"     b="$2";;
+	*) local a="source" b="target";;
+    esac
+    mv "${BUCKET_DIR}/${a}" "${BUCKET_DIR}/temp"
+    mv "${BUCKET_DIR}/${b}" "${BUCKET_DIR}/${a}"
+    mv "${BUCKET_DIR}/temp" "${BUCKET_DIR}/${b}"
+    follow_notify
+}
+
 # add subtasks to target
 function add {
     link subtask "$@"
@@ -1101,9 +1116,9 @@ function add {
 # assign tasks to contexts
 function assign {
     case "$#" in
-	1) link context target "$1";;
-	2) link context "$2" "$1";;
-	*) link context target source;;
+	1) link context source "$1";;
+	2) link context "$1"   "$2";;
+	*) link context source target;;
     esac
 }
 
@@ -1124,7 +1139,11 @@ function capture {
 
     case "$1" in
 	-b|--bucket)
-	    local bucket="$2"
+	    local bucket="$2" edges="dep"
+	    shift 2
+	    ;;
+	-c|--context)
+	    local bucket="$2" edges="context"
 	    shift 2
 	    ;;
     esac
@@ -1144,16 +1163,16 @@ function capture {
 	echo "$*" | graph_datum contents write "${node}"
     fi
 
-    database_commit "${SAVED_ARGV}"
-
     echo "${node}" > "${DATA_DIR}/last_captured"
 
     if test -n "${bucket}"; then
 	from "${bucket}" | while IFS="" read -r parent; do
-	    graph_edge_create "${parent}" "${node}" dep
+	    graph_edge_create "${parent}" "${node}" "${edges}"
 	    task_auto_triage "${node}"
 	done
     fi
+    
+    database_commit "${SAVED_ARGV}"
 }
 
 # Clobber the database
@@ -1252,9 +1271,9 @@ function remove {
 # unassign tasks and contexts
 function unassign {
     case "$#" in
-	1) unlink context target "$1";;
-	2) unlink context "$2" "$1";;
-	*) unlink context target source;;
+	1) unlink context source "$1";;
+	2) unlink context "$1"   "$2";;
+	*) unlink context source target;;
     esac
 }
 
