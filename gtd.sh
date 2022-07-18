@@ -900,7 +900,7 @@ function dot {
 
 # select nodes from input set to be placed into the given bucket
 query_declare_type             goto selection
-query_declare_default_producer goto from cur
+query_declare_default_producer goto all
 function goto {
     forbid_preview
 
@@ -1137,17 +1137,26 @@ function buckets {
 # - otherwise, stdin is written to the contents file.
 function capture {
     forbid_preview
-
-    case "$1" in
-	-b|--bucket)
-	    local bucket="$2" edges="dep"
-	    shift 2
-	    ;;
-	-c|--context)
-	    local bucket="$2" edges="context"
-	    shift 2
-	    ;;
-    esac
+    while true
+    do
+	case "$1" in
+	    -c|--context)
+		local contexts="$2"
+		shift 2
+		;;
+	    -p|--parents)
+		local parents="$2"
+		shift 2
+		;;
+	    -d|--dependents)
+		local dependents="$2"
+		shift 2
+		;;
+	    *)
+		break
+		;;
+	esac
+    done
 
     local node="$(graph_node_create)"
     echo "NEW" | graph_datum state write "${node}"
@@ -1157,22 +1166,28 @@ function capture {
 	if tty > /dev/null; then
 	    graph_datum contents edit "${node}"
 	else
-	    echo "from stdin"
+	    debug "from stdin"
 	    graph_datum contents write "${node}"
 	fi
     else
 	echo "$*" | graph_datum contents write "${node}"
     fi
 
-
-    if test -n "${bucket}"; then
-	from "${bucket}" | while IFS="" read -r parent; do
-	    graph_edge_create "${parent}" "${node}" "${edges}"
-	    task_auto_triage "${node}"
-	done
-    fi
-    
     database_commit "${SAVED_ARGV}"
+
+    echo "${node}" | into this
+
+    if test -n "${contexts}"; then
+	assign "${contexts}" this
+    fi
+
+    if test -n "${parents}"; then
+	add "${parents}" this
+    fi
+
+    if test -n "${dependents}"; then
+	add this "${dependents}"
+    fi
 
     from this into last_captured
     null into this
