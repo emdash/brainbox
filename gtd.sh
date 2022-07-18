@@ -665,11 +665,7 @@ function inbox { all | is_new | query_filter_chain "$@" ; }
 
 # output the last captured node
 query_declare_type last_captured producer
-function last_captured {
-    if test -e "${DATA_DIR}/last_captured"; then
-	cat "${DATA_DIR}/last_captured"
-    fi | query_filter_chain "$@"
-}
+function last_captured { from last_captured | query_filter_chain "$@" ; }
 
 # output an empty set
 query_declare_type null producer
@@ -1064,7 +1060,7 @@ function drop {
 
 # edit the contents of node in the input set in turn.
 query_declare_type             edit update
-query_declare_default_producer edit last_captured
+query_declare_default_producer edit from last_captured
 function edit {
     forbid_preview
 
@@ -1168,7 +1164,6 @@ function capture {
 	echo "$*" | graph_datum contents write "${node}"
     fi
 
-    echo "${node}" > "${DATA_DIR}/last_captured"
 
     if test -n "${bucket}"; then
 	from "${bucket}" | while IFS="" read -r parent; do
@@ -1178,6 +1173,9 @@ function capture {
     fi
     
     database_commit "${SAVED_ARGV}"
+
+    from this into last_captured
+    null into this
 }
 
 # Clobber the database
