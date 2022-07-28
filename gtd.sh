@@ -1,7 +1,15 @@
 #! /usr/bin/env bash
 
+
 set -eo pipefail
 shopt -s failglob
+
+if test "$1" = "--trace"
+then
+    shift
+    set -x
+fi
+
 
 # name-prefixed variable here, but ...
 if test -v GTD_DATA_DIR; then
@@ -70,7 +78,7 @@ function filter {
 # Apply "$@" to each line of stdin.
 function map {
     local input
-    while IFS="" read -r input; do
+    while IFS='' read -r input; do
 	"$@" "${input}"
     done
 }
@@ -241,6 +249,9 @@ function gen_uuid {
 
 # Graph Database **************************************************************
 
+# wraps a python script which is used to "accelerate" some operations.
+function graph { "${GTD_DIR}/graph.py" "$@" ; }
+
 
 # print the path to the data directory of a given node id.
 #
@@ -305,10 +316,8 @@ function graph_datum {
 	exists) test -e        "${path}";;
 	path)   echo           "${path}";;
 	read)   __datum_read            ;;
-	# XXX: remove these two uuocs once you figure out how.
-	# it seems like a `:` should work here, but it breaks the tests.
-	write)   cat >          "${path}";;
-	append)  cat >>         "${path}";;
+	write)  cat >          "${path}";;
+	append) cat >>         "${path}";;
 	edit)   "${EDITOR}"    "${path}";;
 	mkdir)  mkdir -p       "${path}";;
 	cp)     cp "$@"        "${path}";;
@@ -350,88 +359,11 @@ function graph_node_create {
     fi
 }
 
-# print the set of child nodes for the given node to stdout.
-#
-# if predicate is given, then edges will be filtered according to this
-# command.
-function graph_node_adjacent {
-    database_ensure_init
-
-    local node="$1"
-    local edge_set="$2"
-    local direction="$3"
-
-    case "${edge_set}" in
-	dep)     local -r dir="${DEPS_DIR}";;
-	context) local -r dir="${CTXT_DIR}";;
-	*)       error "${edge_set} is not one of dep | context"
-    esac
-
-    case "${direction}" in
-	incoming) local -r pat="*:${node}" field="1";;
-	outgoing) local -r pat="${node}:*" field="2";;
-	*)        error "${direction} is not one of incoming | outgoing";;
-    esac
-
-    # would like to have used `filter` with `graph_edge_*` here but,
-    # this would be slower, and also it doesn't seem to work right for
-    # reasons I don't understand.
-    find "${dir}" -name "${pat}" -printf '%P\n' | cut -d ':' -f "${field}"
-}
-
 # Print the internal edge representation for nodes u and v to stdout.
 function graph_edge {
     local u="$1"
     local v="$2"
     echo "${u}:${v}"
-}
-
-# For the given internal edge representation, print the source node
-function graph_edge_u {
-    echo "$1" | cut -d ':' -f 1
-}
-
-# For the given internal edge representatoin, print the target node
-function graph_edge_v {
-    echo "$1" | cut -d ':' -f 2
-}
-
-# Print all graph edges to stdout
-function graph_edge_list {
-    case "$1" in
-	dep)     local -a dirs=("${DEPS_DIR}");;
-	context) local -a dirs=("${CTXT_DIR}");;
-	all)     local -a dirs=("${DEPS_DIR}" "${CTXT_DIR}");;
-
-	*) error "$1 not one of dep | context | all"
-    esac
-    ls -t "${dirs[@]}"
-}
-
-# Return true if the given edge touches the input set.
-#
-# XXX: also, this function consumes edges from stdin, and nodes from
-# "$@".
-#
-# XXX: this should probably be renamed to reflect the fact that both
-# ends of the edge must like in the input set.
-function graph_edge_touches {
-    local edge nodes
-    local -A nodes
-    local edge
-
-    for node in "$@"; do
-	nodes["${node}"]="1"
-    done
-
-    while IFS="" read -r edge; do
-	local u v
-	u="$(graph_edge_u "${edge}")"
-	v="$(graph_edge_v "${edge}")"
-	if test -v "nodes[${u}]" -a -v "nodes[${v}]"; then
-	   echo "${edge}"
-	fi
-    done
 }
 
 # Print the path to the edge connecting nodes u and v, if it exists.
@@ -451,6 +383,10 @@ function graph_edge_path {
 # Link two nodes in the graph.
 function graph_edge_create {
     database_ensure_init
+
+    test -d "$(graph_node_path "$1")" || error "Invalid ID $1"
+    test -d "$(graph_node_path "$2")" || error "Invalid ID $2"
+    
     mkdir -p "$(graph_edge_path "$1" "$2" "$3")"
 }
 
@@ -460,169 +396,6 @@ function graph_edge_create {
 function graph_edge_delete {
     database_ensure_init
     rm -rf "$(graph_edge_path "$1" "$2" "$3")"
-}
-
-# traverse the graph depth first, starting from `root`, with cycle checking.
-#
-# this is a text-book algorithm, implemented in bash. we parameterize
-# on the same arguments as graph_adjacent.
-#
-# if a cycle is detected, the algorithm terminates early with nonzero
-# status.
-function graph_traverse {
-    database_ensure_init
-
-    local root="$1"
-    local edge_set="$2"
-    local direction="$3"
-    local -A nodes_on_stack
-    local -A seen
-
-    # would be a closure if bash scope was lexical.
-    __graph_traverse_rec "${root}"
-}
-
-function __graph_traverse_rec {
-    local cur="$1"
-
-    if test -v "nodes_on_stack[${cur}]"; then
-	error "Graph contains a cycle"
-	return 1
-    fi
-
-    # add this node to the cycle checking set
-    nodes_on_stack["${cur}"]=""
-
-    if test ! -v "seen[${cur}]"; then
-	echo "${cur}"
-	seen["${cur}"]="1"
-
-	for a in $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}"); do
-	    __graph_traverse_rec "${a}" || return 1
-	done
-    fi
-
-    # remove node from cycle checking set
-    unset "nodes_on_stack[${cur}]"
-}
-
-# similar to above, but performing a "tree expansion"
-#
-# the difference is that shared nodes will be duplicated in the output.
-#
-# if --depth is given, then the second field will be an integer
-# representing the tree depth of the given node.
-#
-# this is a text-book algorithm, implemented in bash. we parameterize
-# on the same arguments as graph_adjacent.
-#
-# if a cycle is detected, the algorithm terminates early with nonzero
-# status.
-function graph_expand {
-    database_ensure_init
-
-    case "$1" in
-	-d|--depth) shift; local print_depth="";;
-    esac
-
-    local root="$1"
-    local edge_set="$2"
-    local direction="$3"
-    local -A nodes_on_stack
-
-    # would be a closure if bash scope was lexical.
-    __graph_expand_rec "${root}" 0
-}
-
-function __graph_expand_rec {
-    local cur="$1"
-    local depth="$2"
-
-    if test -v "nodes_on_stack[${cur}]"; then
-	error "Graph contains a cycle"
-	return 1
-    fi
-
-    # add this node to the cycle checking set
-    nodes_on_stack["${cur}"]=""
-
-    if test -v print_depth; then
-	echo "${cur}" "${depth}"
-    else
-	echo "${cur}"
-    fi
-
-    for a in $(graph_node_adjacent "${cur}" "${edge_set}" "${direction}"); do
-	__graph_expand_rec "${a}" "$((depth + 1))" || return 1
-    done
-
-    # remove node from cycle checking set
-    unset "nodes_on_stack[${cur}]"
-}
-
-
-# Tasks ***********************************************************************
-
-
-# In GTD, A task is anything that needs to be done.
-#
-# Some aspects of task state are tracked explicitly, while others are
-# inferred from graph edges.
-#
-# this section defines functions for working at the task level.
-#
-# a task is implemented as a node using the generic graph logic
-# defined in the previous section.
-
-## task state helper functions ************************************************
-
-# return true if the given task state is a valid one.
-function task_state_is_valid {
-    case "$1" in
-	NEW)      return 0;;
-	TODO)     return 0;;
-	DONE)     return 0;;
-	DROPPED)  return 0;;
-	WAITING)  return 0;;
-	SOMEDAY)  return 0;;
-	PERSIST)  return 0;;
-	*)        return 1;;
-    esac
-}
-
-# returns true if the given task state can be considered active
-function task_state_is_active {
-    case "$1" in
-	NEW)     return 0;;
-	TODO)    return 0;;
-	WAITING) return 0;;
-	PERSIST) return 0;;
-	*)       return 1;;
-    esac
-}
-
-# returns true if the given task state can be acted on
-function task_state_is_actionable {
-    case "$1" in
-	WAITING) return 1;;
-	PERSIST) return 1;;
-	*)    task_state_is_active "$1";;
-    esac
-}
-
-# returns true if the given task is in the DONE state
-function task_is_complete {
-    test "$(task_state read "$1")" = "DONE"
-}
-
-# returns true if a task has at least one outgoing context edge
-function task_is_context {
-    test -n "$(graph_node_adjacent "$1" context outgoing)"
-}
-
-# returns true if a task has state deferred
-function task_is_deferred {
-    test "$(task_state read "$1")" = "SOMEDAY"
 }
 
 
@@ -637,61 +410,6 @@ function task_state    { graph_datum state    "$@"; }
 function task_gloss {
     # tbd: truncate length to "$2"
     task_contents read "$1" | head -n 1 || echo "[no contents]"
-}
-
-# returns true if a task is the root of a project subgraph
-function task_is_root {
-    graph_node_adjacent "$1" dep incoming | empty
-}
-
-# returns true if a task is a leaf node
-function task_is_leaf {
-    graph_node_adjacent "$1" dep outgoing | empty
-}
-
-# returns true if a task is orphaned: is a root with no dependencies
-function task_is_orphan {
-    task_is_root "$1" && task_is_leaf "$1"
-}
-
-# returns true of the project is in state PERSIST
-function task_is_persistent {
-    test "$(task_state read "$1")" = "PERSIST"
-}
-
-# returns true if a task is a project
-function task_is_project {
-    ! { task_is_root "$1" || task_is_leaf "$1" ; }
-}
-
-# returns true if task has state NEW
-function task_is_new {
-    test "$(task_state read "$1")" = "NEW"
-}
-
-# return true if the given task is active
-function task_is_active {
-    task_state_is_active "$(task_state read $1)"
-}
-
-# return true if the given task is actionable
-function task_is_actionable {
-    task_state_is_actionable "$(task_state read $1)"
-}
-
-# returns true if the given task is a "next action"
-function task_is_next_action {
-    task_is_actionable "$1" && task_is_leaf "$1"
-}
-
-# returns true if a task is not assigned to any context
-function task_is_unassigned {
-    test -z "$(graph_node_adjacent "$1" context incoming)"
-}
-
-# returns true if a task is marked as waiting
-function task_is_waiting {
-    test "$(task_state read "$1")" = "WAITING"
 }
 
 # summarize the current task: id, status, and gloss
@@ -741,81 +459,149 @@ function task_persist {
 
 ## Helpers ********************************************************************
 
-function graph_filter_default {
-    case "$1" in
-	adjacent)          echo "from" "cur";;
-	assignees)         echo "from" "cur";;
-	children)          echo "from" "cur";;
-	choose)            echo "all";;
-	contexts)          echo "from" "cur";;
-	# datum exists
-	datum)             echo "from" "target";;
-	is_actionable)     echo "all";;
-	is_active)         echo "all";;
-	is_complete)       echo "all";;
-	is_context)        echo "all";;
-	is_deferred)       echo "all";;
-	is_new)            echo "all";;
-	is_next)           echo "all";;
-	is_orphan)         echo "all";;
-	is_persistent)     echo "all";;
-	is_project)        echo "all";;
-	is_root)           echo "all";;
-	is_unassigned)     echo "all";;
-	is_waiting)        echo "all";;
-	parents)           echo "from" "cur";;
-	project)           echo "from" "cur";;
-	projects)          echo "from" "cur";;
-	subtasks)          echo "from" "cur";;
-	search)            echo "all";;
-	someday)           echo "from" "target";;
-	# formatters
-	# datum read
-	# datum path
-	dot)               echo "all";;
-	into)              echo "all" "choose";;
-	summarize)         echo "all";;
-	tree)              echo "from" "cur";;
-	# updates
-	activate)          echo "from" "target";;
-	complete)          echo "from" "target";;
-	# datum write
-	# datum append
-	# datum mkdir
-	# datum cp
-	defer)             echo "from" "target";;
-	drop)              echo "from" "target";;
-	edit)              echo "from" "cur";;
-	goto)              echo "all";;
-	persist)           echo "from" "target";;
-    esac
+# These associative arrays store meta-data about query commands which
+# help in command parsing.
+declare -A GTD_QUERY_DEFAULT
+declare -A GTD_QUERY_TYPE
+declare -A GTD_QUERY_CANONICAL_NAME
+
+
+# annotate a query filter or consumer with its "default query"
+function query_declare_default_producer {
+    GTD_QUERY_DEFAULT["$1"]="${@:2:$# - 1}"
 }
 
-# returns true if "$@" is recognized as a valid filter keyword
-function graph_filter_is_valid {
-    test -n "$(graph_filter_default "$1")"
-}
-
-# execute a query from the given arguments
-function graph_filter_begin {
-    local default
-
-    if graph_filter_is_valid "$1"; then
-	$(graph_filter_default "$1") "$@"
-    elif test "$1" = "-"; then
-	shift
-	graph_filter_chain "$@"
+# print the "default query" for the given filter or consumer
+function query_default_producer {
+    if test -v "GTD_QUERY_TYPE[$1]"
+    then
+	echo "${GTD_QUERY_DEFAULT[$1]}"
     else
-	"$@"
+	error "$1 defines no default producer"
     fi
 }
 
-# returns true if "$@" is recognized as a valid filter keyword
-function tree_filter_is_valid {
-    case "$1" in
-	indent) return 0;;
+# declare the canonical name of of the query command
+function query_declare_canonical_name {
+    if test -v "GTD_QUERY_CANONICAL_NAME[$2]"
+    then
+	error "a canonical name for $2 is already defined"
+    fi
+
+    GTD_QUERY_CANONICAL_NAME["$2"]="$1"
+}
+
+# set the type function to the given constant type
+function query_declare_type {
+    GTD_QUERY_TYPE["$1"]="${@:2:$# - 1}"
+}
+
+# output the type of the query command
+function query_command_type {
+    if test -v "GTD_QUERY_TYPE[$1]"
+    then
+	echo "${GTD_QUERY_TYPE["$1"]}"
+    else
+	echo "invalid"
+    fi
+}
+
+# exit true if the given query command is valid.
+function query_command_is_valid {
+    test ! "$(query_command_type $@)" = "invalid"
+}
+
+# returns true if the given query command is counts as a filter
+function query_command_is_filter {
+    case "$(query_command_type $@)" in
+	filter) return 0;;
+	binop)  return 0;;
 	*)      return 1;;
     esac
+}
+
+# returns true if the given query command allows further filtering
+function query_command_is_chainable {
+    case "$(query_command_type "$@")" in
+	filter)    return 0;;
+	binop)     return 0;;
+	formatter) return 0;;
+	selection) return 0;;
+	update)    return 0;;
+	*)         return 1;;
+    esac
+}
+
+# return true if the given query command does not allow further filtering
+function query_command_is_consumer {
+    case "$(query_command_type "$@")" in
+	formatter) return 0;;
+	update)    return 0;;
+	selection) return 0;;
+	*)         return 1;;
+    esac
+}
+
+# print the index into which the 
+function query_find_consumer {
+    local -i i=1
+    while test -n "$*"; do
+	if query_command_is_consumer "$@"; then
+	    echo "${i}"
+	    return 0
+	else
+	    shift
+	    i="$((i + 1))"
+	fi
+    done
+    return 1
+}
+
+# split command into `query` and `consumer` arrays
+#
+# where `query` is the pure part of the query
+# and `consumer` is a downstream formatter or action
+#
+# returns 1 if no consumer is found, meaning the query is pure.
+function query_split_consumer {
+    local -ir query_length="$#"
+    local -i  tail_start
+    if tail_start="$(query_find_consumer "$@")"; then
+	query=( "${@:1:tail_start - 1}" )
+	consumer=( "${@:tail_start:query_length - tail_start + 1}" )
+	return 0
+    else
+	return 1
+    fi
+}
+
+# convert a query to its canonical form, inserting implicit prodcers
+# if needed.
+#
+# to avoid quoting issues, the canoncical query is placed into the
+# `canonical` array, rather than printed to stdout.
+#
+# returns true if the canonical query is distinct from the given query.
+function query_canonicalize {
+    local -ir query_length="$#"
+    local -i  tail_start
+
+    canonical=( "$@" )
+
+    local -i i=0
+    while test "${i}" -lt "${query_length}"
+    do
+	local cmd="${canonical[${i}]}"
+	if test -v "GTD_QUERY_CANONICAL_NAME[${cmd}]"
+	then
+	    canonical["${i}"]="${GTD_QUERY_CANONICAL_NAME[${cmd}]}"
+	fi
+	i="$((i + 1))"
+    done
+
+    if query_command_is_chainable "$1"; then
+	canonical=( $(query_default_producer "$@") "$@" )
+    fi
 }
 
 # allow further chaining of graph query filters.
@@ -824,30 +610,12 @@ function tree_filter_is_valid {
 # into the pipeline.
 #
 # if no args are given, forward stdin to stdout
-function graph_filter_chain {
+function query_filter_chain {
     if test -n "$*"; then
-	if graph_filter_is_valid "$1"; then
+	if query_command_is_chainable "$1"; then
 	    "$@"
 	else
 	    error "$1 is not a valid graph query filter"
-	fi
-    else
-	 cat
-    fi
-}
-
-# allow further chaining of tree query filters.
-#
-# if args are given, and a valid filter, then fold the given command
-# into the pipeline.
-#
-# if no args are given, forward stdin to stdout
-function tree_filter_chain {
-    if test -n "$*"; then
-	if tree_filter_is_valid "$1"; then
-	    "$@"
-	else
-	    error "$1 is not a valid tree query filter"
 	fi
     else
 	 cat
@@ -880,79 +648,74 @@ function forbid_preview {
 # These appear at the start of a filter chain, but are not themselves filters.
 
 # all tasks
-function all { graph_node_list | graph_filter_chain "$@" ; }
+query_declare_type all producer
+function all { graph_node_list | query_filter_chain "$@" ; }
 
 # output tasks from named bucket
+query_declare_type from producer
 function from {
     local bucket="${BUCKET_DIR}/$1"; shift;
     test -e "${bucket}" || mkdir -p "${bucket}"
-    ls "${bucket}" | graph_filter_chain "$@"
+    ls "${bucket}" | query_filter_chain "$@"
 }
 
 # output all new tasks
-function inbox { all | is_new | graph_filter_chain "$@" ;}
+query_declare_type inbox producer
+function inbox { all | is_new | query_filter_chain "$@" ; }
 
 # output the last captured node
-function last_captured {
-    if test -e "${DATA_DIR}/last_captured"; then
-	cat "${DATA_DIR}/last_captured"
-    fi | graph_filter_chain "$@"
-}
+query_declare_type last_captured producer
+function last_captured { from last_captured | query_filter_chain "$@" ; }
 
 # output an empty set
-function null {
-    : | graph_filter_chain "$@"
-}
-
-# select every actionable project root
-#
-# in a well-maintained database, these will correspond to one's core
-# values, or the "view from 30k ft" in GTD terminology.
-function values {
-    all | is_actionable is_root "$@"
-}
-
-# select every actionable project root whose parent is a value
-#
-# in a well-maintained database, these will correspond to long-term
-# on which one places the highest priority.
-function life_goals {
-    values adjacent dep outgoing | graph_filter_chain "$@"
-}
-
+query_declare_type null producer
+function null { : | query_filter_chain "$@" ; }
 
 ### Query Filters *************************************************************
 
+# output nodes reachable from each node in the input set
+query_declare_type             reachable filter
+query_declare_default_producer reachable from cur
+function reachable {
+    local edges="$1"
+    local direction="$2"
+    shift 2
+    graph reachable "${edges}" "${direction}" | query_filter_chain "$@"
+}
+
 # output the nodes adjacent to each input node
+query_declare_type             adjacent filter
+query_declare_default_producer adjacent from cur
 function adjacent {
     local edges="$1"
     local direction="$2"
     shift 2
-    local id
-    while IFS="" read -r id; do
-	graph_node_adjacent "${id}" "${edges}" "${direction}"
-    done | graph_filter_chain "$@"
+    graph adjacent "${edges}" "${direction}" | query_filter_chain "$@"
 }
 
 # insert tasks assigned to each incoming context id
-function assignees {
-    local id
-    while IFS="" read -r id; do
-	graph_traverse "${id}" context outgoing
-    done | graph_filter_chain "$@"
-}
+query_declare_type             assignees filter
+query_declare_default_producer assignees from cur
+function assignees { reachable contexts outgoing | query_filter_chain "$@" ; }
+
+# insert contexts to which we have been directly assigned
+query_declare_type             assignments filter
+query_declare_default_producer assignments from cur
+function assignments { adjacent contexts incoming | query_filter_chain "$@" ; }
 
 # immediate subtasks of the input set
-function children {
-    adjacent dep outgoing | graph_filter_chain "$@"
-}
+query_declare_type             children filter
+query_declare_default_producer children from cur
+function children { adjacent dependencies outgoing "$@" ; } 
 
 # immediate context edgres
-function contexts {
-    adjacent context incoming | graph_filter_chain "$@"
-}
+query_declare_type             contexts filter
+query_declare_default_producer contexts from cur
+function contexts { adjacent contexts incoming "$@" ; }
 
 # keep only the node selected by the user
+query_declare_type             choose   filter
+query_declare_default_producer choose   all
 function choose {
     # can't preview because this also uses FZF.
     forbid_preview
@@ -963,98 +726,114 @@ function choose {
        *)           local opt="-m"       ;;
     esac
 
-    summarize | fzf ${opt} | cut -d ' ' -f 1 | graph_filter_chain "$@"
+    summarize | fzf ${opt} | cut -d ' ' -f 1 | query_filter_chain "$@"
+}
+
+# keep nodes for which the given datum exists
+query_declare_type             has filter
+query_declare_default_producer has all
+function has {
+    local -r datum="$1"
+    shift
+    filter graph_datum "${datum}" exists | query_filter_chain "$@"
 }
 
 # Keep only actionable tasks.
+query_declare_type             is_actionable filter
+query_declare_default_producer is_actionable all
 function is_actionable {
-    filter task_is_actionable | graph_filter_chain "$@"
+    graph filter_state NEW TODO | query_filter_chain "$@"
 }
 
 # Keep only active tasks.
+query_declare_type             is_active filter
+query_declare_default_producer is_active all
 function is_active {
-    filter task_is_active | graph_filter_chain "$@"
+    graph filter_state \
+	NEW \
+	TODO \
+	WAITING \
+	PERSIST \
+    | query_filter_chain "$@"
 }
 
 # Keep only completed tasks
-function is_complete {
-    filter task_is_complete | graph_filter_chain "$@"
-}
+query_declare_type             is_complete filter
+query_declare_default_producer is_complete all
+function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
 
 # Keep only context nodes
-function is_context {
-    filter task_is_context | graph_filter_chain "$@"
-}
+query_declare_type             is_context filter
+query_declare_default_producer is_context all
+function is_context { graph is_context | query_filter_chain "$@" ; }
 
 # Keep only deferred nodes
-function is_deferred {
-    filter task_is_deferred | graph_filter_chain "$@"
-}
+query_declare_type             is_deferred filter
+query_declare_default_producer is_deferred all
+function is_deferred {  graph filter_state SOMEDAY | query_filter_chain "$@" ; }
 
 # keep only new tasks
-function is_new {
-    filter task_is_new | graph_filter_chain "$@"
-}
+query_declare_type             is_new filter
+query_declare_default_producer is_new all
+function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
 
 # Keep only next actions
-function is_next {
-    filter task_is_next_action | graph_filter_chain "$@"
-}
+query_declare_type             is_next filter
+query_declare_default_producer is_next all
+function is_next { graph is_next | is_actionable "$@" ; }
 
 # Keep only tasks not associated with any other tasks
-function is_orphan {
-    filter task_is_orphan | graph_filter_chain "$@"
-}
+query_declare_type             is_orphan filter
+query_declare_default_producer is_orphan all
+function is_orphan { graph is_orphan | query_filter_chain "$@" ; }
 
 # Keep only tasks in state PERSIST
+query_declare_type             is_persistent filter
+query_declare_default_producer is_persistent all
 function is_persistent {
-    filter task_is_persistent | graph_filter_chain "$@"
+    graph filter_state PERSIST | query_filter_chain "$@"
 }
 
 # Keep only tasks which are considered projects
-function is_project {
-    filter task_is_project | graph_filter_chain "$@"
-}
+query_declare_type             is_project filter
+query_declare_default_producer is_project all
+function is_project { graph is_project | query_filter_chain "$@" ; }
 
 # Keep only tasks which are the root of a subgraph
-function is_root {
-    filter task_is_root | graph_filter_chain "$@"
-}
+query_declare_type             is_root filter
+query_declare_default_producer is_root all
+function is_root { graph is_root | query_filter_chain "$@" ; }
 
 # Keep only tasks not assigned to any context
-function is_unassigned {
-    filter task_is_unassigned | graph_filter_chain "$@"
-}
+query_declare_type             is_unassigned filter
+query_declare_default_producer is_unassigned all
+function is_unassigned { graph is_unassigned | query_filter_chain "$@" ; }
 
 # Keep only waiting tasks
-function is_waiting {
-    filter task_is_waiting | graph_filter_chain "$@"
-}
+query_declare_type             is_waiting filter
+query_declare_default_producer is_waiting all
+function is_waiting { graph filter_state WAITING | query_filter_chain "$@" ; }
 
-# immediate supertasks of input set
-function parents {
-    adjacent dep incoming | graph_filter_chain "$@"
-}
+# adjacent incoming dependencies of input set
+query_declare_type             parents filter
+query_declare_default_producer parents from cur
+function parents { adjacent dependencies incoming "$@" ; }
 
 # insert parents of each incoming task id
-function projects {
-    local id
-    while IFS="" read -r id; do
-	graph_traverse "${id}" dep incoming
-    done | graph_filter_chain "$@"
-}
+query_declare_type             projects filter
+query_declare_default_producer projects from cur
+function projects { reachable dependencies incoming "$@" ; }
 
 # insert subtasks of each incoming parent task id
-function subtasks {
-    local id
-    while IFS="" read -r id; do
-	graph_traverse "${id}" dep outgoing
-    done | graph_filter_chain "$@"
-}
+query_declare_type             subtasks filter
+query_declare_default_producer subtasks from cur
+function subtasks { reachable dependencies outgoing "$@" ; }
 
 # keep only nodes whose contents matches the given *pattern*.
 #
 # tbd: make this more configurable
+query_declare_type             search filter
+query_declare_default_producer search all
 function search {
     local pattern="$1"; shift
     local id
@@ -1062,97 +841,88 @@ function search {
 	if graph_datum contents read "${id}" | grep -q "${pattern}" -; then
 	    echo "${id}"
 	fi
-    done | graph_filter_chain "$@"
+    done | query_filter_chain "$@"
+}
+
+## Binary queries *************************************************************
+
+query_declare_type             union binop
+query_declare_default_producer union null
+function union {
+    local -a canonical
+    local -a query
+    local -a consumer
+
+    if ! query_split_consumer "$@"
+    then
+	query=( "$@" )
+    fi
+
+    test -z "${query[*]}" && error "union must have RHS query"
+
+    if query_canonicalize "${query[@]}"
+    then
+	query=( "${canonical[@]}" )
+    fi
+
+    if test -z "${consumer[*]}"
+    then
+	graph union <("${query[@]}")
+    else
+	graph union <("${query[@]}") | "${consumer[@]}"
+    fi
 }
 
 ## Formatters *****************************************************************
 
-# Create a new task.
-#
-# If arguments are given, they are written as the node contents.
-#
-# If no arguments are given:
-# - and stdin is a tty, invokes $EDITOR to create the node contents.
-# - otherwise, stdin is written to the contents file.
-function capture {
-    forbid_preview
-
-    case "$1" in
-	-b|--bucket)
-	    local bucket="$2"
-	    shift 2
-	    ;;
-    esac
-
-    local node="$(graph_node_create)"
-    echo "NEW" | graph_datum state write "${node}"
-
-    # no need to call "end filter chain", as we consume all arguments.
-    if test -z "$*"; then
-	if tty > /dev/null; then
-	    graph_datum contents edit "${node}"
-	else
-	    echo "from stdin"
-	    graph_datum contents write "${node}"
-	fi
+# print the path to the given datum for each node in the input set
+query_declare_type             get formatter
+query_declare_default_producer get all
+function get {
+    if test -z "$1"
+    then
+	local datum="contents"
     else
-	echo "$*" | graph_datum contents write "${node}"
+	local datum="$1"
+	shift
     fi
-
-    database_commit "${SAVED_ARGV}"
-
-    echo "${node}" > "${DATA_DIR}/last_captured"
-
-    if test -n "${bucket}"; then
-	from "${bucket}" | while IFS="" read -r parent; do
-	    graph_edge_create "${parent}" "${node}" dep
-	    task_auto_triage "${node}"
-	done
-    fi
-}
-
-# runs graph_datum $1 $2 ${id} for each id
-function datum {
-    test -z "$1" && error "a datum is required"
-    case "$2" in
-	exists)    __datum_exists    "$@";;
-	path|read) __datum_path_read "$@";;
-	mkdir|cp)  __datum_mkdir_cp  "$@";;
-	*)         error "invalid subcommand: ${command}";;
-    esac
-}
-
-function __datum_exists {
-    local datum="$1";
-    # dropping second argument
-    shift 2
-    filter graph_datum "${datum}" exists | graph_filter_chain "$@"
-}
-
-function __datum_path_read {
-    local datum="$1"; shift
-    local command="$1"; shift
     end_filter_chain "$@"
-    map graph_datum "${datum}" "${command}"
-}
-
-function __datum_mkdir_cp {
-    forbid_preview
-    local datum="$1"; shift
-    local command="$1"; shift
-    end_filter_chain "$@"
-    map graph_datum "${datum}" "${command}"
+    map graph_datum "${datum}" read
 }
 
 # dotfile export for graphviz
+query_declare_type             dot formatter
+query_declare_default_producer dot all
 function dot {
-    "${GTD_DIR}/graph.py" dot
+    end_filter_chain "$@"
+    graph dot
+}
+
+# select nodes from input set to be placed into the given bucket
+query_declare_type             goto selection
+query_declare_default_producer goto all
+function goto {
+    forbid_preview
+
+    case "$1" in
+	--*) local -r opt="$1"; shift;;
+	*)   local -r opt="--noempty";;
+    esac
+    
+    echo "$@"
+    local bucket="$1"
+    shift
+
+    end_filter_chain "$@"
+    choose into "${opt}" "${bucket}"
 }
 
 # Add node ids to the named bucket
 #
 # By default, the new contents replace the old contents. Give `--union`
 # is this is undesired.
+query_declare_type             into selection
+query_declare_default_producer into null
 function into {
     # copy stdin into demp dir
     local temp="${DATA_DIR}/temp"
@@ -1193,6 +963,7 @@ function into {
 	    __into_copy "$1"
 	    ;;
     esac
+    __into_delete_empty
     follow_notify
 }
 
@@ -1209,7 +980,13 @@ function __into_copy {
     done
 }
 
+function __into_delete_empty {
+    find "${BUCKET_DIR}" -maxdepth 1 -mindepth 1 -empty -delete
+}
+
 # Print a one-line summary for each task id
+query_declare_type             summarize formatter
+query_declare_default_producer summarize inbox
 function summarize {
     end_filter_chain "$@"
     map task_summary
@@ -1218,50 +995,16 @@ function summarize {
 # tree expansion of project rooted at the given node for given edge set and direction.
 #
 # tree filters can be chained onto this, but not graph filters
-function tree {
-    case "$1" in
-	dep|context) local edge_set="$1";;
-	*)           error "$1 not one of: dep | context";;
-    esac
+query_declare_type             tree formatter
+query_declare_default_producer tree inbox
+function tree { graph expand "$1" "$2" | __tree_indent "$@" ; }
 
-    case "$2" in
-	incoming|outgoing) local direction="$2";;
-	*)                 error "$2 is not one of: incoming | outgoing";;
-    esac
-
-    shift 2
-
-    local root
-    while IFS="" read -r root; do
-	graph_expand \
-	    --depth \
-	    "${root}" \
-	    "${edge_set}" \
-	    "${direction}"
-    done | tree_filter_chain "$@"
-}
-
-# indent tree expansion
-#
-# TBD: merge this functionality into summarize?
-function indent {
-    if test "$1" = "--gloss-only"; then
-	local no_meta=""; shift;
-    fi
-    
-    if test -n "$1"; then
-	local marker="$(echo "$1")"; shift
-    else
-	local marker='  '
-    fi
-
-    end_filter_chain "$@"
+function __tree_indent {
+    local marker='  '
 
     local depth
     while IFS="" read -r id depth; do
-	if test ! -v no_meta; then
-	   printf "%7s" "$(task_state read "${id}")"
-	fi
+	printf "%s %7s" "${id}" "$(task_state read "${id}")"
 
 	# indent the line.
 	for i in $(seq $(("${depth}"))); do
@@ -1272,14 +1015,12 @@ function indent {
     done
 }
 
-# Shorthand for formatting a project as a tree
-function project {
-    tree dep outgoing indent "$@"
-}
 
 ## Updates ********************************************************************
 
 # Reactivate each task id
+query_declare_type             activate update
+query_declare_default_producer activate from target
 function activate {
     forbid_preview
     end_filter_chain "$@"
@@ -1288,6 +1029,8 @@ function activate {
 }
 
 # Complete each task id
+query_declare_type             complete update
+query_declare_default_producer complete from target
 function complete {
     forbid_preview
     end_filter_chain "$@"
@@ -1296,6 +1039,8 @@ function complete {
 }
 
 # Defer each task id
+query_declare_type             defer update
+query_declare_default_producer defer from target
 function defer {
     forbid_preview
     end_filter_chain "$@"
@@ -1303,7 +1048,9 @@ function defer {
     database_commit "${SAVED_ARGV}"
 }
 
-# Drop each task id
+# drop each task in the input set
+query_declare_type             drop update
+query_declare_default_producer drop from target
 function drop {
     forbid_preview
     end_filter_chain "$@"
@@ -1312,39 +1059,21 @@ function drop {
 }
 
 # edit the contents of node in the input set in turn.
+query_declare_type             edit update
+query_declare_default_producer edit from last_captured
 function edit {
     forbid_preview
 
-    if test "$1" = "--sequential"; then
-	local sequential=1; shift;
-    fi
-
-    end_filter_chain "$@"
-
-    if test -v sequential; then
-	local line
-	datum contents path | while IFS="" read -r line; do
-	    # xargs -o: reopens stdin / stdout as tty in the child process.
-	    echo "${line}" | xargs -o "${EDITOR}"
-	done
-    elif test -z "$1"; then
-	# xargs -o: reopens stdin / stdout as tty in the child process.
-	datum contents path | xargs -o "${EDITOR}"
-    else
-	error "invalid argument: $1"
-    fi
+    # xargs -o: reopens stdin / stdout as tty in the child
+    # process, allowing the editor to function even though stdin
+    # is the query result.
+    map graph_datum "${1:-contents}" path | xargs -o "${EDITOR}"
     database_commit "${SAVED_ARGV}"
 }
 
-# set the current node
-function goto {
-    forbid_preview
-    local bucket="$1"; shift
-    end_filter_chain "$@"
-    choose into --noempty "${bucket}"
-}
-
 # persist each task
+query_declare_type             persist update
+query_declare_default_producer persist from target
 function persist {
     forbid_preview
     end_filter_chain "$@"
@@ -1352,8 +1081,33 @@ function persist {
     database_commit "${SAVED_ARGV}"
 }
 
+# set the given datum on the input set to the given args or stdin.
+query_declare_type             set_ formatter
+query_declare_default_producer set_ from target
+query_declare_canonical_name   set_ set
+function set_ {
+    forbid_preview
+    while IFS='' read -r id
+    do
+	echo "${@:2}" | graph_datum "$1" write "${id}"
+    done
+    database_commit "${SAVED_ARGV}"
+}
+
 
 # Non-query commands **********************************************************
+
+function swap {
+    case "$#" in
+	1) local a="source" b="$1";;
+	2) local a="$1"     b="$2";;
+	*) local a="source" b="target";;
+    esac
+    mv "${BUCKET_DIR}/${a}" "${BUCKET_DIR}/temp"
+    mv "${BUCKET_DIR}/${b}" "${BUCKET_DIR}/${a}"
+    mv "${BUCKET_DIR}/temp" "${BUCKET_DIR}/${b}"
+    follow_notify
+}
 
 # add subtasks to target
 function add {
@@ -1363,15 +1117,88 @@ function add {
 # assign tasks to contexts
 function assign {
     case "$#" in
-	1) link context target "$1";;
-	2) link context "$2" "$1";;
-	*) link context target source;;
+	1) link context source "$1";;
+	2) link context "$1"   "$2";;
+	*) link context source target;;
     esac
 }
 
 # List all known buckets
 function buckets {
     ls "${BUCKET_DIR}"
+}
+
+# Create a new task.
+#
+# If arguments are given, they are written as the node contents.
+#
+# If no arguments are given:
+# - and stdin is a tty, invokes $EDITOR to create the node contents.
+# - otherwise, stdin is written to the contents file.
+function capture {
+    forbid_preview
+    while true
+    do
+	case "$1" in
+	    -b|--bucket)
+		local bucket="$2"
+		shift 2
+		;;
+	    -c|--context)
+		local contexts="$2"
+		shift 2
+		;;
+	    -p|--parents)
+		local parents="$2"
+		shift 2
+		;;
+	    -d|--dependents)
+		local dependents="$2"
+		shift 2
+		;;
+	    *)
+		break
+		;;
+	esac
+    done
+
+    local node="$(graph_node_create)"
+    echo "NEW" | graph_datum state write "${node}"
+
+    # no need to call "end filter chain", as we consume all arguments.
+    if test -z "$*"; then
+	if tty > /dev/null; then
+	    graph_datum contents edit "${node}"
+	else
+	    debug "from stdin"
+	    graph_datum contents write "${node}"
+	fi
+    else
+	echo "$*" | graph_datum contents write "${node}"
+    fi
+
+    database_commit "${SAVED_ARGV}"
+
+    echo "${node}" | into this
+
+    if test -n "${bucket}"; then
+	from this into "${bucket}"
+    fi
+
+    if test -n "${contexts}"; then
+	assign "${contexts}" this
+    fi
+
+    if test -n "${parents}"; then
+	add "${parents}" this
+    fi
+
+    if test -n "${dependents}"; then
+	add this "${dependents}"
+    fi
+
+    from this into last_captured
+    null into this
 }
 
 # Clobber the database
@@ -1383,12 +1210,16 @@ function clobber {
 # move downward from cur
 function down {
     forbid_preview
-    from "$1" children goto "$1"
-}
 
-# unset the current node
-function home {
-    graph_filter_begin null into cur
+    if test "$1" = "--union"
+    then
+	local -r opt="$1"
+	shift
+    else
+	local -r opt="--noempty"
+    fi
+
+    from "$1" children goto "${opt}" "$1"
 }
 
 # Initialize the database
@@ -1396,16 +1227,6 @@ function init {
     forbid_preview
     database_init;
     mkdir -p "${BUCKET_DIR}"
-}
-
-# interactively build query
-function interactive {
-    forbid_preview
-    # inspired by https://github.com/paweluda/fzf-live-repl
-    : | fzf \
-	    --print-query \
-	    --preview "$0 --preview \$(echo {q})" \
-	| into interactive "$@"
 }
 
 # Create edges between sets of nodes in the given named buckets.
@@ -1442,6 +1263,32 @@ function link {
     database_commit "${SAVED_ARGV}"
 }
 
+# shortcut for:
+# - capture into bucket
+# - persist
+# - set date (defaults to today)
+function log {
+    if test "$1" = "--date"
+    then
+	local -r d="$2"
+	shift 2
+    else
+	local -r d="$(date --iso)"
+    fi
+
+    if test -n "$1"
+    then
+	local bucket="$1"
+	shift
+    else
+	error "A bucket is required"
+    fi
+
+    capture -b "${bucket}" "$@"
+    last_captured persist
+    last_captured set_ date "${d}"
+}
+
 # remove subtasks
 function remove {
     unlink subtask "$@"
@@ -1450,9 +1297,9 @@ function remove {
 # unassign tasks and contexts
 function unassign {
     case "$#" in
-	1) unlink context target "$1";;
-	2) unlink context "$2" "$1";;
-	*) unlink context target source;;
+	1) unlink context source "$1";;
+	2) unlink context "$1"   "$2";;
+	*) unlink context source target;;
     esac
 }
 
@@ -1482,7 +1329,16 @@ function unlink {
 # Move upward from cur
 function up {
     forbid_preview
-    from "$1" parents goto "$1"
+
+    if test "$1" = "--union"
+    then
+	local -r opt="$1"
+	shift
+    else
+	local -r opt="--noempty"
+    fi
+
+    from "$1" parents goto "${opt}" "$1"
 }
 
 ## Live Queries ***************************************************************
@@ -1496,6 +1352,11 @@ function up {
 function follow {
     local -r initial_query="$@"
     local -r fifo="${DATA_DIR}/follow"
+
+    if query_find_consumer
+    then
+	error "live queries may not contain consumers"
+    fi
 
     echo "${initial_query}" > "${DATA_DIR}/query"
 
@@ -1514,7 +1375,7 @@ function follow {
 	    read -ra query < "${DATA_DIR}/query"
 
 	    # run the query
-	    "$0" --preview "${query[@]}"
+	    "$0" "${query[@]}"
 
 	    # output the record delimiter
 	    echo -ne '\0'
@@ -1574,14 +1435,50 @@ function history {
     database_history | cat ;
 }
 
+# show completions for the given partial query
+function suggest {
+    compgen -W "$(buckets)" "$2"
+}
+
 # Main entry point ************************************************************
 
 # save args for undo log
 SAVED_ARGV="$@"
 
-# parse options
-if test "$1" = "--preview"; then
-   declare GTD_PREVIEW_MODE=""; shift
-fi
+# I painted myself into a bit of a corner here, with the postfix
+# syntax.
+function dispatch {
+    if query_command_is_valid "$1"; then
+	local -a canonical
+	if query_canonicalize "$@"; then
+	    "${canonical[@]}"
+	else
+	    "$@"
+	fi
+    else
+	"$@"
+    fi
+}
 
-graph_filter_begin "$@"
+if test "$1" = "--debug"
+then
+    shift
+    for name in GTD_QUERY_DEFAULT \
+		    GTD_QUERY_TYPE \
+		    GTD_QUERY_CANONICAL_NAME
+    do
+	declare -n arr="${name}"
+	echo "${name}"
+	for key in "${!arr[@]}"
+	do
+	    echo "    ${key} = ${arr[${key}]}"
+	done
+    done
+
+    declare -a canonical
+    query_canonicalize "$@"
+    echo "Canonical query"
+    echo "${canonical[@]}"
+else
+    dispatch "$@"
+fi
