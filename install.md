@@ -7,8 +7,8 @@ clone the source in your preferred location, and install the the
 
 ## Shell Configuration
 
-I suggest adding something equivalent to the following `bash` snippet
-to your shell initialization file (if you are unsure, this is probably
+I suggest adding the equivalent of the following `bash` snippet to
+your shell initialization file (if you are unsure, this is probably
 `.bashrc`):
 
     export GTD_DIR="/path/to/gtd"
@@ -19,6 +19,7 @@ to your shell initialization file (if you are unsure, this is probably
             GTD_DATA_DIR="${HOME}/.gtdgraph" "${GTD_DIR}/gtd.sh" "$@"
         fi
     }
+	complete -C 'gtd suggest' gtd
 
 Where `/path/to/gtd` points to the root of this source tree.
 

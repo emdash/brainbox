@@ -1435,6 +1435,11 @@ function history {
     database_history | cat ;
 }
 
+# show completions for the given partial query
+function suggest {
+    compgen -W "$(buckets)" "$2"
+}
+
 # Main entry point ************************************************************
 
 # save args for undo log
