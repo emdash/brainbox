@@ -1140,6 +1140,10 @@ function capture {
     while true
     do
 	case "$1" in
+	    -b|--bucket)
+		local bucket="$2"
+		shift 2
+		;;
 	    -c|--context)
 		local contexts="$2"
 		shift 2
@@ -1176,6 +1180,10 @@ function capture {
     database_commit "${SAVED_ARGV}"
 
     echo "${node}" | into this
+
+    if test -n "${bucket}"; then
+	from this into "${bucket}"
+    fi
 
     if test -n "${contexts}"; then
 	assign "${contexts}" this
