@@ -24,8 +24,6 @@ fi
 # XXX: how to make lib dir point to directory containing this script?
 export STATE_DIR="${DATA_DIR}/state"
 export NODE_DIR="${STATE_DIR}/nodes"
-export DEPS_DIR="${STATE_DIR}/dependencies"
-export CTXT_DIR="${STATE_DIR}/contexts"
 export HIST_DIR="${DATA_DIR}/hist/"
 export BUCKET_DIR="${DATA_DIR}/buckets"
 
@@ -33,7 +31,7 @@ export BUCKET_DIR="${DATA_DIR}/buckets"
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
 # self-explanatory.
-EDGE_DIRS=("${DEPS_DIR}" "${CTXT_DIR}")
+EDGES=("dependencies", "contexts")
 
 
 # Helpers *********************************************************************
@@ -67,12 +65,23 @@ function not_implemented {
 
 # Filter each line of stdin according to the exit status of "$@"
 function filter {
-    local input
-    while IFS="" read -r input; do	
-	if "$@" "${input}"; then
-	    echo "${input}"
-	fi
-    done
+    if test "$1" = "-n"
+    then
+	shift
+	local input
+	while IFS="" read -r input; do	
+	    if ! "$@" "${input}"; then
+		echo "${input}"
+	    fi
+	done
+    else
+	local input
+	while IFS="" read -r input; do	
+	    if "$@" "${input}"; then
+		echo "${input}"
+	    fi
+	done
+    fi
 }
 
 # Apply "$@" to each line of stdin.
@@ -92,7 +101,7 @@ function database_init {
     if ! test -e "${DATA_DIR}"; then
 	mkdir -p "${NODE_DIR}"
 	for dir in "${EDGE_DIRS[@]}"; do
-	    mkdir -p "${dir}"
+	    mkdir -p "${STATE_DIR}/${dir}"
 	done
 	mkdir -p "${HIST_DIR}"
 	git init -q --bare "${HIST_DIR}"
@@ -252,6 +261,8 @@ function gen_uuid {
 # wraps a python script which is used to "accelerate" some operations.
 function graph { "${GTD_DIR}/graph.py" "$@" ; }
 
+# list all the valid edge sets
+function edges { echo "${EDGE_DIRS[@]}" ; }
 
 # print the path to the data directory of a given node id.
 #
@@ -372,21 +383,15 @@ function graph_edge_path {
     local u="$1"
     local v="$2"
     local edge_set="$3"
-
-    case "${edge_set}" in
-	dep)     echo  "${DEPS_DIR}/$(graph_edge "${u}" "${v}")";;
-	context) echo  "${CTXT_DIR}/$(graph_edge "${u}" "${v}")";;
-	*)       error "$3 not one of dep | context";;
-    esac
+    echo "${STATE_DIR}/${edge_set}/$(graph_edge "${u}" "${v}")"
 }
 
 # Link two nodes in the graph.
 function graph_edge_create {
     database_ensure_init
-
+    test -e "${STATE_DIR}/${3}"       || error "Invalid edge set: $3"
     test -d "$(graph_node_path "$1")" || error "Invalid ID $1"
     test -d "$(graph_node_path "$2")" || error "Invalid ID $2"
-    
     mkdir -p "$(graph_edge_path "$1" "$2" "$3")"
 }
 
@@ -461,10 +466,53 @@ function task_persist {
 
 # These associative arrays store meta-data about query commands which
 # help in command parsing.
+declare -a GTD_COMMANDS
+declare -A GTD_COMMAND_ARGS
 declare -A GTD_QUERY_DEFAULT
 declare -A GTD_QUERY_TYPE
 declare -A GTD_QUERY_CANONICAL_NAME
 
+# register a command for completion suggestions
+function command_declare {
+    local -r cmd="$1"
+    shift
+    GTD_COMMANDS+=("${cmd}")
+    GTD_COMMAND_ARGS["${cmd}"]="$*"
+}
+
+# true if given command is registered as a query
+function command_is_query {
+    case "$(query_command_type "$1")" in
+	invalid) return 1;;
+	*)       return 0;;
+    esac
+}
+
+# list all registered commands
+function commands {
+    for cmd in "${GTD_COMMANDS[@]}"
+    do
+	echo "${cmd}"
+    done
+}
+
+# list the arguments for the given command
+function command_args { echo "${GTD_COMMAND_ARGS[$1]}" ; }
+
+# list all query subcommands
+function queries {
+    commands | filter command_is_query
+}
+
+# list all chainable commands
+function filters {
+    commands | filter query_command_is_chainable_to
+}
+
+# list all non-producer commands
+function chainable {
+    commands | filter -n query_command_is_chainable_from
+}
 
 # annotate a query filter or consumer with its "default query"
 function query_declare_default_producer {
@@ -482,6 +530,8 @@ function query_default_producer {
 }
 
 # declare the canonical name of of the query command
+#
+# this will also register the canonical name for completion.
 function query_declare_canonical_name {
     if test -v "GTD_QUERY_CANONICAL_NAME[$2]"
     then
@@ -489,18 +539,22 @@ function query_declare_canonical_name {
     fi
 
     GTD_QUERY_CANONICAL_NAME["$2"]="$1"
+    command_declare "$2"
 }
 
 # set the type function to the given constant type
+#
+# this also registers the function in the list of completions
 function query_declare_type {
-    GTD_QUERY_TYPE["$1"]="${@:2:$# - 1}"
+    GTD_QUERY_TYPE["$1"]="$2"
+    command_declare "$1" "${@:3:$# - 2}"
 }
 
 # output the type of the query command
 function query_command_type {
     if test -v "GTD_QUERY_TYPE[$1]"
     then
-	echo "${GTD_QUERY_TYPE["$1"]}"
+	echo "${GTD_QUERY_TYPE[$1]}"
     else
 	echo "invalid"
     fi
@@ -511,7 +565,7 @@ function query_command_is_valid {
     test ! "$(query_command_type $@)" = "invalid"
 }
 
-# returns true if the given query command is counts as a filter
+# true if the given query command acts as a filter
 function query_command_is_filter {
     case "$(query_command_type $@)" in
 	filter) return 0;;
@@ -520,8 +574,8 @@ function query_command_is_filter {
     esac
 }
 
-# returns true if the given query command allows further filtering
-function query_command_is_chainable {
+# true if the given query command is a filter or consumer
+function query_command_is_chainable_to {
     case "$(query_command_type "$@")" in
 	filter)    return 0;;
 	binop)     return 0;;
@@ -532,7 +586,25 @@ function query_command_is_chainable {
     esac
 }
 
-# return true if the given query command does not allow further filtering
+# true if the given query command is a producer or filter
+function query_command_is_chainable_from {
+    case "$(query_command_type "$@")" in
+	filter)    return 0;;
+	binop)     return 0;;
+	producer)  return 0;;
+	*)         return 1;;
+    esac
+}
+
+# true if the given query command is not a filter or consumer
+function query_command_is_producer {
+    case "$(query_command_type "$@")" in
+	producer) return 0;;
+	*)        return 1;;
+    esac
+}
+
+# true if the given query command consumes the query
 function query_command_is_consumer {
     case "$(query_command_type "$@")" in
 	formatter) return 0;;
@@ -541,6 +613,8 @@ function query_command_is_consumer {
 	*)         return 1;;
     esac
 }
+
+# return true if the given query command allows 
 
 # print the index into which the 
 function query_find_consumer {
@@ -599,7 +673,7 @@ function query_canonicalize {
 	i="$((i + 1))"
     done
 
-    if query_command_is_chainable "$1"; then
+    if query_command_is_chainable_to "$1"; then
 	canonical=( $(query_default_producer "$@") "$@" )
     fi
 }
@@ -612,7 +686,7 @@ function query_canonicalize {
 # if no args are given, forward stdin to stdout
 function query_filter_chain {
     if test -n "$*"; then
-	if query_command_is_chainable "$1"; then
+	if query_command_is_chainable_to "$1"; then
 	    "$@"
 	else
 	    error "$1 is not a valid graph query filter"
@@ -652,7 +726,7 @@ query_declare_type all producer
 function all { graph_node_list | query_filter_chain "$@" ; }
 
 # output tasks from named bucket
-query_declare_type from producer
+query_declare_type from producer bucket
 function from {
     local bucket="${BUCKET_DIR}/$1"; shift;
     test -e "${bucket}" || mkdir -p "${bucket}"
@@ -674,8 +748,8 @@ function null { : | query_filter_chain "$@" ; }
 ### Query Filters *************************************************************
 
 # output nodes reachable from each node in the input set
-query_declare_type             reachable filter
-query_declare_default_producer reachable from cur
+query_declare_type             reachable filter edgeset direction
+query_declare_default_producer reachable from cur 
 function reachable {
     local edges="$1"
     local direction="$2"
@@ -684,7 +758,7 @@ function reachable {
 }
 
 # output the nodes adjacent to each input node
-query_declare_type             adjacent filter
+query_declare_type             adjacent filter edgeset direction
 query_declare_default_producer adjacent from cur
 function adjacent {
     local edges="$1"
@@ -714,7 +788,7 @@ query_declare_default_producer contexts from cur
 function contexts { adjacent contexts incoming "$@" ; }
 
 # keep only the node selected by the user
-query_declare_type             choose   filter
+query_declare_type             choose   filter '--multi|--single'
 query_declare_default_producer choose   all
 function choose {
     # can't preview because this also uses FZF.
@@ -730,7 +804,7 @@ function choose {
 }
 
 # keep nodes for which the given datum exists
-query_declare_type             has filter
+query_declare_type             has filter datum
 query_declare_default_producer has all
 function has {
     local -r datum="$1"
@@ -846,7 +920,7 @@ function search {
 
 ## Binary queries *************************************************************
 
-query_declare_type             union binop
+query_declare_type             union binop query
 query_declare_default_producer union null
 function union {
     local -a canonical
@@ -875,8 +949,10 @@ function union {
 
 ## Formatters *****************************************************************
 
+BUCKET_OPTS='--union|--subtract|--intersect|--noempty'
+
 # print the path to the given datum for each node in the input set
-query_declare_type             get formatter
+query_declare_type             get formatter datum
 query_declare_default_producer get all
 function get {
     if test -z "$1"
@@ -899,7 +975,7 @@ function dot {
 }
 
 # select nodes from input set to be placed into the given bucket
-query_declare_type             goto selection
+query_declare_type             goto selection "${BUCKET_OPTS}" bucket
 query_declare_default_producer goto all
 function goto {
     forbid_preview
@@ -921,7 +997,7 @@ function goto {
 #
 # By default, the new contents replace the old contents. Give `--union`
 # is this is undesired.
-query_declare_type             into selection
+query_declare_type             into selection "${BUCKET_OPTS}" bucket
 query_declare_default_producer into null
 function into {
     # copy stdin into demp dir
@@ -1082,7 +1158,7 @@ function persist {
 }
 
 # set the given datum on the input set to the given args or stdin.
-query_declare_type             set_ formatter
+query_declare_type             set_ formatter datum
 query_declare_default_producer set_ from target
 query_declare_canonical_name   set_ set
 function set_ {
@@ -1097,6 +1173,7 @@ function set_ {
 
 # Non-query commands **********************************************************
 
+command_declare swap bucket bucket
 function swap {
     case "$#" in
 	1) local a="source" b="$1";;
@@ -1110,21 +1187,24 @@ function swap {
 }
 
 # add subtasks to target
+command_declare add bucket bucket
 function add {
-    link subtask "$@"
+    link dependencies "$@"
 }
 
 # assign tasks to contexts
+command_declare assign bucket bucket
 function assign {
     case "$#" in
-	1) link context source "$1";;
-	2) link context "$1"   "$2";;
-	*) link context source target;;
+	1) link contexts source "$1";;
+	2) link contexts "$1"   "$2";;
+	*) link contexts source target;;
     esac
 }
 
 # List all known buckets
 function buckets {
+    debug "buckets:"
     ls "${BUCKET_DIR}"
 }
 
@@ -1135,6 +1215,7 @@ function buckets {
 # If no arguments are given:
 # - and stdin is a tty, invokes $EDITOR to create the node contents.
 # - otherwise, stdin is written to the contents file.
+command_declare capture '--bucket|--context|--parents|--dependents:bucket'
 function capture {
     forbid_preview
     while true
@@ -1202,12 +1283,14 @@ function capture {
 }
 
 # Clobber the database
+command_declare clobber
 function clobber {
     forbid_preview
     database_clobber;
 }
 
 # move downward from cur
+command_declare down '--union' bucket
 function down {
     forbid_preview
 
@@ -1241,15 +1324,10 @@ function init {
 # Every node in the *from* set will be linked to every node in the
 # *into* set. Typically, one of these sets will contain only a single
 # node.
+command_declare link edgeset bucket bucket
 function link {
     forbid_preview
-
-    case "$1" in
-	subtask) local edge_set="dep";;
-	context) local edge_set="context";;
-	*)       error "Not one of subtask | context";;
-    esac
-
+    local edge_set="$1"
     local from_ids="$(from "${2:-source}")"
     local into_ids="$(from "${3:-target}")"
 
@@ -1290,30 +1368,27 @@ function log {
 }
 
 # remove subtasks
+command_declare remove bucket bucket
 function remove {
-    unlink subtask "$@"
+    unlink dependencies "$@"
 }
 
 # unassign tasks and contexts
+command_declare unassign
 function unassign {
     case "$#" in
-	1) unlink context source "$1";;
-	2) unlink context "$1"   "$2";;
-	*) unlink context source target;;
+	1) unlink contexts source "$1";;
+	2) unlink contexts "$1"   "$2";;
+	*) unlink contexts source target;;
     esac
 }
 
 # remove edges between sets of nodes in different buckets
+command_declare unlink edgeset bucket bucket
 function unlink {
     forbid_preview
 
-    case "$1" in
-	subtask) local edge_set="dep";;
-	context) local edge_set="context";;
-	*)       error "Not one of subtask | context";;
-    esac
-
-
+    local -r edge_set="$1"
     local from_ids="$(from "${2:-source}")"
     local into_ids="$(from "${3:-target}")"
 
@@ -1327,6 +1402,7 @@ function unlink {
 }
 
 # Move upward from cur
+command_declare up '--union' bucket
 function up {
     forbid_preview
 
@@ -1349,6 +1425,7 @@ function up {
 #
 # only one live query is supported per database. if called multiple
 # times, the *initial query* is replaced.
+command_declare follow query
 function follow {
     local -r initial_query="$@"
     local -r fifo="${DATA_DIR}/follow"
@@ -1402,6 +1479,7 @@ function follow_notify {
 #
 # --streaming-mode is a customization I added, it's not available on
 # --the official xdot. PR submitted
+command_declare visualize query
 function visualize {
     if test -z "$*"; then
 	error "An initial query is required"
@@ -1417,28 +1495,158 @@ function visualize {
 ## State management ***********************************************************
 
 # restore the last undone command, if one exists
+command_declare redo
 function redo {
     forbid_preview
     database_redo
 }
 
 # roll back to the state prior to execution of the last destructive
+command_declare undo
 function undo {
     forbid_preview
     database_undo
 }
 
 # show the current database undo
+command_declare history
 function history {
     # cat here to prevent pager from being invoked, which is annoying
     # within emacs. but maybe I should remove this.
     database_history | cat ;
 }
 
-# show completions for the given partial query
+
+# Syntax-directed completion **************************************************
+
+# bash completion hook
+#
+# bind with `complete -C 'gtd suggest' gtd
+# expects: COMP_LINE and COMP_POINT to be set
+# expects: completion word in $2"
 function suggest {
-    compgen -W "$(buckets)" "$2"
+    # take the partial command up to the current cursor position...
+    local slice="${COMP_LINE:0:COMP_POINT}"
+    local -a cmd=( ${slice} )
+    local -i len="${#cmd[@]}"
+
+    echo "suggest: len   ${len}"          >> "${DATA_DIR}/compdbg"
+    echo "suggest: type  ${COMP_TYPE}"    >> "${DATA_DIR}/compdbg"
+    echo "suggest: line  ${COMP_LINE}"    >> "${DATA_DIR}/compdbg"
+    echo "suggest: slice ${slice@Q}"      >> "${DATA_DIR}/compdbg"
+    echo "suggest: point ${COMP_POINT}"   >> "${DATA_DIR}/compdbg"
+    echo "suggest: \$@:  $@"              >> "${DATA_DIR}/compdbg"
+    echo "suggest: cmd:  ${cmd[@]}"       >> "${DATA_DIR}/compdbg"
+
+    # ...discarding the first word, pipe through completion algorithm
+    # and then compgen.
+    echo "${cmd[@]:1:len - 1}" \
+	| __suggest_command commands 2>> "${DATA_DIR}/compdbg" \
+	| __suggest_compgen "$2"
 }
+
+function __suggest_compgen {
+    # read results from stdin, and then pipe through compgen
+    local -a results
+    echo suggest_copmgen "$@" >> "${DATA_DIR}/compdbg"
+
+    while read -r result
+    do
+	echo result: "${result@Q}" >> "${DATA_DIR}/compdbg"
+	results+=( "${result}" )
+    done
+    compgen -W "${results[*]}" -- "$1"
+}
+
+function __suggest_command {
+    local cmd
+    debug suggest_command "$@"
+
+    __suggest_next cmd "$@"   || return 1
+    __suggest_args "${cmd}" || return 1
+
+    if query_command_is_chainable_from "${cmd}"
+    then
+	__suggest_command filters || return 1
+    fi
+}
+
+function __suggest_args {
+    debug suggest_args "$@"
+
+    local -r cmd="$1"
+
+    for kind in $(command_args "${cmd}")
+    do
+	debug suggest_args: kind: "${kind}"
+	__suggest_arg "${kind}" || return 1
+    done
+}
+
+function __suggest_arg {
+    debug suggest_arg "$@"
+    case "${kind}" in
+	bucket)    __suggest_next - buckets                      || return 1;;
+	edgeset)   __suggest_next - echo "dependencies contexts" || return 1;;
+	direction) __suggest_next - echo "incoming outgoing"     || return 1;;
+	query)     __suggest_command queries                     || return 1;;
+	-*:*)      __suggest_option "${kind}"                    || return 1;;
+	-*)        __suggest_flags "${kind}"                     || return 1;;
+   esac
+}
+
+function __suggest_option {
+    debug suggest_option "$@"
+    local -r flags="$(echo "$1" | cut -d ':' -f 1)"
+    local -r option="$(echo "$1" | cut -d ':' -f 2)"
+
+    __suggest_flags "${flags}"  || return 1
+    __suggest_arg - "${option}" || return 1
+}
+
+
+function __suggest_flags {
+    debug suggest_flags
+
+    
+    
+    if __suggest_next arg :
+    then
+	debug suggest_flags: have arg
+	case "${arg}" in
+	    -*) echo "$1" | tr '|' '\n' | grep -f <(echo "${arg}") && return 0;;
+	    *)  return 0;;
+	esac
+    fi
+    echo "$1" | tr '|' '\n'
+    return 1
+}
+
+function __suggest_next {
+    debug suggest_next "$@"
+
+    if test "$1" = '-'
+    then
+	local var
+	shift
+    else
+	local -n var="$1"
+	shift
+    fi
+
+    if read -r -d "${IFS}" var
+    then
+	debug suggest_next: read: "${var@Q}"
+	return 0
+    else
+	debug suggest_next: complete
+	"$@"
+	return 1
+    fi
+}
+
+			
+
 
 # Main entry point ************************************************************
 
@@ -1463,7 +1671,7 @@ function dispatch {
 if test "$1" = "--debug"
 then
     shift
-    for name in GTD_QUERY_DEFAULT \
+    for name in GTD_COMMAND_ARGS GTD_QUERY_DEFAULT \
 		    GTD_QUERY_TYPE \
 		    GTD_QUERY_CANONICAL_NAME
     do
