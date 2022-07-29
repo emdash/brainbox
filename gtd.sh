@@ -1528,7 +1528,6 @@ function suggest {
     # take the partial command up to the current cursor position...
     local slice="${COMP_LINE:0:COMP_POINT}"
     local -a cmd=( ${slice} )
-    local -i len="${#cmd[@]}"
 
     echo "suggest: len   ${len}"          >> "${DATA_DIR}/compdbg"
     echo "suggest: type  ${COMP_TYPE}"    >> "${DATA_DIR}/compdbg"
@@ -1540,8 +1539,8 @@ function suggest {
 
     # ...discarding the first word, pipe through completion algorithm
     # and then compgen.
-    echo "${cmd[@]:1:len - 1}" \
-	| __suggest_command commands 2>> "${DATA_DIR}/compdbg" \
+    echo "${cmd[@]:1} " \
+	| __suggest_command $(commands) 2>> "${DATA_DIR}/compdbg" \
 	| __suggest_compgen "$2"
 }
 
@@ -1559,39 +1558,36 @@ function __suggest_compgen {
 }
 
 function __suggest_command {
+    debug suggest_command
+
     local cmd
-    debug suggest_command "$@"
-
-    __suggest_next cmd "$@"   || return 1
-    __suggest_args "${cmd}" || return 1
-
-    if query_command_is_chainable_from "${cmd}"
+    if __suggest_next cmd "$@"
     then
-	__suggest_command filters || return 1
+	debug suggest_next: cmd: "${cmd}"
+
+	for kind in $(command_args "${cmd}")
+	do
+	    debug suggest_args: kind: "${kind}"
+	    __suggest_arg "${kind}" || return 1
+	done
+
+	if query_command_is_chainable_from "${cmd}"
+	then
+	    __suggest_command $(filters) || return 1
+	fi
     fi
-}
-
-function __suggest_args {
-    debug suggest_args "$@"
-
-    local -r cmd="$1"
-
-    for kind in $(command_args "${cmd}")
-    do
-	debug suggest_args: kind: "${kind}"
-	__suggest_arg "${kind}" || return 1
-    done
 }
 
 function __suggest_arg {
     debug suggest_arg "$@"
+    local -r kind="$1"
     case "${kind}" in
-	bucket)    __suggest_next - buckets                      || return 1;;
-	edgeset)   __suggest_next - echo "dependencies contexts" || return 1;;
-	direction) __suggest_next - echo "incoming outgoing"     || return 1;;
-	query)     __suggest_command queries                     || return 1;;
-	-*:*)      __suggest_option "${kind}"                    || return 1;;
-	-*)        __suggest_flags "${kind}"                     || return 1;;
+	bucket)    __suggest_next    - $(buckets)        || return 1;;
+	edgeset)   __suggest_next    - "${EDGE_DIRS[@]}" || return 1;;
+	direction) __suggest_next    - incoming outgoing || return 1;;
+	query)     __suggest_command $(queries)        || return 1;;
+	-*:*)      __suggest_option  "${kind}"         || return 1;;
+	-*)        __suggest_flags   "${kind}"         || return 1;;
    esac
 }
 
@@ -1600,52 +1596,89 @@ function __suggest_option {
     local -r flags="$(echo "$1" | cut -d ':' -f 1)"
     local -r option="$(echo "$1" | cut -d ':' -f 2)"
 
-    __suggest_flags "${flags}"  || return 1
-    __suggest_arg - "${option}" || return 1
+    if __suggest_flags "${flags}"
+    then
+	if __suggest_arg "${option}"
+	then
+	    return 0
+	else
+	    return 1
+	fi
+    else
+	return 1
+    fi
 }
 
 
 function __suggest_flags {
     debug suggest_flags
+    local flag
+    local -ar flags=( $( echo "$1" | tr '|' ' ') )
 
-    
-    
-    if __suggest_next arg :
+    if read -r -d "${IFS}" flag
     then
-	debug suggest_flags: have arg
-	case "${arg}" in
-	    -*) echo "$1" | tr '|' '\n' | grep -f <(echo "${arg}") && return 0;;
+	case "${flag}" in
+	    -*) : ;;
 	    *)  return 0;;
 	esac
+	if __suggest_matches "${flag}" "${flags[@]}"
+	then
+	    return 0
+	else
+	    for flag in "${flags[@]}"
+	    do
+		echo "${flag}"
+	    done
+	    return 1
+	fi
     fi
-    echo "$1" | tr '|' '\n'
-    return 1
+    return 0
 }
 
 function __suggest_next {
-    debug suggest_next "$@"
+    case "$1" in
+	-) local var;;
+	*) local -n var="$1";;
+    esac
 
-    if test "$1" = '-'
-    then
-	local var
-	shift
-    else
-	local -n var="$1"
-	shift
-    fi
+    shift
+
+    debug suggest_next "$1"
 
     if read -r -d "${IFS}" var
     then
 	debug suggest_next: read: "${var@Q}"
-	return 0
-    else
-	debug suggest_next: complete
-	"$@"
-	return 1
+	if __suggest_matches "${var}" "$@"
+	then
+	    debug suggest_next: matches
+	    return 0
+	fi
     fi
+
+    debug suggest_next: complete
+    for s in "$@"
+    do
+	echo "${s}"
+    done
+    return 1
 }
 
-			
+function __suggest_matches {
+    local -r match="$1"
+    shift
+    debug suggest_matches: "$1" : "$@"
+
+    while ! test "$#" -eq 0
+    do
+	if test "$1" = "${match}"
+	then
+	    debug suggest_matches: match "${var}"
+	    return 0
+	fi
+	shift
+    done
+    return 1
+}			
 
 
 # Main entry point ************************************************************
