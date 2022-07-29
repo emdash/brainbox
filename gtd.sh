@@ -1529,29 +1529,36 @@ function suggest {
     local slice="${COMP_LINE:0:COMP_POINT}"
     local -a cmd=( ${slice} )
 
-    echo "suggest: len   ${len}"          >> "${DATA_DIR}/compdbg"
-    echo "suggest: type  ${COMP_TYPE}"    >> "${DATA_DIR}/compdbg"
-    echo "suggest: line  ${COMP_LINE}"    >> "${DATA_DIR}/compdbg"
-    echo "suggest: slice ${slice@Q}"      >> "${DATA_DIR}/compdbg"
-    echo "suggest: point ${COMP_POINT}"   >> "${DATA_DIR}/compdbg"
-    echo "suggest: \$@:  $@"              >> "${DATA_DIR}/compdbg"
-    echo "suggest: cmd:  ${cmd[@]}"       >> "${DATA_DIR}/compdbg"
+    if test -n "${GTD_DEBUG_COMPLETIONS}"
+    then
+	local debug_file="${DATA_DIR}/compdbg"
+    else
+	local debug_file="/dev/null"
+    fi
+
+    echo "suggest: len   ${len}"          >> "${debug_file}"
+    echo "suggest: type  ${COMP_TYPE}"    >> "${debug_file}"
+    echo "suggest: line  ${COMP_LINE}"    >> "${debug_file}"
+    echo "suggest: slice ${slice@Q}"      >> "${debug_file}"
+    echo "suggest: point ${COMP_POINT}"   >> "${debug_file}"
+    echo "suggest: \$@:  $@"              >> "${debug_file}"
+    echo "suggest: cmd:  ${cmd[@]}"       >> "${debug_file}"
 
     # ...discarding the first word, pipe through completion algorithm
     # and then compgen.
     echo "${cmd[@]:1} " \
-	| __suggest_command $(commands) 2>> "${DATA_DIR}/compdbg" \
-	| __suggest_compgen "$2"
+	| __suggest_command $(commands) 2>> "${debug_file}" \
+	| __suggest_compgen "$2"        2>> "${debug_file}"
 }
 
 function __suggest_compgen {
     # read results from stdin, and then pipe through compgen
     local -a results
-    echo suggest_copmgen "$@" >> "${DATA_DIR}/compdbg"
+    debug sugest_copmgen "$@"
 
     while read -r result
     do
-	echo result: "${result@Q}" >> "${DATA_DIR}/compdbg"
+	debug result: "${result@Q}"
 	results+=( "${result}" )
     done
     compgen -W "${results[*]}" -- "$1"
