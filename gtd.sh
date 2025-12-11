@@ -953,6 +953,8 @@ function choose {
         --layout="reverse-list" \
         --cycle \
         --preview="$0 task_details {1}" \
+        --with-nth='{2..}' \
+        --accept-nth='{1}' \
       | cut -d ' ' -f 1 \
       | query_filter_chain "$@"
 }
