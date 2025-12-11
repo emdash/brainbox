@@ -35,7 +35,6 @@ EDGE_DIRS=("dependencies" "contexts")
 
 # Helpers *********************************************************************
 
-
 # print to stderr
 function debug {
     if test "$1" = "-n"; then
