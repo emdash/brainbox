@@ -94,7 +94,7 @@ function assert {
     else
 	local line func file
 	line="$(caller 0 | cut -d ' ' -f 1)"
-	file="$(basename $(caller 0 | cut -d ' ' -f 3))"	
+	file="$(basename $(caller 0 | cut -d ' ' -f 3))"
 	debug "${file}:${line} Assertion failed: $*"
 	debug
 	exit 1
@@ -105,7 +105,7 @@ function assert_false {
     if "$@"; then
 	local line func file
 	line="$(caller 0 | cut -d ' ' -f 1)"
-	file="$(basename $(caller 0 | cut -d ' ' -f 3))"	
+	file="$(basename $(caller 0 | cut -d ' ' -f 3))"
 	debug "${file}:${line} '$*' should be false"
 	debug
 	exit 1
@@ -925,7 +925,7 @@ function run_all_tests {
 # warn about missing tests
 function tattle {
     # make a directory with a file for every test case
-    mkdir -p "${FUNC_DIR}"    
+    mkdir -p "${FUNC_DIR}"
     declare -F | cut -d ' ' -f 3 | grep '^test_' | while read func; do
 	touch "${FUNC_DIR}/${func}"
     done

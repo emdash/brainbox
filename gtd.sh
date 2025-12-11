@@ -68,14 +68,14 @@ function filter {
     then
 	shift
 	local input
-	while IFS="" read -r input; do	
+	while IFS="" read -r input; do
 	    if ! "$@" "${input}"; then
 		echo "${input}"
 	    fi
 	done
     else
 	local input
-	while IFS="" read -r input; do	
+	while IFS="" read -r input; do
 	    if "$@" "${input}"; then
 		echo "${input}"
 	    fi
@@ -613,9 +613,9 @@ function query_command_is_consumer {
     esac
 }
 
-# return true if the given query command allows 
+# return true if the given query command allows
 
-# print the index into which the 
+# print the index into which the
 function query_find_consumer {
     local -i i=1
     while test -n "$*"; do
@@ -748,7 +748,7 @@ function null { : | query_filter_chain "$@" ; }
 
 # output nodes reachable from each node in the input set
 query_declare_type             reachable filter edgeset direction
-query_declare_default_producer reachable from cur 
+query_declare_default_producer reachable from cur
 function reachable {
     local edges="$1"
     local direction="$2"
@@ -779,7 +779,7 @@ function assignments { adjacent contexts incoming | query_filter_chain "$@" ; }
 # immediate subtasks of the input set
 query_declare_type             children filter
 query_declare_default_producer children from cur
-function children { adjacent dependencies outgoing "$@" ; } 
+function children { adjacent dependencies outgoing "$@" ; }
 
 # immediate context edgres
 query_declare_type             contexts filter
@@ -983,7 +983,7 @@ function goto {
 	--*) local -r opt="$1"; shift;;
 	*)   local -r opt="--noempty";;
     esac
-    
+
     echo "$@"
     local bucket="$1"
     shift
@@ -1006,7 +1006,7 @@ function into {
     while IFS="" read -r id; do
 	touch "${temp}/${id}"
     done
-    
+
     case "$1" in
 	--union)
 	    __into_copy "$2"
@@ -1168,7 +1168,6 @@ function set_ {
     done
     database_commit "${SAVED_ARGV}"
 }
-
 
 # Non-query commands **********************************************************
 
@@ -1684,7 +1683,7 @@ function __suggest_matches {
 	shift
     done
     return 1
-}			
+}
 
 
 # Main entry point ************************************************************
