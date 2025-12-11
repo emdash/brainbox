@@ -1570,6 +1570,48 @@ function up {
     from "$1" parents goto "${opt}" "$1"
 }
 
+# Project-Subtasks Editor *****************************************************
+
+function __plan_modify {
+    read path < <(graph_datum subtasks path "${SUBTASK_ID}" "$@")
+    case "${1}" in
+        add) all | choose >> "${path}";;
+        capture) echo | xargs -o "$0" capture ; last_captured >> "${path}";;
+        edit) graph_datum contents edit "${2}";;
+        *) ./subtasks.py "${path}" "${@}";;
+    esac
+}
+
+function __plan_items {
+    graph_datum subtasks read "${SUBTASK_ID}" | summarize
+}
+
+function __plan_bindings {
+    fzf_bind_sexec  "shift-up"   "Move Up"     "$0 __plan_modify up     {n}" "up"
+    fzf_bind_sexec  "shift-down" "Move Down"   "$0 __plan_modify down   {n}" "down"
+    fzf_bind_sexec  "delete"     "Delete"      "$0 __plan_modify delete {n}"
+    fzf_bind_exec   "enter"      "Edit"        "$0 __plan_modify edit   {1}"
+    fzf_bind_exec   "a"          "Add"         "$0 __plan_modify add"
+    fzf_bind_exec   "c"          "Capture"     "$0 __plan_modify capture"    "last"
+    fzf_bind_action "q"          "Quit"        "accept"
+    fzf_bind_action "h"          "Toggle Help" "toggle-header"
+}
+
+command_declare plan
+function plan {
+    forbid_preview
+
+    declare SUBTASK_ID
+    read SUBTASK_ID < <(dispatch "${@}" choose --single)
+    export SUBTASK_ID
+
+    fzf_menu \
+      "Edit Project Subtasks" \
+      __plan_bindings \
+      __plan_items \
+      --with-nth='{2..}'
+}
+
 ## Live Queries ***************************************************************
 
 # evaluate read-only queries each time the database changes
