@@ -3,10 +3,17 @@
 
 import os
 import sys
-
+from itertools import pairwise
 
 # Helper Functions #######################################################
 
+def debug(*args):
+    print(*args, file=sys.stderr)
+    return args[-1]
+
+def has(id, datum):
+    return os.path.exists(
+        os.path.join(os.getenv("NODE_DIR"), id, datum))
 
 def read_ids(f=sys.stdin):
     for line in f:
@@ -32,20 +39,54 @@ def difference(rhs):
     for node in sorted(set(read_ids()) - set(read_ids(open(rhs, "r")))):
         print(node)
 
+def nodes():
+    for node in os.listdir(os.path.join(os.getenv("STATE_DIR"), "nodes")):
+        yield node
 
 ## Edges #################################################################
 
+def __edge_list(explicit):
+    for e in explicit:
+        match e.split(':'):
+            case (u, v): yield (u, v)
+
+def __get_subtasks(node):
+    match datum_read("subtasks", node).splitlines():
+        case ["[no contents]"]: pass
+        case lines:
+            lines.reverse()
+
+def __project_edges(explicit):
+    projects = {
+        node: __get_subtasks(node)
+        for node in nodes()
+        if has("subtasks", node)
+    }
+
+    for (node, subtasks) in projects.items():
+        match subtasks:
+            case ["[no contents]"]: pass
+            case [first, *rest] as subtasks:
+                yield (node, first)
+                for (prev, next) in pairwise(subtasks):
+                    yield (prev, next)
+
+    for (u, v) in __edge_list(explicit):
+        if u in projects:
+            yield (projects[u][-1], v)
+        else:
+            yield (u, v)
+
 
 def edge_list(edge_set):
+    path = os.path.join(os.getenv("STATE_DIR"), edge_set)
     try:
-        path = os.path.join(os.getenv("STATE_DIR"), edge_set)
-        ret = {
-            tuple(edge.split(':'))
-            for edge in os.listdir(path)
-            if ':' in edge
-        }
-        return ret
-    except OSError:
+        edges = os.listdir(path)
+        match edge_set:
+            case "dependencies": return set(__project_edges(edges))
+            case _: return set(__edge_list(edges))
+    except OSError as e:
+        print(e, sys.stderr)
         return set()
 
 def edge_touches(u, v, nodes):
