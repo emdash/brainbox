@@ -31,8 +31,7 @@ export BUCKET_DIR="${DATA_DIR}/buckets"
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
 # self-explanatory.
-EDGES=("dependencies", "contexts")
-
+EDGE_DIRS=("dependencies" "contexts")
 
 # Helpers *********************************************************************
 

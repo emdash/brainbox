@@ -404,8 +404,8 @@ function test_graph_edge_path {
     mkdir -p "${dep}"
     mkdir -p "${ctx}"
 
-    assert "$(gtd graph_edge_path "${u}" "${v}" dep)"     = "${dep}"
-    assert "$(gtd graph_edge_path "${u}" "${v}" context)" = "${ctx}"
+    assert "$(gtd graph_edge_path "${u}" "${v}" dependencies)" = "${dep}"
+    assert "$(gtd graph_edge_path "${u}" "${v}" context)"      = "${ctx}"
 }
 
 function test_graph_edge_create {
