@@ -421,6 +421,48 @@ function task_summary {
     printf "%s %7s %s\n" "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
 }
 
+# display extended task information.
+#
+# this is used for preview windows and the like.
+function task_details {
+    local -r width="${FZF_PREVIEW_COLUMNS:-"${LINES:-80}"}"
+    task_summary "${1}"
+    task_contents read "${1}" \
+      | bat -f --file-name "Contents" --terminal-width "${width}"
+
+    if graph_datum subtasks exists "${1}"
+    then
+      echo "Subtasks"
+      graph_datum subtasks read "${1}" \
+        | summarize \
+        | bat --terminal-width "${width}"
+      echo
+    fi
+
+    echo "Contexts"
+    echo "${1}" \
+        | graph adjacent contexts incoming \
+        | tail -n +2 \
+        | summarize \
+        | bat --terminal-width "${width}"
+    echo
+
+    echo "Blocks"
+    echo "${1}" \
+        | graph adjacent dependencies incoming \
+        | tail -n +2 \
+        | summarize \
+        | bat --terminal-width "${width}"
+    echo
+
+    echo "Depends"
+    echo "${1}" \
+        | graph adjacent dependencies outgoing \
+        | tail -n +2 \
+        | summarize \
+        | bat --terminal-width "${width}"
+}
+
 ## Task Management
 
 # Automatically transition a NEW task to TODO
@@ -803,7 +845,15 @@ function choose {
        *)           local opt="-m"       ;;
     esac
 
-    summarize | fzf ${opt} | cut -d ' ' -f 1 | query_filter_chain "$@"
+    summarize \
+      | fzf \
+        ${opt} \
+        --style="full" \
+        --layout="reverse-list" \
+        --cycle \
+        --preview="$0 task_details {1}" \
+      | cut -d ' ' -f 1 \
+      | query_filter_chain "$@"
 }
 
 # keep nodes for which the given datum exists
