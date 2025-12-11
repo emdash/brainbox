@@ -91,6 +91,107 @@ function map {
     done
 }
 
+# Helper for creating fzf bindings
+#
+# key     - fzf-compatible key spec
+# help    - text to show in the help menu
+# action  - fzf-compatible action to be bound
+# [extra] - optional additional action to be bound
+function fzf_bind_action {
+    local key="${1}"
+    local help="${2}"
+    local action="${3}"
+    if test -v 4
+    then
+        shift 3
+        echo "${key}|${help}|${action}+${*}"
+    else
+        echo "${key}|${help}|${action}"
+    fi
+}
+
+# Helper to create execution bindings.
+#
+# The `cmd` argument is wrapped in `execute(...)`, and any remaining
+# arguments are interpreted as extra actions to be performed
+# (e.g. "up" or "down").
+#
+# If you want to specify multiple extra bindings, it's up to you to
+# include the intervening '+'.
+#
+# You can bind any command you want, but it must be a string. To bind
+# an internal command, prefix the string with "$0". Because the
+# command must be a single string, you need to properly escape any
+# shell variables. Since escaping is notoriously error-prone, it's
+# recommended to pass values via the environment instead.
+function fzf_bind_exec {
+    local key="${1}"
+    local help="${2}"
+    local cmd="${3}"
+    shift 3
+    fzf_bind_action "${key}" "${help}" "execute(${cmd})" "${@}"
+}
+
+# Helper to create execution bindings.
+#
+# Exactly like `fzf_bind_exec`, but wraps with `execute-silent` to
+# reduce visual flicker with non-interactive commands.
+function fzf_bind_sexec {
+    local key="${1}"
+    local help="${2}"
+    local cmd="${3}"
+    shift 3
+    fzf_bind_action "${key}" "${help}" "execute-silent(${cmd})" "${@}"
+}
+
+# Convert a list of bindings into the FZF binding string.
+#
+# Bindings are passed one-per-line on stdin, each of which should be
+# the output of an `fzf_bind`-family function.
+#
+# The reload action is automatically appended to the action string.
+function fzf_bind {
+    local -r reload_fn="${1}"
+    while IFS='|' read key _ action
+    do
+        echo "${key}:${action}+reload-sync($0 ${reload_fn})"
+    done | paste -sd ','
+}
+
+# Convert a list of bindings to the FZF header string.
+#
+# This first agument is used as the header label, followed by the
+# table of key bindings read from stdin.
+function fzf_help {
+    echo "${1}"
+    while IFS='|' read key help _
+    do
+        echo "${key}|${help}"
+    done | tabulate -f fancy_grid -s '\|'
+}
+
+# Display an interactive menu using FZF.
+#
+# header      - header, or title of the menu.
+# bindings_fn - function which prints a list of bindings on its stdout.
+# reload_fn   - function which loads the menu contents.
+# ...         - remaining arguments are forwarded to FZF.
+function fzf_menu {
+    local -r header="${1}"
+    local -r bindings_fn="${2}"
+    local -r reload_fn="${3}"
+    shift 3
+
+    "${reload_fn}" | fzf \
+        --style=full \
+        --layout=reverse \
+        --no-input \
+        --cycle \
+        --header="$("${bindings_fn}" | fzf_help "${header}")" \
+        --bind="$("${bindings_fn}" | fzf_bind "${reload_fn}")" \
+        "${@}"
+}
+
 
 # Database Management *********************************************************
 
