@@ -744,6 +744,10 @@ function last_captured { from last_captured | query_filter_chain "$@" ; }
 query_declare_type null producer
 function null { : | query_filter_chain "$@" ; }
 
+# output fromstdin
+query_declare_type stdin producer
+function stdin { cat | query_filter_chain "$@" ; }
+
 ### Query Filters *************************************************************
 
 # output nodes reachable from each node in the input set
