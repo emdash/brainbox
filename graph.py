@@ -1,6 +1,5 @@
 #! /usr/bin/env python3
 
-
 import os
 import sys
 from itertools import pairwise
@@ -113,7 +112,8 @@ def traverse(node, edges, direction, ancestors=set(), seen=set()):
                 edges,
                 direction,
                 ancestors | {node},
-                seen      | {node})
+                seen      | {node}
+            )
 
 def expand(node, edges, direction, ancestors, depth):
     if node in ancestors:
@@ -141,10 +141,14 @@ def adjacent(edge_set, direction):
                 print(node)
 
 def is_root():
-    filter_edges("dependencies", lambda n, e: not has_adjacent(n, e, "incoming"))
+    filter_edges("dependencies", lambda n, e:
+        not has_adjacent(n, e, "incoming")
+    )
 
 def is_leaf():
-    filter_edges("dependencies", lambda n, e: not has_adjacent(n, e, "outgoing"))
+    filter_edges("dependencies", lambda n, e:
+        not has_adjacent(n, e, "outgoing")
+    )
 
 def is_orphan():
     filter_edges("dependencies", lambda n, e: not (
@@ -153,7 +157,10 @@ def is_orphan():
     ))
 
 def is_next():
-    filter_edges("dependencies", lambda n, e: not any(task_state(o) in {"NEW", "TODO"} for o in node_adjacent(n, e, "outgoing")))
+    filter_edges("dependencies", lambda n, e: not any(
+        task_state(o) in {"NEW", "TODO"}
+        for o in node_adjacent(n, e, "outgoing")
+    ))
 
 def is_project():
     filter_edges("dependencies", lambda n, e:
@@ -177,7 +184,6 @@ def reachable(edges, direction):
 
 ## Data #################################################################
 
-
 def datum_read(datum, id):
     cache = {}
     if (datum, id) not in cache:
@@ -187,7 +193,7 @@ def datum_read(datum, id):
         except OSError:
             cache[(datum, id)]="[no contents]"
     return cache[(datum, id)]
- 
+
 def task_contents(id): return datum_read("contents", id)
 def task_gloss(id):    return task_contents(id).split('\n')[0]
 def task_state(id):    return datum_read("state", id)
@@ -196,9 +202,7 @@ def filter_state(*keep):
     keep_set = set(keep)
     filter(lambda node: task_state(node) in keep_set)
 
-
 ## Dotfile Export ########################################################
-
 
 def dot_quote(value):
     quoted=value.replace("\"", "\\\"")
@@ -212,7 +216,7 @@ def dot_attrs(*args):
 def dot_bucket(name):
     items = "\n".join(dot_quote(id) for id in bucket_list(name))
     print(
-          f"""subgraph \"cluster_{name}\" {{ 
+          f"""subgraph \"cluster_{name}\" {{
           label = {dot_quote(name)};
           style = rounded;
           color = grey90;
@@ -222,7 +226,7 @@ def dot_bucket(name):
           {items}}}
           """
     )
-    
+
 def dot_state_colors(state):
     if   state == "NEW":     return ("deeppink", "black")
     elif state == "TODO":    return ("grey95",   "black"  )
@@ -250,7 +254,6 @@ def dot_edge(u, v, style):
     return f"{dot_quote(u)} -> {dot_quote(v)} [style={dot_quote(style)}];"
 
 def dot_edges(edges, nodes, style):
-
     for (u, v) in edge_list(edges):
         if edge_touches(u, v, nodes):
             print(dot_edge(u, v, style))
