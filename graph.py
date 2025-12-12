@@ -10,7 +10,7 @@ def debug(*args):
     print(*args, file=sys.stderr)
     return args[-1]
 
-def has(id, datum):
+def has(datum, id):
     return os.path.exists(
         os.path.join(os.getenv("NODE_DIR"), id, datum))
 
