@@ -152,6 +152,9 @@ def is_leaf():
         not has_adjacent(n, e, "outgoing")
     )
 
+def is_nonterminal():
+    filter("dependencies", lambda n, e: has_adjacent(n, e, "outgoing"))
+
 def is_orphan():
     filter_edges("dependencies", lambda n, e: not (
         has_adjacent(n, e, "outgoing") or
@@ -165,9 +168,7 @@ def is_next():
     ))
 
 def is_project():
-    filter_edges("dependencies", lambda n, e:
-                 has_adjacent(n, e, "incoming") and
-                 has_adjacent(n, e, "outgoing"))
+    filter(lambda n: has("subtasks", n))
 
 def is_unassigned():
     filter_edges("contexts", lambda n, e: not has_adjacent(n, e, "incoming"))
