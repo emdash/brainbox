@@ -912,6 +912,11 @@ function adjacent {
     graph adjacent "${edges}" "${direction}" | query_filter_chain "$@"
 }
 
+# immediate neighbors of node
+query_declare_type             neighbors filter
+query_declare_default_producer neighbors from cur
+function neighbors { adjacent dependencies all "$@" ; }
+
 # insert tasks assigned to each incoming context id
 query_declare_type             assignees filter
 query_declare_default_producer assignees from cur

@@ -94,12 +94,17 @@ def edge_touches(u, v, nodes):
     return (u in nodes) and (v in nodes)
 
 def node_adjacent(node, edges, direction):
-    if direction == "outgoing":
-        for (u, v) in edges:
-            if node == u: yield v
-    elif direction == "incoming":
-        for (u, v) in edges:
-            if node == v: yield u
+    match direction:
+        case "outgoing":
+            for (u, v) in edges:
+                if node == u: yield v
+        case "incoming":
+            for (u, v) in edges:
+                if node == v: yield u
+        case "all":
+            for (u, v) in edges:
+                if   node == u: yield v
+                elif node == v: yield u
 
 def traverse(node, edges, direction, ancestors=set(), seen=set()):
     if node in ancestors:
