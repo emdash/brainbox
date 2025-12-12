@@ -932,7 +932,7 @@ query_declare_type             children filter
 query_declare_default_producer children from cur
 function children { adjacent dependencies outgoing "$@" ; }
 
-# immediate context edgres
+# immediate context edges
 query_declare_type             contexts filter
 query_declare_default_producer contexts from cur
 function contexts { adjacent contexts incoming "$@" ; }
