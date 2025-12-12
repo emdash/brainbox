@@ -7,307 +7,320 @@ from itertools import pairwise
 # Helper Functions #######################################################
 
 def debug(*args):
-    print(*args, file=sys.stderr)
-    return args[-1]
+  print(*args, file=sys.stderr)
+  return args[-1]
 
 def has(datum, id):
-    return os.path.exists(
-        os.path.join(os.getenv("NODE_DIR"), id, datum))
+  return os.path.exists(
+    os.path.join(os.getenv("NODE_DIR"), id, datum))
 
 def read_ids(f=sys.stdin):
-    for line in f:
-        yield line.strip()
+  for line in f:
+    yield line.strip()
 
 def filter(predicate):
-    for node in read_ids():
-        if predicate(node):
-            print(node)
+  for node in read_ids():
+    if predicate(node):
+      print(node)
 
 def bucket_list(bucket):
-    bucket_dir = os.path.join(os.getenv("BUCKET_DIR"), bucket)
-    try:
-        return os.listdir(bucket_dir)
-    except OSError:
-        return []
+  bucket_dir = os.path.join(os.getenv("BUCKET_DIR"), bucket)
+  try:
+    return os.listdir(bucket_dir)
+  except OSError:
+    return []
 
 def union(rhs):
-    for node in sorted(set(read_ids()) | set(read_ids(open(rhs, "r")))):
-        print(node)
+  for node in sorted(set(read_ids()) | set(read_ids(open(rhs, "r")))):
+    print(node)
 
 def difference(rhs):
-    for node in sorted(set(read_ids()) - set(read_ids(open(rhs, "r")))):
-        print(node)
+  for node in sorted(set(read_ids()) - set(read_ids(open(rhs, "r")))):
+    print(node)
 
 def nodes():
-    for node in os.listdir(os.path.join(os.getenv("STATE_DIR"), "nodes")):
-        yield node
+  for node in os.listdir(os.path.join(os.getenv("STATE_DIR"), "nodes")):
+    yield node
 
 ## Edges #################################################################
 
 def __edge_list(explicit):
-    for e in explicit:
-        match e.split(':'):
-            case (u, v): yield (u, v)
+  for e in explicit:
+    match e.split(':'):
+      case (u, v): yield (u, v)
 
 def __get_subtasks(node):
-    match datum_read("subtasks", node).splitlines():
-        case ["[no contents]"]:
-            return []
-        case lines:
-            lines.reverse()
-            return lines
+  match datum_read("subtasks", node).splitlines():
+    case ["[no contents]"]:
+      return []
+    case lines:
+      lines.reverse()
+      return lines
 
 def __project_edges(explicit):
-    projects = {
-        node: __get_subtasks(node)
-        for node in nodes()
-        if has("subtasks", node)
-    }
+  projects = {
+    node: __get_subtasks(node)
+    for node in nodes()
+    if has("subtasks", node)
+  }
 
-    for (node, subtasks) in projects.items():
-        match subtasks:
-            case ["[no contents]"]: pass
-            case [first, *rest] as subtasks:
-                yield (node, first)
-                for (prev, next) in pairwise(subtasks):
-                    yield (prev, next)
+  for (node, subtasks) in projects.items():
+    match subtasks:
+      case ["[no contents]"]: pass
+      case [first, *rest] as subtasks:
+        yield (node, first)
+        for (prev, next) in pairwise(subtasks):
+          yield (prev, next)
 
-    for (u, v) in __edge_list(explicit):
-        if u in projects and projects[u]:
-            yield (projects[u][-1], v)
-        else:
-            yield (u, v)
-
+  for (u, v) in __edge_list(explicit):
+    if u in projects and projects[u]:
+      yield (projects[u][-1], v)
+    else:
+      yield (u, v)
 
 def edge_list(edge_set):
-    path = os.path.join(os.getenv("STATE_DIR"), edge_set)
-    try:
-        edges = os.listdir(path)
-        match edge_set:
-            case "dependencies": return set(__project_edges(edges))
-            case _: return set(__edge_list(edges))
-    except OSError as e:
-        print(e, sys.stderr)
-        return set()
+  path = os.path.join(os.getenv("STATE_DIR"), edge_set)
+  try:
+    edges = os.listdir(path)
+    match edge_set:
+      case "dependencies": return set(__project_edges(edges))
+      case _: return set(__edge_list(edges))
+  except OSError as e:
+    print(e, sys.stderr)
+    return set()
 
 def edge_touches(u, v, nodes):
-    return (u in nodes) and (v in nodes)
+  return (u in nodes) and (v in nodes)
 
 def node_adjacent(node, edges, direction):
-    match direction:
-        case "outgoing":
-            for (u, v) in edges:
-                if node == u: yield v
-        case "incoming":
-            for (u, v) in edges:
-                if node == v: yield u
-        case "all":
-            for (u, v) in edges:
-                if   node == u: yield v
-                elif node == v: yield u
+  match direction:
+    case "outgoing":
+      for (u, v) in edges:
+        if node == u: yield v
+    case "incoming":
+      for (u, v) in edges:
+        if node == v: yield u
+    case "all":
+      for (u, v) in edges:
+        if   node == u: yield v
+        elif node == v: yield u
 
 def traverse(node, edges, direction, ancestors=set(), seen=set()):
-    if node in ancestors:
-        print("Graph contains a cycle", file=sys.stderr)
-        exit(1)
+  if node in ancestors:
+    print("Graph contains a cycle", file=sys.stderr)
+    exit(1)
 
-    if node not in seen:
-        yield node
-        for adj in node_adjacent(node, edges, direction):
-            yield from traverse(
-                adj,
-                edges,
-                direction,
-                ancestors | {node},
-                seen      | {node}
-            )
+  if node not in seen:
+    yield node
+    for adj in node_adjacent(node, edges, direction):
+      yield from traverse(
+        adj,
+        edges,
+        direction,
+        ancestors | {node},
+        seen    | {node}
+      )
 
 def expand(node, edges, direction, ancestors, depth):
-    if node in ancestors:
-        print("Graph contains a cycle", file=sys.stderr)
-        exit(1)
-    print(node, depth)
-    for adj in node_adjacent(node, edges, direction):
-        expand(adj, edges, direction, ancestors | {node}, depth + 1)
+  if node in ancestors:
+    print("Graph contains a cycle", file=sys.stderr)
+    exit(1)
+  print(node, depth)
+  for adj in node_adjacent(node, edges, direction):
+    expand(adj, edges, direction, ancestors | {node}, depth + 1)
 
 def filter_edges(edge_set, predicate):
-    edges = edge_list(edge_set)
-    filter(lambda node: predicate(node, edges))
+  edges = edge_list(edge_set)
+  filter(lambda node: predicate(node, edges))
 
 def has_adjacent(node, edges, direction):
-    return len(list(node_adjacent(node, edges, direction))) > 0
+  return len(list(node_adjacent(node, edges, direction))) > 0
 
 def adjacent(edge_set, direction):
-    edges = edge_list(edge_set)
-    seen = set()
-    for node in read_ids():
-        print(node)
-        for node in node_adjacent(node, edges, direction):
-            seen.add(node)
-    for node in seen:
-        print(node)
+  edges = edge_list(edge_set)
+  seen = set()
+  for node in read_ids():
+    print(node)
+    for node in node_adjacent(node, edges, direction):
+      seen.add(node)
+  for node in seen:
+    print(node)
 
 def is_root():
-    filter_edges("dependencies", lambda n, e:
-        not has_adjacent(n, e, "incoming")
-    )
+  filter_edges("dependencies", lambda n, e:
+    not has_adjacent(n, e, "incoming")
+  )
 
 def is_leaf():
-    filter_edges("dependencies", lambda n, e:
-        not has_adjacent(n, e, "outgoing")
-    )
+  filter_edges("dependencies", lambda n, e:
+    not has_adjacent(n, e, "outgoing")
+  )
 
 def is_nonterminal():
-    filter("dependencies", lambda n, e: has_adjacent(n, e, "outgoing"))
+  filter("dependencies", lambda n, e: has_adjacent(n, e, "outgoing"))
 
 def is_orphan():
-    filter_edges("dependencies", lambda n, e: not (
-        has_adjacent(n, e, "outgoing") or
-        has_adjacent(n, e, "incoming")
-    ))
+  filter_edges("dependencies", lambda n, e: not (
+    has_adjacent(n, e, "outgoing") or
+    has_adjacent(n, e, "incoming")
+  ))
 
 def is_next():
-    filter_edges("dependencies", lambda n, e: not any(
-        task_state(o) in {"NEW", "TODO"}
-        for o in node_adjacent(n, e, "outgoing")
-    ))
+  filter_edges("dependencies", lambda n, e: not any(
+    task_state(o) in {"NEW", "TODO"}
+    for o in node_adjacent(n, e, "outgoing")
+  ))
 
 def is_project():
-    filter(lambda n: has("subtasks", n))
+  filter(lambda n: has("subtasks", n))
 
 def is_unassigned():
-    filter_edges("contexts", lambda n, e: not has_adjacent(n, e, "incoming"))
+  filter_edges("contexts", lambda n, e: not has_adjacent(n, e, "incoming"))
 
 def is_context():
-    filter_edges("contexts", lambda n, e: has_adjacent(n, e, "outgoing"))
+  filter_edges("contexts", lambda n, e: has_adjacent(n, e, "outgoing"))
 
 def reachable(edges, direction):
-    edges = edge_list(edges)
-    seen = set()
-    for node in read_ids():
-        for subtask in traverse(node, edges, direction, set(), seen):
-            if subtask not in seen:
-                seen.add(subtask)
-                print(subtask)
+  edges = edge_list(edges)
+  seen = set()
+  for node in read_ids():
+    for subtask in traverse(node, edges, direction, set(), seen):
+      if subtask not in seen:
+        seen.add(subtask)
+        print(subtask)
 
 ## Data #################################################################
 
 def datum_read(datum, id):
-    cache = {}
-    if (datum, id) not in cache:
-        try:
-            path = os.path.join(os.getenv("NODE_DIR"), id, datum)
-            cache[(datum, id)]=open(path, "r").read().strip()
-        except OSError:
-            cache[(datum, id)]="[no contents]"
-    return cache[(datum, id)]
+  cache = {}
+  if (datum, id) not in cache:
+    try:
+      path = os.path.join(os.getenv("NODE_DIR"), id, datum)
+      cache[(datum, id)]=open(path, "r").read().strip()
+    except OSError:
+      cache[(datum, id)]="[no contents]"
+  return cache[(datum, id)]
 
 def task_contents(id): return datum_read("contents", id)
 def task_gloss(id):    return task_contents(id).split('\n')[0]
 def task_state(id):    return datum_read("state", id)
 
 def filter_state(*keep):
-    keep_set = set(keep)
-    filter(lambda node: task_state(node) in keep_set)
+  keep_set = set(keep)
+  filter(lambda node: task_state(node) in keep_set)
 
 ## Dotfile Export ########################################################
 
 def dot_quote(value):
-    quoted=value.replace("\"", "\\\"")
-    return f"\"{quoted}\""
+  quoted=value.replace("\"", "\\\"")
+  return f"\"{quoted}\""
 
 def dot_attrs(*args):
-    pairs = (f"{key}={dot_quote(value)}" for key, value in args)
-    attrs = ", ".join(pairs)
-    return f"[{attrs}]"
+  pairs = (f"{key}={dot_quote(value)}" for key, value in args)
+  attrs = ", ".join(pairs)
+  return f"[{attrs}]"
 
-def dot_bucket(name):
-    items = "\n".join(dot_quote(id) for id in bucket_list(name))
-    print(
-          f"""subgraph \"cluster_{name}\" {{
-          label = {dot_quote(name)};
-          style = rounded;
-          color = grey90;
-          bgcolor = grey90;
-          fontname = "italic";
-          fontsize = "9pt"
-          {items}}}
-          """
-    )
+def dot_subgraph(name, nodes, id=None):
+  items = ";\n".join(dot_quote(id) for id in nodes)
+  print(f"""subgraph \"cluster_{id if id else name}\" {{
+    label = {dot_quote(name)};
+    style = rounded;
+    color = grey90;
+    bgcolor = grey90;
+    fontname = "italic";
+    fontsize = "9pt";
+  """)
+
+  for id in nodes:
+    print(f"    {dot_quote(id)};")
+
+  print("}")
 
 def dot_state_colors(state):
-    if   state == "NEW":     return ("deeppink", "black")
-    elif state == "TODO":    return ("grey95",   "black"  )
-    elif state == "DONE":    return ("#CCFFCC",  "#99CC99")
-    elif state == "DROPPED": return ("#FFDDDD",  "#FF9999")
-    elif state == "WAITING": return ("red",      "black"  )
-    elif state == "SOMEDAY": return ("#DDAAFF",  "#99AA99")
-    elif state == "PERSIST": return ("green",    "black"  )
-    else:                    return ("grey95",   "grey50" )
+  if   state == "NEW":     return ("deeppink", "black")
+  elif state == "TODO":    return ("grey95",   "black"  )
+  elif state == "DONE":    return ("#CCFFCC",  "#99CC99")
+  elif state == "DROPPED": return ("#FFDDDD",  "#FF9999")
+  elif state == "WAITING": return ("red",      "black"  )
+  elif state == "SOMEDAY": return ("#DDAAFF",  "#99AA99")
+  elif state == "PERSIST": return ("green",    "black"  )
+  else:                    return ("grey95",   "grey50" )
 
 def dot_node(id):
-    fill, label = dot_state_colors(task_state(id))
-    formatted_attrs = dot_attrs(
-        ("label",     task_gloss(id)),
-        ("style",     "filled"),
-        ("shape",     "box"),
-        ("color",     fill),
-        ("penwidth",  "2"),
-        ("fillcolor", fill),
-        ("fontcolor", label),
-    )
-    return f"{dot_quote(id)} {formatted_attrs};"
+  fill, label = dot_state_colors(task_state(id))
+  formatted_attrs = dot_attrs(
+    ("label"  ,   task_gloss(id)),
+    ("style",     "filled"),
+    ("shape",     "box"),
+    ("color",     fill),
+    ("penwidth",  "2"),
+    ("fillcolor", fill),
+    ("fontcolor", label),
+  )
+  return f"{dot_quote(id)} {formatted_attrs};"
 
 def dot_edge(u, v, style):
-    return f"{dot_quote(u)} -> {dot_quote(v)} [style={dot_quote(style)}];"
+  return f"{dot_quote(u)} -> {dot_quote(v)} [style={dot_quote(style)}];"
 
 def dot_edges(edges, nodes, style):
-    for (u, v) in edge_list(edges):
-        if edge_touches(u, v, nodes):
-            print(dot_edge(u, v, style))
+  for (u, v) in edge_list(edges):
+    if edge_touches(u, v, nodes):
+      print(dot_edge(u, v, style))
 
 def dot():
-    nodes = set([])
+  nodes = set([])
 
-    buckets = {
-        b for b in os.listdir(os.getenv("BUCKET_DIR"))
-    }
+  buckets = {
+    b for b in os.listdir(os.getenv("BUCKET_DIR"))
+  }
 
-    print("digraph {")
-    print("rankdir = LR;")
-    print("fontname = monospace;")
+  projects = set()
 
-    for line in sys.stdin:
-        node = line.strip()
-        print(dot_node(node))
+  print("digraph {")
+  # print("rankdir = LR;")
+  print("compound = true;")
+  print("fontname = monospace;")
+
+  for node in read_ids():
+    if has("subtasks", node):
+      projects.add(node)
+    nodes.add(node)
+
+  for project in projects:
+    subtasks = set(__get_subtasks(project))
+    nodes |= subtasks
+    subtasks.add(project)
+    dot_subgraph(task_gloss(project), subtasks, id=project)
+
+  for bucket in buckets:
+    contents = bucket_list(bucket)
+    for node in contents:
+      if node not in projects:
         nodes.add(node)
+    dot_subgraph(bucket, contents)
 
-    for bucket in buckets:
-        for node in bucket_list(bucket):
-            if node not in nodes:
-                print(dot_node(node))
-                nodes.add(node)
-        dot_bucket(bucket)
+  for node in nodes:
+    print(dot_node(node))
 
-    dot_edges("dependencies", nodes, "solid")
-    dot_edges("contexts", nodes, "dashed")
+  dot_edges("dependencies", nodes, "solid")
+  dot_edges("contexts", nodes, "dashed")
 
-    print("}")
+  print("}")
 
 
 if __name__ == "__main__":
-    dispatch = {
-        "adjacent":      adjacent,
-        "from":          bucket_list,
-        "reachable":     reachable,
-        "union":         union,
-        "filter_state":  filter_state,
-        "is_context":    is_context,
-        "is_leaf":       is_leaf,
-        "is_next":       is_next,
-        "is_orphan":     is_orphan,
-        "is_project":    is_project,
-        "is_root":       is_root,
-        "is_unassigned": is_unassigned,
-        "dot":           dot
-    }[sys.argv[1]](*sys.argv[2:])
+  dispatch = {
+    "adjacent":      adjacent,
+    "from":          bucket_list,
+    "reachable":     reachable,
+    "union":         union,
+    "filter_state":  filter_state,
+    "is_context":    is_context,
+    "is_leaf":       is_leaf,
+    "is_next":       is_next,
+    "is_orphan":     is_orphan,
+    "is_project":    is_project,
+    "is_root":       is_root,
+    "is_unassigned": is_unassigned,
+    "dot":           dot
+  }[sys.argv[1]](*sys.argv[2:])
