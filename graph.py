@@ -51,9 +51,11 @@ def __edge_list(explicit):
 
 def __get_subtasks(node):
     match datum_read("subtasks", node).splitlines():
-        case ["[no contents]"]: pass
+        case ["[no contents]"]:
+            return []
         case lines:
             lines.reverse()
+            return lines
 
 def __project_edges(explicit):
     projects = {
@@ -71,7 +73,7 @@ def __project_edges(explicit):
                     yield (prev, next)
 
     for (u, v) in __edge_list(explicit):
-        if u in projects:
+        if u in projects and projects[u]:
             yield (projects[u][-1], v)
         else:
             yield (u, v)
@@ -136,9 +138,9 @@ def adjacent(edge_set, direction):
     for node in read_ids():
         print(node)
         for node in node_adjacent(node, edges, direction):
-            if not node in seen:
-                seen.add(node)
-                print(node)
+            seen.add(node)
+    for node in seen:
+        print(node)
 
 def is_root():
     filter_edges("dependencies", lambda n, e:
