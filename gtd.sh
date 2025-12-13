@@ -1134,6 +1134,14 @@ function dot {
     graph dot
 }
 
+# render a project graph straight to the terminal (uses chafa).
+query_declare_type             chafa formatter
+query_declare_default_producer chafa from cur subtasks
+function chafa {
+    end_filter_chain "$@"
+    graph dot | env dot -Tpng | env chafa
+}
+
 # select nodes from input set to be placed into the given bucket
 query_declare_type             goto selection "${BUCKET_OPTS}" bucket
 query_declare_default_producer goto all
