@@ -21,7 +21,7 @@ def read_ids(f=sys.stdin):
   for line in f:
     yield line.strip()
 
-def filter(predicate):
+def filter_nodes(predicate):
   "Yields all nodes from stdin which satisfy `predicate`."
   for node in read_ids():
     if predicate(node):
@@ -161,13 +161,12 @@ def expand(node, edges, direction, ancestors, depth):
     expand(adj, edges, direction, ancestors | {node}, depth + 1)
 
 def filter_edges(edge_set, predicate):
-  edges = edge_list(edge_set)
-  filter(lambda node: predicate(node, edges))
   """Filter the input node set based on edge criteria.
 
   Predicate is passed node as the first argument and a set of edges as
   the second argument.
   """
+  filter_nodes(lambda node: predicate(node, edge_list(edge_set)))
 
 def has_adjacent(node, edges, direction):
   """True if a node has edges in the given direction"""
@@ -198,8 +197,11 @@ def is_leaf():
   )
 
 def is_nonterminal():
-  filter("dependencies", lambda n, e: has_adjacent(n, e, "outgoing"))
   """True if a task is neither a root nor a leaf."""
+  filter_edges("dependencies", lambda n, e: (
+    has_adjacent(n, e, "outgoing") and
+    has_adjacent(n, e, "incoming")
+  ))
 
 def is_orphan():
   """True if a task has both a root and a leaf."""
@@ -216,7 +218,6 @@ def is_next():
   ))
 
 def is_project():
-  filter(lambda n: has("subtasks", n))
   """True if a task has subtask dependencies."""
   filter_nodes(lambda n: has("subtasks", n))
 
@@ -259,8 +260,7 @@ def task_gloss(id):    return task_contents(id).split('\n')[0]
 def task_state(id):    return datum_read("state", id)
 
 def filter_state(*keep):
-  keep_set = set(keep)
-  filter(lambda node: task_state(node) in keep_set)
+  filter_nodes(lambda node: task_state(node) in set(keep))
 
 ## Dotfile Export ########################################################
 
