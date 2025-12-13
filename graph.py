@@ -50,64 +50,80 @@ def nodes():
   for node in os.listdir(os.path.join(os.getenv("STATE_DIR"), "nodes")):
     yield node
 
+def get_subtasks(node):
+  """Get the list of subtasks for the given node.
+
+  If the node has no subtasks, and empty list is returned.
+  """
+  match datum_read("subtasks", node).splitlines():
+    case ["[no contents]"]: return []
+    case lines:             return lines
+
 ## Edges #################################################################
 
-def __edge_list(explicit):
-  for e in explicit:
+def read_edges(edge_set):
   """A generator which yields the explicit edges from the database.
 
   Edges are represented as a tuple (u, v).
   """
+  path = os.path.join(os.getenv("STATE_DIR"), edge_set)
+  for e in os.listdir(path):
     match e.split(':'):
       case (u, v): yield (u, v)
 
-def __get_subtasks(node):
-  match datum_read("subtasks", node).splitlines():
-    case ["[no contents]"]:
-      return []
-    case lines:
-      lines.reverse()
-      return lines
+def project_subgraph(node, subtasks):
   """Compute subgraph for a given project node.
 
   This is establishes a linear sequence of tasks with the first item
   in the list being the leaf. The node is then linked to the last item
   in the list.
   """
+  subtasks.reverse()
+  match subtasks:
+    case ["[no contents]"]: pass
+    case [first, *rest] as subtasks:
+      yield (node, first)
+      for (prev, next) in pairwise(subtasks):
+        yield (prev, next)
 
-def __project_edges(explicit):
+
+def dependencies():
+  """A generator which yields all dependency edges.
+
+  We have to special-case "Project" nodes to get the correct
+  graph.
+  """
+
+  # Find all the project nodes
   projects = {
-    node: __get_subtasks(node)
+    node: get_subtasks(node)
     for node in nodes()
     if has("subtasks", node)
   }
 
+  # Emit all the project subtask edges.
   for (node, subtasks) in projects.items():
-    match subtasks:
-      case ["[no contents]"]: pass
-      case [first, *rest] as subtasks:
-        yield (node, first)
-        for (prev, next) in pairwise(subtasks):
-          yield (prev, next)
+    yield from project_subgraph(node, subtasks)
 
-  for (u, v) in __edge_list(explicit):
+  # Emit all the explicit edges in the graph, special-casing direct
+  # dependencies from project nodes -- these are linked to the last
+  # subtask in the project.
+  for (u, v) in read_edges("dependencies"):
     if u in projects and projects[u]:
       yield (projects[u][-1], v)
     else:
       yield (u, v)
 
 def edge_list(edge_set):
-  path = os.path.join(os.getenv("STATE_DIR"), edge_set)
   """Get the set of edges for the given edge set.
 
   Client code should call this function to so that project subtasks
   are handled correctly.
   """
   try:
-    edges = os.listdir(path)
     match edge_set:
-      case "dependencies": return set(__project_edges(edges))
-      case _: return set(__edge_list(edges))
+      case "dependencies": return set(dependencies())
+      case _: return set(read_edges(edge_set))
   except OSError as e:
     print(e, sys.stderr)
     return set()
@@ -358,7 +374,7 @@ def dot():
     nodes.add(node)
 
   for project in projects:
-    subtasks = set(__get_subtasks(project))
+    subtasks = set(get_subtasks(project))
     nodes |= subtasks
     subtasks.add(project)
     dot_subgraph(task_gloss(project), subtasks, id=project)
