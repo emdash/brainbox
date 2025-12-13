@@ -7,23 +7,28 @@ from itertools import pairwise
 # Helper Functions #######################################################
 
 def debug(*args):
+  "Print all the arguments to stderr, returning the last one"
   print(*args, file=sys.stderr)
   return args[-1]
 
 def has(datum, id):
+  "True if a node has a given datum"
   return os.path.exists(
     os.path.join(os.getenv("NODE_DIR"), id, datum))
 
 def read_ids(f=sys.stdin):
+  "A generator yielding all the node IDs from `f` (defaults to `stdin`)"
   for line in f:
     yield line.strip()
 
 def filter(predicate):
+  "Yields all nodes from stdin which satisfy `predicate`."
   for node in read_ids():
     if predicate(node):
       print(node)
 
 def bucket_list(bucket):
+  "Return the contents of the given bucket"
   bucket_dir = os.path.join(os.getenv("BUCKET_DIR"), bucket)
   try:
     return os.listdir(bucket_dir)
@@ -31,14 +36,17 @@ def bucket_list(bucket):
     return []
 
 def union(rhs):
+  "Return the set union of stdin and the nodes in `rhs`."
   for node in sorted(set(read_ids()) | set(read_ids(open(rhs, "r")))):
     print(node)
 
 def difference(rhs):
+  "Return the set difference of stdin and the nodes in `rhs`."
   for node in sorted(set(read_ids()) - set(read_ids(open(rhs, "r")))):
     print(node)
 
 def nodes():
+  "Return all the nodes in the database"
   for node in os.listdir(os.path.join(os.getenv("STATE_DIR"), "nodes")):
     yield node
 
@@ -46,6 +54,10 @@ def nodes():
 
 def __edge_list(explicit):
   for e in explicit:
+  """A generator which yields the explicit edges from the database.
+
+  Edges are represented as a tuple (u, v).
+  """
     match e.split(':'):
       case (u, v): yield (u, v)
 
@@ -56,6 +68,12 @@ def __get_subtasks(node):
     case lines:
       lines.reverse()
       return lines
+  """Compute subgraph for a given project node.
+
+  This is establishes a linear sequence of tasks with the first item
+  in the list being the leaf. The node is then linked to the last item
+  in the list.
+  """
 
 def __project_edges(explicit):
   projects = {
@@ -80,6 +98,11 @@ def __project_edges(explicit):
 
 def edge_list(edge_set):
   path = os.path.join(os.getenv("STATE_DIR"), edge_set)
+  """Get the set of edges for the given edge set.
+
+  Client code should call this function to so that project subtasks
+  are handled correctly.
+  """
   try:
     edges = os.listdir(path)
     match edge_set:
@@ -90,9 +113,15 @@ def edge_list(edge_set):
     return set()
 
 def edge_touches(u, v, nodes):
+  """Returns true if the given edge touches any of the given nodes."""
   return (u in nodes) and (v in nodes)
 
 def node_adjacent(node, edges, direction):
+  """Return all nodes adjacent to any node in the input set.
+
+  The direction specifies whether to include incoming, outgoing, or
+  both directions.
+  """
   match direction:
     case "outgoing":
       for (u, v) in edges:
@@ -106,6 +135,7 @@ def node_adjacent(node, edges, direction):
         elif node == v: yield u
 
 def traverse(node, edges, direction, ancestors=set(), seen=set()):
+  """A generator which recursively traverses a graph."""
   if node in ancestors:
     print("Graph contains a cycle", file=sys.stderr)
     exit(1)
@@ -122,6 +152,7 @@ def traverse(node, edges, direction, ancestors=set(), seen=set()):
       )
 
 def expand(node, edges, direction, ancestors, depth):
+  """Compute the tree expansion of the subgraph rooted at node."""
   if node in ancestors:
     print("Graph contains a cycle", file=sys.stderr)
     exit(1)
@@ -132,11 +163,19 @@ def expand(node, edges, direction, ancestors, depth):
 def filter_edges(edge_set, predicate):
   edges = edge_list(edge_set)
   filter(lambda node: predicate(node, edges))
+  """Filter the input node set based on edge criteria.
+
+  Predicate is passed node as the first argument and a set of edges as
+  the second argument.
+  """
 
 def has_adjacent(node, edges, direction):
+  """True if a node has edges in the given direction"""
   return len(list(node_adjacent(node, edges, direction))) > 0
 
 def adjacent(edge_set, direction):
+  """Get directly adjacent nodes from edge set, along a given direction.
+  """
   edges = edge_list(edge_set)
   seen = set()
   for node in read_ids():
@@ -147,25 +186,30 @@ def adjacent(edge_set, direction):
     print(node)
 
 def is_root():
+  """True if a task does not block any other node."""
   filter_edges("dependencies", lambda n, e:
     not has_adjacent(n, e, "incoming")
   )
 
 def is_leaf():
+  """True if a task has no dependencies."""
   filter_edges("dependencies", lambda n, e:
     not has_adjacent(n, e, "outgoing")
   )
 
 def is_nonterminal():
   filter("dependencies", lambda n, e: has_adjacent(n, e, "outgoing"))
+  """True if a task is neither a root nor a leaf."""
 
 def is_orphan():
+  """True if a task has both a root and a leaf."""
   filter_edges("dependencies", lambda n, e: not (
     has_adjacent(n, e, "outgoing") or
     has_adjacent(n, e, "incoming")
   ))
 
 def is_next():
+  """True if a task has no active dependencies."""
   filter_edges("dependencies", lambda n, e: not any(
     task_state(o) in {"NEW", "TODO"}
     for o in node_adjacent(n, e, "outgoing")
@@ -173,14 +217,19 @@ def is_next():
 
 def is_project():
   filter(lambda n: has("subtasks", n))
+  """True if a task has subtask dependencies."""
+  filter_nodes(lambda n: has("subtasks", n))
 
 def is_unassigned():
+  """True if a task has no incoming edges from a context."""
   filter_edges("contexts", lambda n, e: not has_adjacent(n, e, "incoming"))
 
 def is_context():
+  """True if a node has any outging context links."""
   filter_edges("contexts", lambda n, e: has_adjacent(n, e, "outgoing"))
 
 def reachable(edges, direction):
+  """Get the set of nodes reachable via `edges` along `direction`."""
   edges = edge_list(edges)
   seen = set()
   for node in read_ids():
@@ -192,6 +241,10 @@ def reachable(edges, direction):
 ## Data #################################################################
 
 def datum_read(datum, id):
+  """Python implementation of `graph_datum <datum> read`.
+
+  This is here as an optimization to avoid shelling out.
+  """
   cache = {}
   if (datum, id) not in cache:
     try:
@@ -212,15 +265,22 @@ def filter_state(*keep):
 ## Dotfile Export ########################################################
 
 def dot_quote(value):
+  """Quote a value for dot file export.
+
+  This implementation naively wraps the string in double quotes,
+  naively escaping any internal double quotes.x
+tgf  """
   quoted=value.replace("\"", "\\\"")
   return f"\"{quoted}\""
 
 def dot_attrs(*args):
+  """Given an arg-list of tuples, formats into a dot file attrlist"""
   pairs = (f"{key}={dot_quote(value)}" for key, value in args)
   attrs = ", ".join(pairs)
   return f"[{attrs}]"
 
 def dot_subgraph(name, nodes, id=None):
+  """Print a subgraph cluster in dot syntax to stdout."""
   items = ";\n".join(dot_quote(id) for id in nodes)
   print(f"""subgraph \"cluster_{id if id else name}\" {{
     label = {dot_quote(name)};
@@ -237,6 +297,7 @@ def dot_subgraph(name, nodes, id=None):
   print("}")
 
 def dot_state_colors(state):
+  """Map task state to colors in dot synax."""
   if   state == "NEW":     return ("deeppink", "black")
   elif state == "TODO":    return ("grey95",   "black"  )
   elif state == "DONE":    return ("#CCFFCC",  "#99CC99")
@@ -247,6 +308,10 @@ def dot_state_colors(state):
   else:                    return ("grey95",   "grey50" )
 
 def dot_node(id):
+  """Return a formatted node in dot syntax.
+
+  Node attributes are set according to the task state.
+  """
   fill, label = dot_state_colors(task_state(id))
   formatted_attrs = dot_attrs(
     ("label"  ,   task_gloss(id)),
@@ -260,14 +325,20 @@ def dot_node(id):
   return f"{dot_quote(id)} {formatted_attrs};"
 
 def dot_edge(u, v, style):
+  """Return a formatted edge in dot syntax.
+
+  Context edges are dashed, dependency edges are solid.
+  """
   return f"{dot_quote(u)} -> {dot_quote(v)} [style={dot_quote(style)}];"
 
 def dot_edges(edges, nodes, style):
+  """Format the given edge sets to stdout"""
   for (u, v) in edge_list(edges):
     if edge_touches(u, v, nodes):
       print(dot_edge(u, v, style))
 
 def dot():
+  """Read nodes from stdin, write dot syntax to stdout."""
   nodes = set([])
 
   buckets = {
