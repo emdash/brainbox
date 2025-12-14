@@ -1677,6 +1677,7 @@ function __plan_bindings {
     fzf_bind_exec   "c"          "Capture"     "$0 __plan_modify capture"    "last"
     fzf_bind_action "q"          "Quit"        "accept"
     fzf_bind_action "h"          "Toggle Help" "toggle-header"
+    fzf_bind_sexec  "focus"      ""            "echo {1} | $0 into cur"
 }
 
 command_declare plan
