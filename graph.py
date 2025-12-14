@@ -281,6 +281,15 @@ def task_state(id):    return datum_read("state", id)
 def filter_state(*keep):
   filter_nodes(lambda node: task_state(node) in set(keep))
 
+
+def touches():
+  """Calculate which edges to remove in order to remove the input set"""
+  nodes = set(read_ids())
+  for edge_set in ('contexts', 'dependencies'):
+    for (u, v) in read_edges(edge_set):
+      if edge_touches(u, v, nodes):
+        print(f"{u} {v} {edge_set}")
+
 ## Dotfile Export ########################################################
 
 def dot_quote(value):
@@ -412,5 +421,6 @@ if __name__ == "__main__":
     "is_project":    is_project,
     "is_root":       is_root,
     "is_unassigned": is_unassigned,
-    "dot":           dot
+    "dot":           dot,
+    "touches":       touches
   }[sys.argv[1]](*sys.argv[2:])
