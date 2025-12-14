@@ -392,6 +392,7 @@ def dot_state_colors(state):
   elif state == "WAITING": return ("red",      "black"  )
   elif state == "SOMEDAY": return ("#DDAAFF",  "#99AA99")
   elif state == "PERSIST": return ("green",    "black"  )
+  elif state == "CONTEXT": return ("#aaFFdd",  "black"  )
   else:                    return ("grey95",   "grey50" )
 
 def dot_node(id):
