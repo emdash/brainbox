@@ -1,5 +1,26 @@
 #! /usr/bin/env python3
 
+"""This file contains optimized implementations of graph functions.
+
+It turns out that bash is just slow at some things, particularly
+command substitutions, so it proved necessary to implement some
+functions in python once the database grew beyond about 700
+nodes. Though potentially, leaning more on bash built-ins could have
+avoided this. Or adopting a worfklow that would keep the active
+portion of the database smaller.
+
+The intention is for this file to remain relatively small, and to plug
+into the outer shell-based infrastructure as much as possible.
+
+To that end, the top-level functions in this file operate on sets of
+node IDs written to stdin, and send their output directly to stdout.
+
+This code is not well-optimized, and could certainly be improved. But
+I would definitely perform some real-world benchmarks, rather than
+making any assumptions. Just moving to python was really enough to
+make a significant difference.
+"""
+
 import os
 import sys
 from itertools import pairwise
@@ -76,6 +97,9 @@ def get_subtasks(node):
 def read_edges(edge_set):
   """A generator which yields the explicit edges from the database.
 
+  I.e. it does not include "subtask" edges, which are stored under
+  their respective nodes.
+
   Edges are represented as a tuple (u, v).
   """
   path = os.path.join(os.getenv("STATE_DIR"), edge_set)
@@ -86,9 +110,8 @@ def read_edges(edge_set):
 def project_subgraph(node, subtasks):
   """Compute subgraph for a given project node.
 
-  This is establishes a linear sequence of tasks with the first item
-  in the list being the leaf. The node is then linked to the last item
-  in the list.
+  This is establishes a linear chain of tasks from the last to the
+  first.
   """
   subtasks.reverse()
   match subtasks:
@@ -97,7 +120,6 @@ def project_subgraph(node, subtasks):
       yield (node, first)
       for (prev, next) in pairwise(subtasks):
         yield (prev, next)
-
 
 def dependencies():
   """A generator which yields all dependency edges.
@@ -119,7 +141,11 @@ def dependencies():
 
   # Emit all the explicit edges in the graph, special-casing direct
   # dependencies from project nodes -- these are linked to the last
-  # subtask in the project.
+  # subtask in the project, rather than the project itself.
+  #
+  # While counter-intuitive, this the correct graph shape give our
+  # definition of a "next" action as a node with no active
+  # dependencies.
   for (u, v) in read_edges("dependencies"):
     if u in projects and projects[u]:
       yield (projects[u][-1], v)
@@ -166,8 +192,17 @@ def node_adjacent(node, edges, direction):
         if   node == u: yield v
         elif node == v: yield u
 
-def traverse(node, edges, direction, ancestors=set(), seen=set()):
-  """A generator which recursively traverses a graph."""
+def traverse(node, edges, direction, ancestors=None, seen=None):
+  """Yield nodes from the subgraph rooted at `node`.
+
+  @node      - the root node
+  @edges     - the edge set to follow
+  @direction - incoming, outoging, or both.
+  @ancestors - the path up to the root.
+  @seen      - a.k.a. the "visited" set.
+
+  This is the general traversal, special cases of which appear below.
+  """
   if node in ancestors:
     if direction == "all":
       return
@@ -187,7 +222,13 @@ def traverse(node, edges, direction, ancestors=set(), seen=set()):
       )
 
 def expand(node, edges, direction, ancestors, depth):
-  """Compute the tree expansion of the subgraph rooted at node."""
+  """Compute the tree expansion of the subgraph rooted at node.
+
+  XXX: I'm inclined to think this function isn't super useful. The
+  trees it produces will be counter-intutive to those folks expecting
+  an outline format, and we'd do better to think of how to extract an
+  outline format instead. But that would be a different algorithm.
+  """
   if node in ancestors:
     print("Graph contains a cycle", file=sys.stderr)
     exit(1)
@@ -286,6 +327,7 @@ def datum_read(datum, id):
       cache[(datum, id)]="[no contents]"
   return cache[(datum, id)]
 
+# re-implementations of gtd.sh functions to avoid shelling out.
 def task_contents(id): return datum_read("contents", id)
 def task_gloss(id):    return task_contents(id).split('\n')[0]
 def task_state(id):    return datum_read("state", id)
