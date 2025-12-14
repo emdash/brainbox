@@ -1423,7 +1423,7 @@ function set_ {
 command_declare                delete bucket
 function delete {
     forbid_preview
-    local -r bucket="${1:-cur}"
+    local -r bucket="${1:-trash}"
     from "${bucket}" | graph touches | while read u v edge_set
     do
         graph_edge_delete "${u}" "${v}" "${edge_set}"
@@ -1435,7 +1435,7 @@ function delete {
     done
 
     database_commit "${SAVED_ARGV}"
-    dispatch null into cur
+    dispatch null into "${bucket}"
 }
 
 # Non-query commands **********************************************************
