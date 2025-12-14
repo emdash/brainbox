@@ -21,7 +21,7 @@ which is written in a tutorial style.
 
 ## Distinguishing Features
 
-### Automatic Task Categorization 
+### Automatic Task Categorization
 
 If you've ever tried to observe GTD discipline, one thing you probably
 found tedious was maintaining lists of *Next Actions*, *Projects*,
@@ -36,7 +36,7 @@ theory](https://en.wikipedia.org/wiki/Graph_theory).
 #### *Capture* and *Inbox*
 
 Quickly insert a new item in to the task system, before you forget
-about it. 
+about it.
 
 Quickly review and triage your inbox.
 
@@ -74,7 +74,7 @@ Given the above, GtdGraph can easily help you answer questions like:
 
 Because the same tasks can be linked in multiple ways, you can create
 multiple, overlapping context nextworks to handle different scenarios,
-like: 
+like:
 
 - being at home
 - being at work
@@ -133,7 +133,7 @@ This is the TODO list for v1.0
   - [X] Contexts
   - [X] Simple Task States
   - [ ] Time-Based Task State
-	- [ ] DELAYED
+	- [ ] SCHED
 	- [ ] REPEATS
   - [X] cycle detection
 	- [X] separate for dependencies and contexts.
@@ -165,12 +165,12 @@ This is the TODO list for v1.0
   - [X] Visualize subgraph rooted at given node or set of nodes.
   - [ ] dot file export
     - [X] Basic export
-	- [ ] visually distinguish between context and dependency edges 
+	- [ ] visually distinguish between context and dependency edges
 	- [ ] visually distinguish node state and GTD classification
   - [ ] Gantt Charts
   - [ ] "Completion Calendars"
 - Console UX
-  - [ ] Completion scripts for bash
+  - [X] Completion scripts for bash
   - [ ] Menu-driven Triage mode
   - [ ] Project Planify mode
   - [X] interactively select single task

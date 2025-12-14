@@ -1,3 +1,13 @@
+# V2 Feature Set
+
+- conditional tasks states
+  - date driven task states
+- agenda view
+- google calendar integration
+- review workflow
+- enhancements to the FZF frontend
+- explicit project nodes
+
 # Design Overview
 
 GtdGraph is written in shell. It uses a persistent database stored in
@@ -201,7 +211,7 @@ There are two sets of edges:
 
 - `dep`: `"${DEPS_DIR}"` in the source
 - `context`: `${CTXT_DIR}"` in the source
-  
+
 ### Datum / Data ###
 
 Users can associate arbitrary data with graph nodes. Data is plural of
@@ -237,23 +247,25 @@ file, whose contents is one of:
 - `TODO`
 - `DONE`
 - `WAITING`
-- `DELAYED`
 - `SOMEDAY`
 - `DROPPED` *excuse*
-- `REPEATS` *pattern*
+- `SCHEDULED` *pattern*
 - `PERSIST`
+- `CONTEXT`
 
 `NEW` and `TODO` indicate active nodes. The `capture` command creates
 nodes with status `NEW` in order to easily filter them for later
 triage.
 
-Where *date pattern* is some DSL describing the pattern of repetition.
-
 `COMPLETED` indicates a node should be ignored except for time tracking
 purposes.
 
-`DELAYED` indicates a node should be ignored until after the specified
-date.
+`SCHEDULED` indicates a node should be ignored until or unless the
+specified pattern matches the current (or given) date. Scheduled nodes
+have the following additional data:
+- `completions` - list of timestamps on which the task was completed
+- `pattern` - the date expression which determines the task's deadline
+  / notification window.
 
 `SOMEDAY` indicates a node should be ignored indefinitely, except for
 Someday/Maybe reports.
@@ -265,15 +277,12 @@ written on subsequent lines.
 
 `PERSIST` indicates a node that is expected to remain in the graph
 forever. Nodes used primarily as *contexts* and / or to store
-*information* should be placed in this state. The idea is that
-`COMPLETED`, `SOMEDAY`, and `DROPPED` are states which *could* be
-removed from the graph without surprising the user. The `archive`
-command will bulk-move any inactive subgraphs into the `archive`
-subdir to speed up general queries. You can use state `PERSIST` to
-prevent nodes from being swept up in archive collection, without them
-also polluting your next-actions when they are empty. You also use
+reference information that might be shared between tasks. You can use
 `is_persistent` as a general query filter when you're specifically
 looking for general information.
+
+`CONTEXT` indicates a node that is used as a task context. This helps
+with search filtering to narrow down the scope of context assignments.
 
 ##### Not Yet Implemented #####
 
@@ -400,7 +409,7 @@ prefer the script remain self-contained.
 
 Sections are arranged in an inverted pyramid, with more generic layers
 and at the top, and more specific layers at the bottom.
-	  
+
 ## Blessed Shell Idioms
 
 This section documents the unavoidably cryptic shell idioms that are
@@ -409,7 +418,7 @@ difficult to avoid.
 **TBD**
 
 - `cut -d ... -f ...`
-  - replace with `read -d ... x y z`? 
+  - replace with `read -d ... x y z`?
 - `head`
 - `tail`
 - bash array syntax
