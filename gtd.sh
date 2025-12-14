@@ -1749,6 +1749,69 @@ function plan {
       --with-nth='{2..}'
 }
 
+# Inbox Triage ****************************************************************
+
+function splat {
+    for id in "${@}"
+    do
+        echo "${id}"
+    done
+}
+
+function __triage_bucket {
+    local bucket
+    read bucket < <(
+        buckets | fzf \
+          --style=full \
+          --layout=reverse \
+          --cycle \
+          --disabled \
+          --header="Choose Bucket"
+    )
+    echo "${1}" | into --union "${bucket}"
+}
+
+function __triage_assign {
+    all \
+        | is_context \
+        | choose \
+        | into source
+
+    splat "${@}" | xinto target
+
+    assign
+}
+
+function __triage_items {
+    inbox | summarize
+}
+
+function __triage_bindings {
+    fzf_bind_sexec  "delete" "Drop"           "$0 splat {+1} | $0 stdin drop"
+    fzf_bind_exec   "enter"  "Edit"           "$0 splat {+1} | $0 stdin edit"
+    fzf_bind_sexec  "a"      "Activate"       "$0 splat {+1} | $0 stdin activate"
+    fzf_bind_sexec  "P"      "Persist"        "$0 splat {+1} | $0 stdin persist"
+    fzf_bind_sexec  "p"      "Plan Project"   "$0 plan {1}"
+    fzf_bind_sexec  "C"      "Make Context"   "$0 splat {+1} | $0 stdin make_context"
+    fzf_bind_exec   "c"      "Capture"        "echo | xargs -o $0 capture --oneline"   "last"
+    fzf_bind_exec   "b"      "Bucket"         "$0 __triage_bucket {+1}"
+    fzf_bind_exec   "A"      "Assign Context" "$0 __triage_assign {+1}"
+    fzf_bind_action "q"      "Quit"           "accept"
+    fzf_bind_action "h"      "Toggle Help"    "toggle-header"
+}
+
+command_declare triage
+function triage {
+    forbid_preview
+    fzf_menu \
+      "Triage Inbox" \
+      __triage_bindings \
+      __triage_items \
+      --multi \
+      --with-nth='{2..}' \
+      --preview="$0 inbox family chafa"
+}
+
 ## Live Queries ***************************************************************
 
 # evaluate read-only queries each time the database changes
