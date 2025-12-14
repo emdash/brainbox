@@ -1003,17 +1003,39 @@ function choose {
        *)           local opt="-m"       ;;
     esac
 
-    summarize \
-      | fzf \
-        ${opt} \
-        --style="full" \
-        --layout="reverse-list" \
-        --cycle \
-        --preview="$0 task_details {1}" \
-        --with-nth='{2..}' \
-        --accept-nth='{1}' \
-      | cut -d ' ' -f 1 \
-      | query_filter_chain "$@"
+    fzf_menu \
+      --no-reload \
+      "Choose Node: ${SAVED_ARGV[*]}" \
+      __choose_bindings \
+      __choose_items \
+      -d '|' \
+      ${opt} \
+      --with-nth='{2} {3}' \
+      --accept-nth='{1}' \
+      --preview="$0 __choose_preview details {1}" \
+      --bind="load:enable-search+show-input" \
+      --bind="focus:execute-silent($0 splat {+1} | $0 stdin into cur)" \
+    | query_filter_chain "$@"
+}
+
+function __choose_items {
+    summarize -d '|'
+}
+
+function __choose_bindings {
+    fzf_bind_action "ctrl-d" "Details"   "change-preview($0 __choose_preview details  {1})"
+    fzf_bind_action "ctrl-n" "Neighbors" "change-preview($0 __choose_preview neighbors {1})"
+    fzf_bind_action "ctrl-f" "Family"    "change-preview($0 __choose_preview family   {1})"
+    fzf_bind_action "ctrl-q" "Quit"      "accept"
+}
+
+function __choose_preview {
+    echo "${1}"
+    case "${1}" in
+        details) task_details "${2}";;
+        neighbors) echo "${2}" | neighbors | chafa;;
+        family)    echo "${2}" | family    | chafa;;
+    esac
 }
 
 # keep nodes for which the given datum exists
