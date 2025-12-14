@@ -1733,9 +1733,14 @@ command_declare plan
 function plan {
     forbid_preview
 
-    declare SUBTASK_ID
-    read SUBTASK_ID < <(dispatch "${@}" choose --single)
-    export SUBTASK_ID
+    if test -v 1
+    then
+       export SUBTASK_ID="${1}"
+    else
+        declare SUBTASK_ID
+        read SUBTASK_ID < <(dispatch "${@}" choose --single)
+        export SUBTASK_ID
+    fi
 
     fzf_menu \
       "Edit Project Subtasks" \
