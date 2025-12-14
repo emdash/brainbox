@@ -148,12 +148,17 @@ function fzf_bind_sexec {
 # Bindings are passed one-per-line on stdin, each of which should be
 # the output of an `fzf_bind`-family function.
 #
-# The reload action is automatically appended to the action string.
+# The reload action, if given, is automatically appended to the action
+# string.
 function fzf_bind {
-    local -r reload_fn="${1}"
     while IFS='|' read key _ action
     do
-        echo "${key}:${action}+reload-sync($0 ${reload_fn})"
+        if test -v 1
+        then
+            echo "${key}:${action}+reload-sync($0 ${1})"
+        else
+            echo "${key}:${action}"
+        fi
     done | paste -sd ','
 }
 
@@ -176,19 +181,37 @@ function fzf_help {
 # reload_fn   - function which loads the menu contents.
 # ...         - remaining arguments are forwarded to FZF.
 function fzf_menu {
-    local -r header="${1}"
-    local -r bindings_fn="${2}"
-    local -r reload_fn="${3}"
-    shift 3
-
-    "${reload_fn}" | fzf \
-        --style=full \
-        --layout=reverse \
-        --no-input \
-        --cycle \
-        --header="$("${bindings_fn}" | fzf_help "${header}")" \
-        --bind="$("${bindings_fn}" | fzf_bind "${reload_fn}")" \
-        "${@}"
+    case "$1" in
+        --no-reload)
+            shift
+            local -r header="${1}"
+            local -r bindings_fn="${2}"
+            local -r load_fn="${3}"
+            shift 3
+            "${load_fn}" | fzf \
+                --style=full \
+                --layout=reverse \
+                --no-input \
+                --cycle \
+                --header="$("${bindings_fn}" | fzf_help "${header}")" \
+                --bind="$("${bindings_fn}" | fzf_bind)" \
+                "${@}"
+            ;;
+        *)
+            local -r header="${1}"
+            local -r bindings_fn="${2}"
+            local -r reload_fn="${3}"
+            shift 3
+            "${reload_fn}" | fzf \
+                --style=full \
+                --layout=reverse \
+                --no-input \
+                --cycle \
+                --header="$("${bindings_fn}" | fzf_help "${header}")" \
+                --bind="$("${bindings_fn}" | fzf_bind "${reload_fn}")" \
+                "${@}"
+            ;;
+    esac
 }
 
 
