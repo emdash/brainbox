@@ -153,8 +153,11 @@ def node_adjacent(node, edges, direction):
 def traverse(node, edges, direction, ancestors=set(), seen=set()):
   """A generator which recursively traverses a graph."""
   if node in ancestors:
-    print("Graph contains a cycle", file=sys.stderr)
-    exit(1)
+    if direction == "all":
+      return
+    else:
+      print("Graph contains a cycle", file=sys.stderr)
+      exit(1)
 
   if node not in seen:
     yield node
