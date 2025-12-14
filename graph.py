@@ -142,6 +142,10 @@ def edge_list(edge_set):
 
 def edge_touches(u, v, nodes):
   """Returns true if the given edge touches any of the given nodes."""
+  return (u in nodes) or (v in nodes)
+
+def edge_contained(u, v, nodes):
+  """Returns true if the given edge is contained by the set of nodes."""
   return (u in nodes) and (v in nodes)
 
 def node_adjacent(node, edges, direction):
