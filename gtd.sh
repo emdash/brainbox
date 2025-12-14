@@ -946,6 +946,11 @@ query_declare_type             neighbors filter
 query_declare_default_producer neighbors from cur
 function neighbors { adjacent dependencies all "$@" ; }
 
+# reachable dependencies in either direction
+query_declare_type             family filter
+query_declare_default_producer family from cur
+function family { reachable dependencies all "$@" ; }
+
 # insert tasks assigned to each incoming context id
 query_declare_type             assignees filter
 query_declare_default_producer assignees from cur
@@ -1088,9 +1093,22 @@ query_declare_default_producer projects from cur
 function projects { reachable dependencies incoming "$@" ; }
 
 # insert subtasks of each incoming parent task id
+query_declare_type             blockers filter
+query_declare_default_producer blockers from cur
+function blockers { reachable dependencies outgoing "$@" ; }
+
+# insert direct subtasks of each parent id
 query_declare_type             subtasks filter
 query_declare_default_producer subtasks from cur
-function subtasks { reachable dependencies outgoing "$@" ; }
+function subtasks {
+    while read id
+    do
+        if graph_datum subtasks exists "${id}"
+        then
+            graph_datum subtasks read "${id}"
+        fi
+    done | "${@}"
+}
 
 # keep only nodes whose contents matches the given *pattern*.
 #
