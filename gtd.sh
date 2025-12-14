@@ -1475,6 +1475,13 @@ function buckets {
     ls "${BUCKET_DIR}"
 }
 
+declare -a capture_args=(
+    '--oneline'
+    '--bucket'
+    '--context'
+    '--parents'
+    '--dependents:bucket'
+)
 # Create a new task.
 #
 # If arguments are given, they are written as the node contents.
@@ -1482,12 +1489,15 @@ function buckets {
 # If no arguments are given:
 # - and stdin is a tty, invokes $EDITOR to create the node contents.
 # - otherwise, stdin is written to the contents file.
-command_declare capture '--bucket|--context|--parents|--dependents:bucket'
+command_declare capture "$(echo "${capture_args[@]}" | paste -sd '|'))"
 function capture {
     forbid_preview
     while true
     do
 	case "$1" in
+            -1|--oneline)
+                local oneline="1"
+                shift 1
 	    -b|--bucket)
 		local bucket="$2"
 		shift 2
@@ -1516,7 +1526,14 @@ function capture {
     # no need to call "end filter chain", as we consume all arguments.
     if test -z "$*"; then
 	if tty > /dev/null; then
-	    graph_datum contents edit "${node}"
+            if test -v oneline
+            then
+                local line
+                read -ep "Gloss> " line
+                echo "${line}" | graph_datum contents write "${node}"
+            else
+	        graph_datum contents edit "${node}"
+            fi
 	else
 	    debug "from stdin"
 	    graph_datum contents write "${node}"
