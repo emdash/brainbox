@@ -408,7 +408,7 @@ def dot():
     subtasks = set(get_subtasks(project))
     nodes |= subtasks
     subtasks.add(project)
-    dot_subgraph(task_gloss(project), subtasks, id=project)
+    # dot_subgraph(task_gloss(project), subtasks, id=project)
 
   for bucket in buckets:
     contents = bucket_list(bucket)
