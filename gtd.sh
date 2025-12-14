@@ -623,11 +623,15 @@ function task_defer {
     echo "SOMEDAY" | task_state write "$1"
 }
 
-# mark the given task as persistent
+# mark the given node as persistent
 function task_persist {
     echo "PERSIST" | task_state write "$1"
 }
 
+# mark the given node as context
+function make_context_node {
+    echo "CONTEXT" | task_state write "$1"
+}
 
 # An Embedded DSL for Queries *************************************************
 
@@ -1033,7 +1037,7 @@ function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
 # Keep only context nodes
 query_declare_type             is_context filter
 query_declare_default_producer is_context all
-function is_context { graph is_context | query_filter_chain "$@" ; }
+function is_context { graph filter_state CONTEXT | query_filter_chain "$@" ; }
 
 # Keep only deferred nodes
 query_declare_type             is_deferred filter
@@ -1372,6 +1376,16 @@ function persist {
     forbid_preview
     end_filter_chain "$@"
     map task_persist
+    database_commit "${SAVED_ARGV}"
+}
+
+# make each node a context node
+query_declare_type             make_context update
+query_declare_default_producer make_context from target
+function make_context {
+    forbid_preview
+    end_filter_chain "$@"
+    map make_context_node
     database_commit "${SAVED_ARGV}"
 }
 

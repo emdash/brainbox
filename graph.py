@@ -295,12 +295,6 @@ def is_unassigned():
     not has_adjacent(n, e, "incoming")
   )
 
-def is_context():
-  """True if a node has any outging context links."""
-  filter_nodes_with_edges("contexts",lambda n, e:
-    has_adjacent(n, e, "outgoing")
-  )
-
 def reachable(edges, direction):
   """Get the set of nodes reachable via `edges` along `direction`."""
   edges = edge_list(edges)
@@ -480,7 +474,6 @@ if __name__ == "__main__":
     "reachable":     reachable,
     "union":         union,
     "filter_state":  filter_state,
-    "is_context":    is_context,
     "is_leaf":       is_leaf,
     "is_next":       is_next,
     "is_orphan":     is_orphan,
