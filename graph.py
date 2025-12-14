@@ -27,6 +27,18 @@ def filter_nodes(predicate):
     if predicate(node):
       print(node)
 
+def filter_nodes_with_edges(edge_set, predicate):
+  """Like filter_nodes, but the predicate is also passed an edge set.
+
+  Predicate is passed node as the first argument and a set of edges as
+  the second argument.
+
+  This is a special case to avoid reading edge sets off the disk
+  more often than we need to, as many queries don't rely on them.
+  """
+  edges = edge_list(edge_set)
+  filter_nodes(lambda node: predicate(node, edges))
+
 def bucket_list(bucket):
   "Return the contents of the given bucket"
   bucket_dir = os.path.join(os.getenv("BUCKET_DIR"), bucket)
@@ -179,14 +191,6 @@ def expand(node, edges, direction, ancestors, depth):
   for adj in node_adjacent(node, edges, direction):
     expand(adj, edges, direction, ancestors | {node}, depth + 1)
 
-def filter_edges(edge_set, predicate):
-  """Filter the input node set based on edge criteria.
-
-  Predicate is passed node as the first argument and a set of edges as
-  the second argument.
-  """
-  filter_nodes(lambda node: predicate(node, edge_list(edge_set)))
-
 def has_adjacent(node, edges, direction):
   """True if a node has edges in the given direction"""
   return len(list(node_adjacent(node, edges, direction))) > 0
@@ -205,33 +209,33 @@ def adjacent(edge_set, direction):
 
 def is_root():
   """True if a task does not block any other node."""
-  filter_edges("dependencies", lambda n, e:
+  filter_nodes_with_edges("dependencies", lambda n, e:
     not has_adjacent(n, e, "incoming")
   )
 
 def is_leaf():
   """True if a task has no dependencies."""
-  filter_edges("dependencies", lambda n, e:
+  filter_nodes_with_edges("dependencies", lambda n, e:
     not has_adjacent(n, e, "outgoing")
   )
 
 def is_nonterminal():
   """True if a task is neither a root nor a leaf."""
-  filter_edges("dependencies", lambda n, e: (
+  filter_nodes_with_edges("dependencies", lambda n, e: (
     has_adjacent(n, e, "outgoing") and
     has_adjacent(n, e, "incoming")
   ))
 
 def is_orphan():
   """True if a task has both a root and a leaf."""
-  filter_edges("dependencies", lambda n, e: not (
+  filter_nodes_with_edges("dependencies", lambda n, e: not (
     has_adjacent(n, e, "outgoing") or
     has_adjacent(n, e, "incoming")
   ))
 
 def is_next():
   """True if a task has no active dependencies."""
-  filter_edges("dependencies", lambda n, e: not any(
+  filter_nodes_with_edges("dependencies", lambda n, e: not any(
     task_state(o) in {"NEW", "TODO"}
     for o in node_adjacent(n, e, "outgoing")
   ))
@@ -242,11 +246,15 @@ def is_project():
 
 def is_unassigned():
   """True if a task has no incoming edges from a context."""
-  filter_edges("contexts", lambda n, e: not has_adjacent(n, e, "incoming"))
+  filter_nodes_with_edges("contexts", lambda n, e:
+    not has_adjacent(n, e, "incoming")
+  )
 
 def is_context():
   """True if a node has any outging context links."""
-  filter_edges("contexts", lambda n, e: has_adjacent(n, e, "outgoing"))
+  filter_nodes_with_edges("contexts",lambda n, e:
+    has_adjacent(n, e, "outgoing")
+  )
 
 def reachable(edges, direction):
   """Get the set of nodes reachable via `edges` along `direction`."""
