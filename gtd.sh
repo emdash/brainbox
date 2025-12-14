@@ -547,7 +547,22 @@ function task_gloss {
 
 # summarize the current task: id, status, and gloss
 function task_summary {
-    printf "%s %7s %s\n" "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
+    case "${1}" in
+        -d|--delimiter)
+            local -r sep="${2}"
+            shift 2
+            ;;
+        *)
+            local -r sep=' '
+           ;;
+    esac
+    printf \
+        "%s%c%7s%c%s\n" \
+        "$1" \
+        "${sep}" \
+        "$(task_state read "$1")" \
+        "${sep}" \
+        "$(task_gloss "$1")"
 }
 
 # display extended task information.
@@ -1290,11 +1305,20 @@ function __into_delete_empty {
 }
 
 # Print a one-line summary for each task id
-query_declare_type             summarize formatter
+query_declare_type             summarize formatter --delimiter:string
 query_declare_default_producer summarize inbox
 function summarize {
+    case "${1}" in
+        -d|--delimiter)
+            local -r sep="${2}"
+            shift 2
+            ;;
+        *)
+            local -r sep=' '
+            ;;
+    esac
     end_filter_chain "$@"
-    map task_summary
+    map task_summary -d "${sep}"
 }
 
 # tree expansion of project rooted at the given node for given edge set and direction.
