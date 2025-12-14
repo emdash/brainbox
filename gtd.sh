@@ -525,6 +525,12 @@ function graph_edge_delete {
     rm -rf "$(graph_edge_path "$1" "$2" "$3")"
 }
 
+# Delete the given node, and any edges which touch it.
+function graph_node_delete {
+    database_ensure_init
+    rm -rf "$(graph_node_path "${1}")"
+}
+
 
 ## define task data ***********************************************************
 
@@ -1359,6 +1365,24 @@ function set_ {
 	echo "${@:2}" | graph_datum "$1" write "${id}"
     done
     database_commit "${SAVED_ARGV}"
+}
+
+command_declare                delete bucket
+function delete {
+    forbid_preview
+    local -r bucket="${1:-cur}"
+    from "${bucket}" | graph touches | while read u v edge_set
+    do
+        graph_edge_delete "${u}" "${v}" "${edge_set}"
+    done
+
+    from "${bucket}" | while read node
+    do
+        graph_node_delete "${node}"
+    done
+
+    database_commit "${SAVED_ARGV}"
+    dispatch null into cur
 }
 
 # Non-query commands **********************************************************
