@@ -58,7 +58,7 @@ def difference(rhs):
     print(node)
 
 def nodes():
-  "Return all the nodes in the database"
+  "Return all the nodes in the database."
   for node in os.listdir(os.path.join(os.getenv("STATE_DIR"), "nodes")):
     yield node
 
