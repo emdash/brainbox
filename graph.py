@@ -289,13 +289,24 @@ def task_state(id):    return datum_read("state", id)
 def filter_state(*keep):
   filter_nodes(lambda node: task_state(node) in set(keep))
 
-
-def touches():
-  """Calculate which edges to remove in order to remove the input set"""
+def touches(*edge_sets):
+  """Show edges which touch or are contained by the input set."""
+  if not edge_sets:
+    edge_sets = ('contexts', 'dependencies')
   nodes = set(read_ids())
-  for edge_set in ('contexts', 'dependencies'):
+  for edge_set in edge_sets:
     for (u, v) in read_edges(edge_set):
       if edge_touches(u, v, nodes):
+        print(f"{u} {v} {edge_set}")
+
+def contained(*edge_sets):
+  """Calculate which edges """
+  if not edge_sets:
+    edge_sets = ('contexts', 'dependencies')
+  nodes = set(read_ids())
+  for edge_set in edge_sets:
+    for (u, v) in read_edges(edge_set):
+      if edge_contained(u, v, nodes):
         print(f"{u} {v} {edge_set}")
 
 ## Dotfile Export ########################################################
@@ -370,7 +381,7 @@ def dot_edge(u, v, style):
 def dot_edges(edges, nodes, style):
   """Format the given edge sets to stdout"""
   for (u, v) in edge_list(edges):
-    if edge_touches(u, v, nodes):
+    if edge_contained(u, v, nodes):
       print(dot_edge(u, v, style))
 
 def dot():
@@ -430,5 +441,6 @@ if __name__ == "__main__":
     "is_root":       is_root,
     "is_unassigned": is_unassigned,
     "dot":           dot,
-    "touches":       touches
+    "touches":       touches,
+    "contained":     contained,
   }[sys.argv[1]](*sys.argv[2:])
