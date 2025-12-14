@@ -1704,10 +1704,10 @@ function up {
 # Project-Subtasks Editor *****************************************************
 
 function __plan_modify {
-    read path < <(graph_datum subtasks path "${SUBTASK_ID}" "$@")
+    read path < <(graph_datum subtasks path "${SUBTASK_ID}")
     case "${1}" in
         add) all | choose >> "${path}";;
-        capture) echo | xargs -o "$0" capture ; last_captured >> "${path}";;
+        capture) echo | xargs -o "$0" capture --oneline ; last_captured >> "${path}";;
         edit) graph_datum contents edit "${2}";;
         *) ./subtasks.py "${path}" "${@}";;
     esac
