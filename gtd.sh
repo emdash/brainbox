@@ -1034,6 +1034,13 @@ query_declare_type             is_complete filter
 query_declare_default_producer is_complete all
 function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
 
+# Show DONE / DROPPED items
+query_declare_type             inactive filter
+query_declare_default_producer inactive all
+function inactive {
+    graph filter_state DONE DROPPED | query_filter_chain "$@"
+}
+
 # Keep only context nodes
 query_declare_type             is_context filter
 query_declare_default_producer is_context all
