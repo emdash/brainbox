@@ -1819,13 +1819,8 @@ function __triage_bucket {
 }
 
 function __triage_assign {
-    all \
-        | is_context \
-        | choose \
-        | into source
-
-    splat "${@}" | xinto target
-
+    all | is_context choose into source
+    splat "${@}" | into target
     assign
 }
 
