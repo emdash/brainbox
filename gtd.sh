@@ -2053,7 +2053,6 @@ function __suggest_option {
     fi
 }
 
-
 function __suggest_flags {
     debug suggest_flags
     local flag
