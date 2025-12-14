@@ -444,6 +444,7 @@ def dot():
   # print("rankdir = LR;")
   print("compound = true;")
   print("fontname = monospace;")
+  print("bgcolor = \"#00000000\";")
 
   for node in read_ids():
     if has("subtasks", node):
