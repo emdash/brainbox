@@ -1407,10 +1407,15 @@ query_declare_type             set_ formatter datum
 query_declare_default_producer set_ from target
 query_declare_canonical_name   set_ set
 function set_ {
+    case "${1}" in
+        -a) shift; local -r cmd="append";;
+        *)  local -r cmd="write";;
+    esac
+
     forbid_preview
     while IFS='' read -r id
     do
-	echo "${@:2}" | graph_datum "$1" write "${id}"
+	echo "${@:2}" | graph_datum "$1" "${cmd}" "${id}"
     done
     database_commit "${SAVED_ARGV}"
 }
