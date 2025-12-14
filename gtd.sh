@@ -1498,6 +1498,7 @@ function capture {
             -1|--oneline)
                 local oneline="1"
                 shift 1
+                ;;
 	    -b|--bucket)
 		local bucket="$2"
 		shift 2
