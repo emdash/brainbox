@@ -64,7 +64,9 @@ def bucket_list(bucket):
   "Return the contents of the given bucket"
   bucket_dir = os.path.join(os.getenv("BUCKET_DIR"), bucket)
   try:
-    return os.listdir(bucket_dir)
+    buckets = os.listdir(bucket_dir)
+    buckets.sort()
+    return buckets
   except OSError:
     return []
 
@@ -459,7 +461,7 @@ def dot():
         nodes.add(node)
     dot_subgraph(bucket, contents)
 
-  for node in nodes:
+  for node in sorted(nodes):
     print(dot_node(node))
 
   dot_edges("dependencies", nodes, "solid")
