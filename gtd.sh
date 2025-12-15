@@ -533,12 +533,31 @@ function prefs_export_env {
     "${@}"
 }
 
+# Declare a menu key binding that sets a preference key to a specific value
+function prefs_bind {
+    fzf_bind_sexec \
+        "${1}" \
+        "${2}" \
+        "$0 prefs write ${3} ${4}" \
+        "refresh-preview"
+}
+
+# Declare a menu key that toggles a boolean preference on or off.
+function prefs_bind_toggle {
+    fzf_bind_sexec \
+        "${1}" \
+        "Toggle ${2}" \
+        "$0 prefs_bool_toggle ${3}" \
+        "refresh-preview"
+}
+
 # Graph Database **************************************************************
 
-# Wraps a pythhon script which is used to "accelerate" some operations.
+# Wraps a python script which is used to "accelerate" some operations.
 #
 # The script can be tweaked with a number of enivronment variables,
-# which we store in the prefs system.
+# which we store in the prefs system, and export before executing the
+# script.
 function graph {
     prefs_export_env \
         "graph/font"          GTD_GRAPH_FONT          "monospace" \
@@ -699,23 +718,14 @@ function graph_node_delete {
     rm -rf "$(graph_node_path "${1}")"
 }
 
-# Helper function for binding graph view keys
-function __graph_bind_pref {
-    fzf_bind_sexec \
-        "${1}" \
-        "${2}" \
-        "$0 prefs write graph/${3} ${4}" \
-        "refresh-preview"
-}
-
 # Common keybindings for graph views
 function __graph_bindings {
-    __graph_bind_pref "alt-c" "Buckets as Clusters"  "bucket_mode"  "cluster"
-    __graph_bind_pref "alt-l" "Buckets as Labels"    "bucket_mode"  "label"
-    __graph_bind_pref "alt-h" "Hide Buckets"         "bucket_mode"  "hidden"
-    __graph_bind_pref "alt-C" "Projects as Clusters" "subtasks_mode" "cluster"
-    __graph_bind_pref "alt-L" "Projects as Labels"   "subtasks_mode" "label"
-    __graph_bind_pref "alt-H" "Hide Projects"        "subtasks_mode" "hidden"
+    prefs_bind "alt-c" "Buckets as Clusters"  "graph/bucket_mode"   "cluster"
+    prefs_bind "alt-l" "Buckets as Labels"    "graph/bucket_mode"   "label"
+    prefs_bind "alt-h" "Hide Buckets"         "graph/bucket_mode"   "hidden"
+    prefs_bind "alt-C" "Projects as Clusters" "graph/subtasks_mode" "cluster"
+    prefs_bind "alt-L" "Projects as Labels"   "graph/subtasks_mode" "label"
+    prefs_bind "alt-H" "Hide Projects"        "graph/subtasks_mode" "hidden"
 }
 
 ## define task data ***********************************************************
@@ -788,6 +798,7 @@ function task_details {
       echo "Depends"
       echo "${1}" \
           | graph adjacent dependencies outgoing \
+          | tee -pa "${nodes_file}" \
           | tail -n +2 \
           | summarize \
           | bat --terminal-width "${width}"
@@ -798,30 +809,25 @@ function task_details {
       echo "Blocks"
       echo "${1}" \
           | graph adjacent dependencies incoming \
+          | tee -pa "${nodes_file}" \
           | tail -n +2 \
           | summarize \
           | bat --terminal-width "${width}"
       echo
     fi
-}
 
-function __details_bind_toggle {
-    local -r key="${1}"
-    local -r help="${2}"
-    local -r pref="${3}"
-    local -r default="${4}"
-    fzf_bind_sexec \
-        "${key}" \
-        "Toggle ${help}" \
-        "$0 prefs_bool_toggle details/${pref} ${default}" \
-        "refresh-preview"
+    if prefs_bool_test "details/show_graph" 1
+    then
+       chafa < "${nodes_file}"
+    fi
 }
 
 function __details_bindings {
-    __details_bind_toggle "ctrl-s" "Subtasks" "show_subtasks"
-    __details_bind_toggle "ctrl-c" "Contexts" "show_contexts"
-    __details_bind_toggle "ctrl-b" "Blocks"   "show_rdeps"
-    __details_bind_toggle "ctrl-d" "Depends"  "show_deps"
+    prefs_bind_toggle "ctrl-s" "Subtasks" "details/show_subtasks"
+    prefs_bind_toggle "ctrl-c" "Contexts" "details/show_contexts"
+    prefs_bind_toggle "ctrl-b" "Blocks"   "details/show_rdeps"
+    prefs_bind_toggle "ctrl-d" "Depends"  "details/show_deps"
+    prefs_bind_toggle "ctrl-g" "Graph"    "details/show_graph"
     __graph_bindings
 }
 
