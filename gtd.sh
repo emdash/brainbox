@@ -1233,11 +1233,12 @@ function dot {
 query_declare_type             chafa formatter
 query_declare_default_producer chafa from cur subtasks
 function chafa {
+    local -r width="${FZF_PREVIEW_COLUMNS:-"${COLUMNS:-80}"}"
+    local -r height="${FZF_PREVIEW_LINES:-"${LINES:-24}"}"
     end_filter_chain "$@"
     graph dot \
       | env dot -Tpng \
-      | env chafa -s \
-        "${FZF_PREVIEW_COLUMNS:-"${COLUMNS:-80}"}"x"${FZF_PREVIEW_LINES:-"${LINES:-24}"}"
+      | env chafa -s "${width}x$(("${height}" / 2))"
 }
 
 # select nodes from input set to be placed into the given bucket
