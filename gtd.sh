@@ -2082,10 +2082,16 @@ function __nav_path {
 function __nav_preview {
     local top mode
     read mode < <(prefs read 'nav/mode' neighbors)
-    read top  < <(__nav_top)
 
     echo "Mode: ${mode} "
-    echo -n "Path: " ; __nav_path
+
+    if read top < <(__nav_top)
+    then
+        echo -n "Path: " ; __nav_path
+    else
+        echo "Path: [Root]"
+        top="${1}"
+    fi
 
     task_details "${top}"
     # XXX: validate before blindly executing ${mode}
@@ -2094,14 +2100,17 @@ function __nav_preview {
 
 function __nav_items {
     local top mode
-    read mode < <(prefs read 'nav/mode' neighbors)
-    read top  < <(__nav_top)
+    read mode   < <(prefs read 'nav/mode' neighbors)
+    if read top < <(__nav_top)
+    then
+      # XXX: validate before blindly executing ${mode}
+      echo "${top}" \
+          | "${mode}" \
+          | filter test "${top}" !=
+    else
+        prefs read 'nav/initial'
+    fi | summarize -d '|'
 
-    # XXX: validate before blindly executing ${mode}
-    echo "${top}" \
-        | "${mode}" \
-        | filter test "${top}" != \
-        | summarize -d '|'
 }
 
 function __nav_bindings {
@@ -2181,12 +2190,12 @@ function __nav_bindings {
         "accept"
 }
 
-query_declare_type nav producer
+query_declare_type             nav filter
+query_declare_default_producer nav all
 function nav {
-    if test -v 1
-    then
-        prefs write "nav/path" "${1}"
-    fi
+    prefs clobber "nav/path"
+    # forward stdin to this temporary file
+    prefs write "nav/initial"
     forbid_preview
     fzf_menu --no-reload \
         "Graph Navigator" \
@@ -2195,7 +2204,7 @@ function nav {
         -d '|' \
         --with-nth='{2} {3}' \
         --accept-nth='{1}' \
-        --preview="$0 __nav_preview"
+        --preview="$0 __nav_preview {1}"
 }
 
 ## Live Queries ***************************************************************
