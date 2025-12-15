@@ -499,6 +499,27 @@ function prefs_bool_toggle {
     fi
 }
 
+# Cycle a pref value through its variants.
+#
+# The zeroth variant is assumed to be the default.
+function prefs_cycle {
+    local -r path="${1}"
+    local -a values=("${@:2}")
+
+    local current
+    read current < <(prefs read "${path}" "${values[0]}")
+
+    read i < <(seq 0 $(("${#values[@]}" - 1)) | while read i
+    do
+        if test "${values["${i}"]}" = "${current}"
+        then
+            echo "${i}"
+            break
+        fi
+    done)
+    prefs write "${path}" "${values[$(( ("${i}" + 1) % "${#values[@]}" ))]}"
+}
+
 # Execute a command, exporting multiple preference values to the environment.
 #
 # Usage:
@@ -548,6 +569,19 @@ function prefs_bind_toggle {
         "${1}" \
         "Toggle ${2}" \
         "$0 prefs_bool_toggle ${3}" \
+        "refresh-preview"
+}
+
+# Declare a menu key that cycles between multiple values.
+function prefs_bind_cycle {
+    local -r key="${1}"
+    local -r help="${2}"
+    local -r path="${3}"
+    shift 3
+    fzf_bind_sexec \
+        "${key}" \
+        "Cycle ${help}" \
+        "$0 prefs_cycle ${path} ${*}" \
         "refresh-preview"
 }
 
