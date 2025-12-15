@@ -468,6 +468,35 @@ function prefs {
     esac
 }
 
+# Some common code for preferences that are boolean
+function prefs_bool_test {
+    local -r path="${1}"
+    local value
+
+    read value < <(
+        if test -v 2
+        then
+            prefs read "${path}" "${2}"
+        else
+            prefs read "${path}"
+        fi
+    )
+
+    test "${value}" = 1
+}
+
+function prefs_bool_toggle {
+    local -r path="${1}"
+    local -r default="${2}"
+
+    if prefs_bool_test "${path}" "${default}"
+    then
+        prefs write "${path}" 0
+    else
+        prefs write "${path}" 1
+    fi
+}
+
 # Graph Database **************************************************************
 
 # wraps a python script which is used to "accelerate" some operations.
