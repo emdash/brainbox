@@ -754,14 +754,27 @@ function graph_node_delete {
 
 # Common keybindings for graph views
 function __graph_bindings {
-    prefs_bind "alt-c" "Buckets as Clusters"  "graph/bucket_mode"   "cluster"
-    prefs_bind "alt-l" "Buckets as Labels"    "graph/bucket_mode"   "label"
-    prefs_bind "alt-h" "Hide Buckets"         "graph/bucket_mode"   "hidden"
-    prefs_bind "alt-C" "Projects as Clusters" "graph/subtasks_mode" "cluster"
-    prefs_bind "alt-L" "Projects as Labels"   "graph/subtasks_mode" "label"
-    prefs_bind "alt-H" "Hide Projects"        "graph/subtasks_mode" "hidden"
+    prefs_bind_cycle \
+      "alt-b" \
+      "Bucket Mode" \
+      "graph/bucket_mode" \
+      "cluster" \
+      "label" \
+      "hidden"
 
-    fzf_bind_exec "shift-delete" "Clear Buckets" "$0 buckets clear" "refresh-preview"
+    prefs_bind_cycle \
+       "alt-s" \
+       "Subtasks Mode" \
+       "graph/subtasks_mode" \
+       "cluster" \
+       "label" \
+       "hidden"
+
+    fzf_bind_exec \
+        "shift-delete" \
+        "Clear Buckets" \
+        "$0 buckets clear" \
+        "refresh-preview"
 }
 
 ## define task data ***********************************************************
