@@ -699,6 +699,25 @@ function graph_node_delete {
     rm -rf "$(graph_node_path "${1}")"
 }
 
+# Helper function for binding graph view keys
+function __graph_bind_pref {
+    fzf_bind_sexec \
+        "${1}" \
+        "${2}" \
+        "$0 prefs write graph/${3} ${4}" \
+        "refresh-preview"
+}
+
+# Common keybindings for graph views
+function __graph_bindings {
+    __graph_bind_pref "alt-c" "Buckets as Clusters"  "bucket_mode"  "cluster"
+    __graph_bind_pref "alt-l" "Buckets as Labels"    "bucket_mode"  "label"
+    __graph_bind_pref "alt-h" "Hide Buckets"         "bucket_mode"  "hidden"
+    __graph_bind_pref "alt-C" "Projects as Clusters" "subtasks_mode" "cluster"
+    __graph_bind_pref "alt-L" "Projects as Labels"   "subtasks_mode" "label"
+    __graph_bind_pref "alt-H" "Hide Projects"        "subtasks_mode" "hidden"
+}
+
 ## define task data ***********************************************************
 
 function task_contents { graph_datum contents "$@"; }
@@ -803,6 +822,7 @@ function __details_bindings {
     __details_bind_toggle "ctrl-c" "Contexts" "show_contexts"
     __details_bind_toggle "ctrl-b" "Blocks"   "show_rdeps"
     __details_bind_toggle "ctrl-d" "Depends"  "show_deps"
+    __graph_bindings
 }
 
 ## Task Management
@@ -2040,6 +2060,7 @@ function __triage_bindings {
     fzf_bind_exec   "A"      "Assign Context" "$0 __triage_assign {+1}"
     fzf_bind_action "q"      "Quit"           "accept"
     fzf_bind_action "h"      "Toggle Help"    "toggle-header"
+    __graph_bindings
 }
 
 command_declare triage
@@ -2188,6 +2209,8 @@ function __nav_bindings {
         "q" \
         "Quit" \
         "accept"
+
+    __details_bindings
 }
 
 query_declare_type             nav filter
