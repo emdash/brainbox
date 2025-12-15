@@ -247,7 +247,7 @@ function database_clobber {
     local confirm
     read -re confirm
     case "${confirm}" in
-	yes) rm -rf "${DATA_DIR}";;
+	yes) rm -r "${DATA_DIR}";;
 	*)   echo "Not wiping database."; return 1;;
     esac
 }
@@ -272,7 +272,7 @@ function database_commit {
     local path
 
     if test -f "${DATA_DIR}/undo_stack"; then
-	rm -rf "${DATA_DIR}/undo_stack"
+	rm -r "${DATA_DIR}/undo_stack"
     fi
 
     database_keep_empty
@@ -726,6 +726,8 @@ function __graph_bindings {
     prefs_bind "alt-C" "Projects as Clusters" "graph/subtasks_mode" "cluster"
     prefs_bind "alt-L" "Projects as Labels"   "graph/subtasks_mode" "label"
     prefs_bind "alt-H" "Hide Projects"        "graph/subtasks_mode" "hidden"
+
+    fzf_bind_exec "shift-delete" "Clear Buckets" "$0 buckets clear" "refresh-preview"
 }
 
 ## define task data ***********************************************************
@@ -1739,8 +1741,23 @@ function assign {
 
 # List all known buckets
 function buckets {
-    debug "buckets:"
-    ls "${BUCKET_DIR}"
+    if test -v 1
+    then
+        case "${1}" in
+            clear)
+                if test -v 2
+                then
+                    # lookup find command
+                    rm -rv --one-file-system --preserve-root=all "${BUCKET_DIR}/${2}"
+                else
+                    rm -rv --one-file-system --preserve-root=all "${BUCKET_DIR}"
+                    mkdir -p "${BUCKET_DIR}"
+                fi
+        esac
+    else
+        debug "buckets:"
+        ls "${BUCKET_DIR}"
+    fi
 }
 
 # capture takes so many options they don't fit on one line
