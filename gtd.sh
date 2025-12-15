@@ -456,6 +456,7 @@ function prefs {
             fi
             ;;
         clobber)
+            local -r path="${DATA_DIR}/prefs/${2}"
             if test -f "${path}"
             then
                 rm "${path}"
@@ -468,7 +469,7 @@ function prefs {
     esac
 }
 
-# Some common code for preferences that are boolean
+# Read a pref value, succeding iff the value is exactly "1"
 function prefs_bool_test {
     local -r path="${1}"
     local value
@@ -485,6 +486,7 @@ function prefs_bool_test {
     test "${value}" = 1
 }
 
+# Toggle a boolean pref value. This always succeeds.
 function prefs_bool_toggle {
     local -r path="${1}"
     local -r default="${2}"
@@ -497,10 +499,57 @@ function prefs_bool_toggle {
     fi
 }
 
+# Execute a command, exporting multiple preference values to the environment.
+#
+# Usage:
+#
+#  prefs_export_env (<path> <var> <default)... -- cmd (arg)...
+#
+# Preferences are read in triplets of:
+#
+#   path    - preferences path key
+#   var     - the env var to export to
+#   default - the default value if the preference key is absent.
+#
+# Separate preference declarations from the final command with --.
+#
+# Example: prefs_export_as 'test/foo' PREFS_TEST_FOO bar -- env | grep FOO
+function prefs_export_env {
+    local pref var default
+    while test "$#" -gt 0
+    do
+        pref="${1}"
+        if test "${pref}" = "--"
+        then
+            shift
+            break
+        fi
+        var="${2}"
+        default="${3}"
+        shift 3
+        read "${var}" < <(prefs read "${pref}" "${default}")
+        IFS='' declare -x "${var}=${!var}"
+    done
+    "${@}"
+}
+
 # Graph Database **************************************************************
 
-# wraps a python script which is used to "accelerate" some operations.
-function graph { "${GTD_DIR}/graph.py" "$@" ; }
+# Wraps a pythhon script which is used to "accelerate" some operations.
+#
+# The script can be tweaked with a number of enivronment variables,
+# which we store in the prefs system.
+function graph {
+    prefs_export_env \
+        "graph/font"          GTD_GRAPH_FONT          "monospace" \
+        "graph/bg"            GTD_GRAPH_BG            "white"     \
+        "graph/bucket_mode"   GTD_GRAPH_BUCKET_MODE   "cluster"   \
+        "graph/subtasks_mode" GTD_GRAPH_SUBTASKS_MODE "cluster"   \
+        "graph/rankdir"       GTD_GRAPH_RANKDIR       "TB"        \
+        "graph/show_contexts" GTD_GRAPH_SHOW_CONTEXTS "1"         \
+        "graph/show_deps"     GTD_GRAPH_SHOW_DEPS     "1"         \
+        -- "${GTD_DIR}/graph.py" "$@"
+}
 
 # list all the valid edge sets
 function edges { echo "${EDGE_DIRS[@]}" ; }
@@ -650,7 +699,6 @@ function graph_node_delete {
     rm -rf "$(graph_node_path "${1}")"
 }
 
-
 ## define task data ***********************************************************
 
 function task_contents { graph_datum contents "$@"; }
@@ -693,37 +741,68 @@ function task_details {
     task_contents read "${1}" \
       | bat -f --file-name "Contents" --terminal-width "${width}"
 
-    if graph_datum subtasks exists "${1}"
+    if prefs_bool_test "details/show_subtasks" 1
     then
       echo "Subtasks"
-      graph_datum subtasks read "${1}" \
-        | summarize \
-        | bat --terminal-width "${width}"
+      if graph_datum subtasks exists "${1}"
+      then
+        graph_datum subtasks read "${1}" \
+          | summarize \
+          | bat --terminal-width "${width}"
+        echo
+      fi
+    fi
+
+    if prefs_bool_test "details/show_contexts" 1
+    then
+      echo "Contexts"
+      echo "${1}" \
+          | graph adjacent contexts incoming \
+          | tail -n +2 \
+          | summarize \
+          | bat --terminal-width "${width}"
       echo
     fi
 
-    echo "Contexts"
-    echo "${1}" \
-        | graph adjacent contexts incoming \
-        | tail -n +2 \
-        | summarize \
-        | bat --terminal-width "${width}"
-    echo
+    if prefs_bool_test "details/show_deps" 1
+    then
+      echo "Depends"
+      echo "${1}" \
+          | graph adjacent dependencies outgoing \
+          | tail -n +2 \
+          | summarize \
+          | bat --terminal-width "${width}"
+    fi
 
-    echo "Blocks"
-    echo "${1}" \
-        | graph adjacent dependencies incoming \
-        | tail -n +2 \
-        | summarize \
-        | bat --terminal-width "${width}"
-    echo
+    if prefs_bool_test "details/show_rdeps" 1
+    then
+      echo "Blocks"
+      echo "${1}" \
+          | graph adjacent dependencies incoming \
+          | tail -n +2 \
+          | summarize \
+          | bat --terminal-width "${width}"
+      echo
+    fi
+}
 
-    echo "Depends"
-    echo "${1}" \
-        | graph adjacent dependencies outgoing \
-        | tail -n +2 \
-        | summarize \
-        | bat --terminal-width "${width}"
+function __details_bind_toggle {
+    local -r key="${1}"
+    local -r help="${2}"
+    local -r pref="${3}"
+    local -r default="${4}"
+    fzf_bind_sexec \
+        "${key}" \
+        "Toggle ${help}" \
+        "$0 prefs_bool_toggle details/${pref} ${default}" \
+        "refresh-preview"
+}
+
+function __details_bindings {
+    __details_bind_toggle "ctrl-s" "Subtasks" "show_subtasks"
+    __details_bind_toggle "ctrl-c" "Contexts" "show_contexts"
+    __details_bind_toggle "ctrl-b" "Blocks"   "show_rdeps"
+    __details_bind_toggle "ctrl-d" "Depends"  "show_deps"
 }
 
 ## Task Management
@@ -1142,9 +1221,10 @@ function __choose_items {
 }
 
 function __choose_bindings {
-    fzf_bind_action "ctrl-d" "Details"   "change-preview($0 __choose_preview details  {1})"
+    fzf_bind_action "ctrl-D" "Details"   "change-preview($0 __choose_preview details  {1})"
     fzf_bind_action "ctrl-n" "Neighbors" "change-preview($0 __choose_preview neighbors {1})"
     fzf_bind_action "ctrl-f" "Family"    "change-preview($0 __choose_preview family   {1})"
+    __details_bindings
     fzf_bind_action "ctrl-q" "Quit"      "accept"
 }
 
