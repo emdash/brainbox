@@ -1855,6 +1855,141 @@ function triage {
       --preview="$0 inbox family chafa"
 }
 
+# Project Graph Navigator *****************************************************
+
+function __nav_top {
+    tail -n 1 "${DATA_DIR}/nav_path"
+}
+
+function __nav_push {
+    echo "${1}" >> "${DATA_DIR}/nav_path"
+}
+
+function __nav_pop {
+    local temp
+    read temp < <(mktemp -p "${DATA_DIR}")
+    head -n -1 "${DATA_DIR}/nav_path" > "${temp}"
+    cp "${temp}" "${DATA_DIR}/nav_path"
+    rm "${temp}"
+}
+
+function __nav_path {
+    summarize -d '|' < "${DATA_DIR}/nav_path" | cut -d '|' -f 3 | paste -sd '/'
+    echo
+}
+
+function __nav_preview {
+    read mode < "${DATA_DIR}/nav_mode"
+
+    local top
+    read top < <(__nav_top)
+
+    echo "Mode: ${mode} "
+    echo -n "Path: " ; __nav_path
+
+    task_details "${top}"
+    echo "${top}" | "${mode}" | chafa
+}
+
+function __nav_items {
+    local mode
+    read mode < "${DATA_DIR}/nav_mode"
+
+    local top
+    read top < <(__nav_top)
+
+    # XXX: validate before blindly executing ${mode}
+    echo "${top}" \
+        | { "${mode}"; } \
+        | filter test "${top}" != \
+        | summarize -d '|'
+}
+
+function __nav_bindings {
+    fzf_bind_sexec \
+        "focus" \
+        "Select Next" \
+        "echo {1} | $0 stdin into next"
+
+    fzf_bind_sexec \
+        "enter" \
+        "Goto Cur" \
+        "$0 __nav_push {1}" \
+        "reload-sync($0 __nav_items)"
+
+    fzf_bind_sexec \
+        "backspace" \
+        "Move Back" \
+        "$0 __nav_pop" \
+        "reload-sync($0 __nav_items)"
+
+    # XXX: DATA_DIR is unquoted, need to abstract settings
+    fzf_bind_sexec \
+        "f" \
+        "Family" \
+        "echo family > ${DATA_DIR}/nav_mode" \
+        "reload-sync($0 __nav_items)"
+
+    # XXX: DATA_DIR unquoted, need to abstract settings
+    fzf_bind_sexec \
+        "n" \
+        "Neighbors" \
+        "echo neighbors > ${DATA_DIR}/nav_mode" \
+        "reload-sync($0 __nav_items)"
+
+    fzf_bind_sexec \
+        "s" \
+        "Set Source" \
+        "echo {1} | $0 stdin into source" \
+        "reload-sync($0 __nav_items)"
+
+    fzf_bind_sexec \
+        "S" \
+        "Add Source" \
+        "echo {1} | $0 stdin into --union source" \
+        "reload-sync($0 __nav_items)"
+
+    fzf_bind_sexec \
+        "t" \
+        "Set Target" \
+        "echo {1} | $0 stdin into target" \
+        "reload-sync($0 __nav_items)"
+
+    fzf_bind_sexec \
+        "T" \
+        "Add Target" \
+        "echo {1} | $0 stdin into --union target" \
+        "reload-sync($0 __nav_items)"
+
+    fzf_bind_action \
+        "q" \
+        "Quit" \
+        "accept"
+}
+
+query_declare_type nav producer
+function nav {
+    if test -v 1
+    then
+        echo "${1}" > "${DATA_DIR}/nav_path"
+    fi
+
+    if ! test -e "${DATA_DIR}/nav_mode"
+    then
+        echo "neighbors" > "${DATA_DIR}/nav_mode"
+    fi
+
+    forbid_preview
+    fzf_menu --no-reload \
+        "Graph Navigator" \
+        __nav_bindings \
+        __nav_items \
+        -d '|' \
+        --with-nth='{2} {3}' \
+        --accept-nth='{1}' \
+        --preview="$0 __nav_preview"
+}
+
 ## Live Queries ***************************************************************
 
 # evaluate read-only queries each time the database changes
