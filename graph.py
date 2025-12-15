@@ -27,6 +27,17 @@ from itertools import pairwise
 
 # Helper Functions #######################################################
 
+def dict_append(d, key, value):
+  if not key in d:
+    d[key] = []
+  d[key].append(value)
+
+def get_env_bool(var, default="1"):
+  match os.getenv(var, default):
+    case "1": return True
+    case "0": return False
+    case x:   raise ValueError(f"Invalid Bool: {x}")
+
 def debug(*args):
   "Print all the arguments to stderr, returning the last one"
   print(*args, file=sys.stderr)
@@ -397,7 +408,7 @@ def dot_state_colors(state):
   elif state == "CONTEXT": return ("#aaFFdd",  "black"  )
   else:                    return ("grey95",   "grey50" )
 
-def dot_node(id):
+def dot_node(id, node_labels={}):
   """Return a formatted node in dot syntax.
 
   Node attributes are set according to the task state.
@@ -411,6 +422,7 @@ def dot_node(id):
     ("penwidth",  "2"),
     ("fillcolor", fill),
     ("fontcolor", label),
+    ("xlabel",    " ".join(node_labels.get(id, ())))
   )
   return f"{dot_quote(id)} {formatted_attrs};"
 
@@ -430,6 +442,7 @@ def dot_edges(edges, nodes, style):
 def dot():
   """Read nodes from stdin, write dot syntax to stdout."""
   nodes = set([])
+  node_labels = {}
 
   buckets = {
     b for b in os.listdir(os.getenv("BUCKET_DIR"))
@@ -437,38 +450,73 @@ def dot():
 
   projects = set()
 
-  print("digraph {")
-  # print("rankdir = LR;")
-  print("compound = true;")
-  print("fontname = monospace;")
-  print("bgcolor = \"#00000000\";")
+  print( "digraph {")
+  print(f"rankdir  = {rankdir};")
+  print( "compound = true;")
+  print(f"fontname = {font};")
+  print(f"bgcolor  = {dot_quote(background)};")
 
   for node in read_ids():
     if has("subtasks", node):
       projects.add(node)
     nodes.add(node)
 
-  for project in projects:
-    subtasks = set(get_subtasks(project))
-    nodes |= subtasks
-    subtasks.add(project)
-    # dot_subgraph(task_gloss(project), subtasks, id=project)
+  match subtasks_mode:
+    case "cluster":
+      for project in projects:
+        subtasks = set(get_subtasks(project))
+        subtasks.add(project)
+        nodes |= subtasks
+        dot_subgraph(task_gloss(project), subtasks, id=project)
+    case "label":
+      for project in projects:
+        subtasks = set(get_subtasks(project))
+        subtasks.add(project)
+        nodes |= subtasks
+        label = task_gloss(project)
+        for subtask in subtasks:
+          dict_append(node_labels, subtask, label)
+    case "hidden":
+        pass
+    case invalid:
+        raise ValueError(f"Invalid Mode: {invalid}")
 
-  for bucket in buckets:
-    contents = bucket_list(bucket)
-    for node in contents:
-      if node not in projects:
-        nodes.add(node)
-    dot_subgraph(bucket, contents)
+  match bucket_mode:
+    case "cluster":
+      for bucket in buckets:
+        contents = bucket_list(bucket)
+        for node in contents:
+          if node not in projects:
+            nodes.add(node)
+        dot_subgraph(bucket, contents)
+    case "label":
+      for bucket in buckets:
+        contents = bucket_list(bucket)
+        for node in contents:
+          if not node in projects:
+            nodes.add(node)
+          dict_append(node_labels, node, bucket)
+    case "hidden": pass
+    case invalid:  raise ValueError(f"Invalid mode: {invalid}")
 
   for node in sorted(nodes):
-    print(dot_node(node))
+    print(dot_node(node, node_labels))
 
-  dot_edges("dependencies", nodes, "solid")
-  dot_edges("contexts", nodes, "dashed")
+  if show_deps:
+    dot_edges("dependencies", nodes, "solid")
+
+  if show_contexts:
+    dot_edges("contexts", nodes, "dashed")
 
   print("}")
 
+font          =    os.getenv("GTD_GRAPH_FONT",          "monospace")
+background    =    os.getenv("GTD_GRAPH_BG",            "white")
+bucket_mode   =    os.getenv("GTD_GRAPH_BUCKET_MODE",   "cluster")
+subtasks_mode =    os.getenv("GTD_GRAPH_SUBTASKS_MODE", "cluster")
+rankdir       =    os.getenv("GTD_GRAPH_RANKDIR",       "TB")
+show_contexts = get_env_bool("GTD_GRAPH_SHOW_CONTEXTS", "1")
+show_deps     = get_env_bool("GTD_GRAPH_SHOW_DEPS",     "1")
 
 if __name__ == "__main__":
   dispatch = {
