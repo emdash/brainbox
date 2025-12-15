@@ -1537,6 +1537,7 @@ function __into_clear {
 }
 
 function __into_copy {
+    mkdir -p "${BUCKET_DIR}/${1}"
     ls "${temp}" | while read -r id; do
 	touch "${BUCKET_DIR}/$1/${id}"
     done
@@ -2032,10 +2033,10 @@ function __triage_bucket {
           --style=full \
           --layout=reverse \
           --cycle \
-          --disabled \
-          --header="Choose Bucket"
+          --header="Choose Bucket" \
+          --bind="enter:accept-or-print-query"
     )
-    echo "${1}" | into --union "${bucket}"
+    splat "${@}" | into --union "${bucket}"
 }
 
 function __triage_assign {
