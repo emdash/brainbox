@@ -766,6 +766,11 @@ function task_summary {
 # this is used for preview windows and the like.
 function task_details {
     local -r width="${FZF_PREVIEW_COLUMNS:-"${LINES:-80}"}"
+    local -r nodes_file="${DATA_DIR}/details/nodes"
+
+    mkdir -p "$(dirname "${nodes_file}")"
+    rm "${nodes_file}"
+
     task_summary "${1}"
     task_contents read "${1}" \
       | bat -f --file-name "Contents" --terminal-width "${width}"
@@ -776,6 +781,7 @@ function task_details {
       if graph_datum subtasks exists "${1}"
       then
         graph_datum subtasks read "${1}" \
+          | tee -pa "${nodes_file}" \
           | summarize \
           | bat --terminal-width "${width}"
         echo
@@ -787,6 +793,7 @@ function task_details {
       echo "Contexts"
       echo "${1}" \
           | graph adjacent contexts incoming \
+          | tee -pa "${nodes_file}" \
           | tail -n +2 \
           | summarize \
           | bat --terminal-width "${width}"
@@ -1236,7 +1243,7 @@ function choose {
       ${opt} \
       --with-nth='{2} {3}' \
       --accept-nth='{1}' \
-      --preview="$0 __choose_preview details {1}" \
+      --preview="$0 task_details {1}" \
       --bind="load:enable-search+show-input" \
       --bind="focus:execute-silent($0 splat {+1} | $0 stdin into cur)" \
     | query_filter_chain "$@"
@@ -1247,20 +1254,8 @@ function __choose_items {
 }
 
 function __choose_bindings {
-    fzf_bind_action "ctrl-D" "Details"   "change-preview($0 __choose_preview details  {1})"
-    fzf_bind_action "ctrl-n" "Neighbors" "change-preview($0 __choose_preview neighbors {1})"
-    fzf_bind_action "ctrl-f" "Family"    "change-preview($0 __choose_preview family   {1})"
     __details_bindings
     fzf_bind_action "ctrl-q" "Quit"      "accept"
-}
-
-function __choose_preview {
-    echo "${1}"
-    case "${1}" in
-        details) task_details "${2}";;
-        neighbors) echo "${2}" | neighbors | chafa;;
-        family)    echo "${2}" | family    | chafa;;
-    esac
 }
 
 # keep nodes for which the given datum exists
@@ -1748,6 +1743,7 @@ function buckets {
     ls "${BUCKET_DIR}"
 }
 
+# capture takes so many options they don't fit on one line
 declare -a capture_args=(
     '--oneline'
     '--bucket'
@@ -1755,6 +1751,7 @@ declare -a capture_args=(
     '--parents'
     '--dependents:bucket'
 )
+
 # Create a new task.
 #
 # If arguments are given, they are written as the node contents.
@@ -2067,7 +2064,7 @@ function __triage_bindings {
     fzf_bind_exec   "A"      "Assign Context" "$0 __triage_assign {+1}"
     fzf_bind_action "q"      "Quit"           "accept"
     fzf_bind_action "h"      "Toggle Help"    "toggle-header"
-    __graph_bindings
+    __details_bindings
 }
 
 command_declare triage
@@ -2079,7 +2076,7 @@ function triage {
       __triage_items \
       --multi \
       --with-nth='{2..}' \
-      --preview="$0 inbox family chafa"
+      --preview="$0 task_details {1}"
 }
 
 # Project Graph Navigator *****************************************************
@@ -2122,8 +2119,6 @@ function __nav_preview {
     fi
 
     task_details "${top}"
-    # XXX: validate before blindly executing ${mode}
-    echo "${top}" | "${mode}" | chafa
 }
 
 function __nav_items {
@@ -2147,6 +2142,7 @@ function __nav_bindings {
         "Select Next" \
         "echo {1} | $0 stdin into next"
 
+    prefs_bind
     fzf_bind_sexec \
         "enter" \
         "Goto Cur" \
