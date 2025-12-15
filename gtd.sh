@@ -377,6 +377,96 @@ function gen_uuid {
     python3 -c 'import uuid; print(uuid.uuid4())'
 }
 
+# Preferences and Settings ****************************************************
+
+# Read or write global preference settings.
+#
+# Preferences are stored in a subdirectory under `DATA_DIR`, rather
+# than `STATE_DIR`, and therefore ephemeral. They should not be used
+# for the user's primary data, but for application state that must be
+# mutable across process boundaries. This comes up often in shell
+# programming.
+#
+# Usage:
+# prefs path       <path>
+# prefs read       <path> [<default>]`
+# prefs write [-a] <path> [<value>]
+# prefs clobber    <path>
+#
+# @cmd      - `read` or `write`
+# @path     - a relative path to the preferences file in question
+#             e.g. `"nav/mode"`.
+# @default  - the value to return if no value exists.
+# @value    - the value to write if given as an argument.
+#
+# Without a default, read will fail if the given preference doesn't
+# exist. Without a value, write expects the value on stdin.
+function prefs {
+    local -r cmd="${1}"
+    # it's technically possible to avoid uses of cat here, but it
+    # involves manipulating global file descriptors, and feels like a
+    # bad idea. `cat` seems like the least bad options here, despite
+    # it being technically not needed. these
+    case "${1}" in
+        path)
+            local -r path="${DATA_DIR}/prefs/${2}"
+            echo "${path}"
+            ;;
+        read)
+            local -r path="${DATA_DIR}/prefs/${2}"
+            if test -e "${path}"
+            then
+                cat "${path}"
+            else
+                if test -v 3
+                then
+                    echo "${3}"
+                else
+                    return 1
+                fi
+            fi
+            ;;
+        write)
+            case "${2}" in
+                -a) local -r append=1; shift;;
+            esac
+
+            local -r path="${DATA_DIR}/prefs/${2}"
+
+            local dir
+            read dir < <(dirname "${path}")
+            mkdir -p "${dir}"
+            local -r dir
+
+            if test -v append
+            then
+                if test -v 3
+                then
+                    echo "${3}" >> "${path}"
+                else
+                    cat >> "${path}"
+                fi
+            else
+                if test -v 3
+                then
+                    echo "${3}" > "${path}"
+                else
+                    cat > "${path}"
+                fi
+            fi
+            ;;
+        clobber)
+            if test -f "${path}"
+            then
+                rm "${path}"
+            fi
+            ;;
+        *)
+            debug "invalid subcommand: ${1}"
+            exit 1;
+            ;;
+    esac
+}
 
 # Graph Database **************************************************************
 
@@ -1858,49 +1948,49 @@ function triage {
 # Project Graph Navigator *****************************************************
 
 function __nav_top {
-    tail -n 1 "${DATA_DIR}/nav_path"
+    prefs read "nav/path" | tail -n 1
 }
 
 function __nav_push {
-    echo "${1}" >> "${DATA_DIR}/nav_path"
+    prefs write -a "nav/path" "${1}"
 }
 
 function __nav_pop {
     local temp
     read temp < <(mktemp -p "${DATA_DIR}")
-    head -n -1 "${DATA_DIR}/nav_path" > "${temp}"
-    cp "${temp}" "${DATA_DIR}/nav_path"
+    prefs read  'nav/path' | head -n -1 > "${temp}"
+    prefs write 'nav/path' < "${temp}"
     rm "${temp}"
 }
 
 function __nav_path {
-    summarize -d '|' < "${DATA_DIR}/nav_path" | cut -d '|' -f 3 | paste -sd '/'
-    echo
+    prefs read 'nav/path' \
+      | summarize -d '|' \
+      | cut -d '|' -f 3 \
+      | paste -sd '/'
 }
 
 function __nav_preview {
-    read mode < "${DATA_DIR}/nav_mode"
-
-    local top
-    read top < <(__nav_top)
+    local top mode
+    read mode < <(prefs read 'nav/mode' neighbors)
+    read top  < <(__nav_top)
 
     echo "Mode: ${mode} "
     echo -n "Path: " ; __nav_path
 
     task_details "${top}"
+    # XXX: validate before blindly executing ${mode}
     echo "${top}" | "${mode}" | chafa
 }
 
 function __nav_items {
-    local mode
-    read mode < "${DATA_DIR}/nav_mode"
-
-    local top
-    read top < <(__nav_top)
+    local top mode
+    read mode < <(prefs read 'nav/mode' neighbors)
+    read top  < <(__nav_top)
 
     # XXX: validate before blindly executing ${mode}
     echo "${top}" \
-        | { "${mode}"; } \
+        | "${mode}" \
         | filter test "${top}" != \
         | summarize -d '|'
 }
@@ -1923,18 +2013,28 @@ function __nav_bindings {
         "$0 __nav_pop" \
         "reload-sync($0 __nav_items)"
 
-    # XXX: DATA_DIR is unquoted, need to abstract settings
     fzf_bind_sexec \
         "f" \
         "Family" \
-        "echo family > ${DATA_DIR}/nav_mode" \
+        "$0 prefs write 'nav/mode' family" \
         "reload-sync($0 __nav_items)"
 
-    # XXX: DATA_DIR unquoted, need to abstract settings
     fzf_bind_sexec \
         "n" \
         "Neighbors" \
-        "echo neighbors > ${DATA_DIR}/nav_mode" \
+        "$0 prefs write 'nav/mode' neighbors" \
+        "reload-sync($0 __nav_items)"
+
+    fzf_bind_sexec \
+        "p" \
+        "Parents" \
+        "$0 prefs write 'nav/mode' parents" \
+        "reload-sync($0 __nav_items)"
+
+    fzf_bind_sexec \
+        "c" \
+        "Children" \
+        "$0 prefs write 'nav/mode' children" \
         "reload-sync($0 __nav_items)"
 
     fzf_bind_sexec \
@@ -1962,6 +2062,11 @@ function __nav_bindings {
         "reload-sync($0 __nav_items)"
 
     fzf_bind_action \
+        "h" \
+        "Hide Help" \
+        "toggle-header"
+
+    fzf_bind_action \
         "q" \
         "Quit" \
         "accept"
@@ -1971,14 +2076,8 @@ query_declare_type nav producer
 function nav {
     if test -v 1
     then
-        echo "${1}" > "${DATA_DIR}/nav_path"
+        prefs write "nav/path" "${1}"
     fi
-
-    if ! test -e "${DATA_DIR}/nav_mode"
-    then
-        echo "neighbors" > "${DATA_DIR}/nav_mode"
-    fi
-
     forbid_preview
     fzf_menu --no-reload \
         "Graph Navigator" \
