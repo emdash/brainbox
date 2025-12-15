@@ -811,6 +811,7 @@ function task_details {
           | tail -n +2 \
           | summarize \
           | bat --terminal-width "${width}"
+      echo
     fi
 
     if prefs_bool_test "details/show_rdeps" 1
@@ -2159,7 +2160,6 @@ function __nav_bindings {
         "Select Next" \
         "echo {1} | $0 stdin into next"
 
-    prefs_bind
     fzf_bind_sexec \
         "enter" \
         "Goto Cur" \
