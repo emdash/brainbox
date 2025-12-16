@@ -1467,21 +1467,6 @@ function subtasks {
     done | "${@}"
 }
 
-# keep only nodes whose contents matches the given *pattern*.
-#
-# tbd: make this more configurable
-query_declare_type             search filter
-query_declare_default_producer search all
-function search {
-    local pattern="$1"; shift
-    local id
-    while IFS="" read -r id; do
-	if graph_datum contents read "${id}" | grep -q "${pattern}" -; then
-	    echo "${id}"
-	fi
-    done | query_filter_chain "$@"
-}
-
 ## Binary queries *************************************************************
 
 query_declare_type             union binop query
