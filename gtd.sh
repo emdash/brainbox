@@ -172,7 +172,6 @@ function fzf_help {
         read columns < <(tput cols)
     fi
     local -r width="$(( ("${columns}" / 2 ) ))"
-    debug "width: ${width}"
     echo "${1}"
     while IFS='|' read key help _
     do
