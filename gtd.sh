@@ -843,7 +843,7 @@ function task_details {
     local -r nodes_file="${DATA_DIR}/details/nodes"
 
     mkdir -p "$(dirname "${nodes_file}")"
-    rm "${nodes_file}"
+    rm "${nodes_file}" || true
 
     task_summary "${1}"
     task_contents read "${1}" \
