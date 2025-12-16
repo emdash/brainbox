@@ -1,5 +1,6 @@
 #! /usr/bin/env bash
 
+# Initialization **************************************************************
 
 set -eo pipefail
 shopt -s failglob
@@ -10,7 +11,6 @@ then
     set -x
 fi
 
-
 # name-prefixed variable here, but ...
 if test -v GTD_DATA_DIR; then
     # ... prefer to keep the short name in the rest of the code.
@@ -19,14 +19,12 @@ else
     export DATA_DIR="./gtdgraph"
 fi
 
-
 # Important directories
 # XXX: how to make lib dir point to directory containing this script?
 export STATE_DIR="${DATA_DIR}/state"
 export NODE_DIR="${STATE_DIR}/nodes"
 export HIST_DIR="${DATA_DIR}/hist/"
 export BUCKET_DIR="${DATA_DIR}/buckets"
-
 
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
@@ -89,6 +87,9 @@ function map {
 	"$@" "${input}"
     done
 }
+
+
+# Menu System *****************************************************************
 
 # Helper for creating fzf bindings
 #
@@ -222,9 +223,7 @@ function fzf_menu {
     esac
 }
 
-
 # Database Management *********************************************************
-
 
 # Initialize a GTD database relative to the current working directory.
 function database_init {
