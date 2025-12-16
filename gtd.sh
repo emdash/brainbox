@@ -1807,9 +1807,9 @@ function swap {
 	2) local a="$1"     b="$2";;
 	*) local a="source" b="target";;
     esac
-    mv "${BUCKET_DIR}/${a}" "${BUCKET_DIR}/temp"
+    mv "${BUCKET_DIR}/${a}" "${DATA_DIR}/temp"
     mv "${BUCKET_DIR}/${b}" "${BUCKET_DIR}/${a}"
-    mv "${BUCKET_DIR}/temp" "${BUCKET_DIR}/${b}"
+    mv "${DATA_DIR}/temp"   "${BUCKET_DIR}/${b}"
     follow_notify
 }
 
@@ -1831,23 +1831,44 @@ function assign {
 
 # List all known buckets
 function buckets {
-    if test -v 1
-    then
-        case "${1}" in
-            clear)
-                if test -v 2
-                then
-                    # lookup find command
-                    rm -rv --one-file-system --preserve-root=all "${BUCKET_DIR}/${2}"
-                else
-                    rm -rv --one-file-system --preserve-root=all "${BUCKET_DIR}"
-                    mkdir -p "${BUCKET_DIR}"
-                fi
-        esac
-    else
-        debug "buckets:"
-        ls "${BUCKET_DIR}"
-    fi
+  if test -v 1
+  then
+    case "${1}" in
+      clear)
+        if test -v 2
+        then
+          # lookup find command
+          rm -rv --one-file-system --preserve-root=all "${BUCKET_DIR}/${2}"
+        else
+          rm -rv --one-file-system --preserve-root=all "${BUCKET_DIR}"
+          mkdir -p "${BUCKET_DIR}"
+        fi
+        ;;
+      show)
+        # fail if there are no buckets
+        if test -s "${BUCKET_DIR}"
+        then
+          local tmpdir
+          read tmpdir < <(mktemp -d)
+          ls "${BUCKET_DIR}" | while read bucket
+          do
+            { echo "${bucket}"
+              ls "${BUCKET_DIR}/${bucket}" \
+                | summarize -d '|' \
+                | cut -d '|' -f '2,3'
+            } > "${tmpdir}/${bucket}"
+          done
+          find "${tmpdir}" \
+            | tail -n +2 \
+            | sort \
+            | apply paste -d '^' \
+            | tabulate -f plain -s '\^'
+          fi
+        ;;
+    esac
+  else
+    ls "${BUCKET_DIR}"
+  fi
 }
 
 # capture takes so many options they don't fit on one line
