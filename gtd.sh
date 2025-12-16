@@ -281,9 +281,6 @@ function database_commit {
 
     # commit the changes. arguments interpreted as message.
     database_git commit -am "$*"
-
-    # trigger update of any live queries.
-    follow_notify
 }
 
 # list all the changes to the db from the beginning of time
@@ -321,7 +318,6 @@ function database_redo {
 	    rm "${DATA_DIR}/tmp"
 	fi
 	# if all the above succeeded, trigger update of any live queries.
-	follow_notify
     else
 	echo "nothing to redo"
     fi
@@ -339,13 +335,11 @@ function database_undo {
 
     database_current_commit >> "${DATA_DIR}/undo_stack"
     database_git reset --hard HEAD^
-    follow_notify
 }
 
 # revert any uncommitted changes
 function database_revert {
     database_git reset --hard HEAD
-    follow_notify
 }
 
 # generate random UUIDs.
@@ -1565,7 +1559,6 @@ function into {
 	    ;;
     esac
     __into_delete_empty
-    follow_notify
 }
 
 function __into_clear {
@@ -1756,7 +1749,6 @@ function swap {
     mv "${BUCKET_DIR}/${a}" "${DATA_DIR}/temp"
     mv "${BUCKET_DIR}/${b}" "${BUCKET_DIR}/${a}"
     mv "${DATA_DIR}/temp"   "${BUCKET_DIR}/${b}"
-    follow_notify
 }
 
 # add subtasks to target
@@ -2339,81 +2331,6 @@ function nav {
         --with-nth='{2} {3}' \
         --accept-nth='{1}' \
         --preview="$0 __nav_preview {1}"
-}
-
-## Live Queries ***************************************************************
-
-# evaluate read-only queries each time the database changes
-#
-# the arguments are interpreted as the *initial query*.
-#
-# only one live query is supported per database. if called multiple
-# times, the *initial query* is replaced.
-command_declare follow query
-function follow {
-    local -r initial_query="$@"
-    local -r fifo="${DATA_DIR}/follow"
-
-    if query_find_consumer
-    then
-	error "live queries may not contain consumers"
-    fi
-
-    echo "${initial_query}" > "${DATA_DIR}/query"
-
-    if test -e "${fifo}"; then
-	follow_notify
-    else
-	trap __follow_exit EXIT
-	mkfifo "${fifo}"
-
-	# the protocol is really simple. we just read a line from the
-	# fifo, re-running the query each time
-	while true; do
-	    local ignored
-	    # read the query into an array
-	    local -a query
-	    read -ra query < "${DATA_DIR}/query"
-
-	    # run the query
-	    "$0" "${query[@]}"
-
-	    # output the record delimiter
-	    echo -ne '\0'
-
-	    # wait for the next notification
-	    read -r ignored < "${fifo}" || true
-	done
-    fi
-}
-
-function __follow_exit {
-    test -e "${DATA_DIR}/follow" && rm "${DATA_DIR}/follow"
-}
-
-# notify live queries to re-run after database commits.
-function follow_notify {
-    local -r fifo="${DATA_DIR}/follow"
-    if test -e "${fifo}"; then
-	echo "notify" > "${fifo}"
-    fi
-}
-
-# short for follow *query* *filter*... dot all | xdot --streaming-mode
-#
-# --streaming-mode is a customization I added, it's not available on
-# --the official xdot. PR submitted
-command_declare visualize query
-function visualize {
-    if test -z "$*"; then
-	error "An initial query is required"
-    else
-	if test -e "${DATA_DIR}/follow"; then
-	    follow "$@" dot
-	else
-	    follow "$@" dot | xdot --streaming-mode
-	fi
-    fi
 }
 
 ## State management ***********************************************************
