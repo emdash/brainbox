@@ -741,6 +741,12 @@ function __graph_bindings {
       "hidden"
 
     prefs_bind_cycle \
+        "alt-r" \
+        "Rankdir" \
+        "graph/rankdir" \
+        "TB" "LR" "RL" "BT"
+
+    prefs_bind_cycle \
        "alt-s" \
        "Subtasks Mode" \
        "graph/subtasks_mode" \
