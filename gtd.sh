@@ -825,7 +825,7 @@ function task_details {
           | cut -d '|' -f '2,3'
       fi
       echo
-    fi
+    fi > "${DATA_DIR}/subtasks.txt"
 
     if prefs_bool_test "details/show_contexts" 1
     then
@@ -841,7 +841,7 @@ function task_details {
             echo  "        ${context}"
           done
       echo
-    fi
+    fi > "${DATA_DIR}/contexts.txt"
 
     if prefs_bool_test "details/show_deps" 1
     then
@@ -853,7 +853,7 @@ function task_details {
         | summarize -d '|' \
         | cut -d '|' -f '2,3'
       echo
-    fi
+    fi > "${DATA_DIR}/deps.txt"
 
     if prefs_bool_test "details/show_rdeps" 1
     then
@@ -865,19 +865,27 @@ function task_details {
         | summarize -d '|' \
         | cut -d '|' -f '2,3'
       echo
-    fi
+    fi > "${DATA_DIR}/rdeps.txt"
 
     if prefs_bool_test "details/show_buckets" 1
     then
         echo "Buckets"
         buckets show
         echo
-    fi
+    fi > "${DATA_DIR}/buckets.txt"
 
     if prefs_bool_test "details/show_graph" 1
     then
        chafa < "${nodes_file}"
     fi
+
+    cat "${DATA_DIR}/contents.txt" \
+        "${DATA_DIR}/contexts.txt" \
+        "${DATA_DIR}/subtasks.txt" \
+        "${DATA_DIR}/deps.txt" \
+        "${DATA_DIR}/rdeps.txt"
+
+    cat "${DATA_DIR}/buckets.txt"
 }
 
 function __details_bindings {
