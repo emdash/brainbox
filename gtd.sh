@@ -153,18 +153,10 @@ function fzf_bind_sexec {
 #
 # Bindings are passed one-per-line on stdin, each of which should be
 # the output of an `fzf_bind`-family function.
-#
-# The reload action, if given, is automatically appended to the action
-# string.
 function fzf_bind {
     while IFS='|' read key _ action
     do
-        if test -v 1
-        then
-            echo "${key}:${action}+reload-sync($0 ${1})"
-        else
-            echo "${key}:${action}"
-        fi
+        echo "${key}:${action}"
     done | paste -sd ','
 }
 
@@ -195,37 +187,18 @@ function fzf_help {
 # reload_fn   - function which loads the menu contents.
 # ...         - remaining arguments are forwarded to FZF.
 function fzf_menu {
-    case "$1" in
-        --no-reload)
-            shift
-            local -r header="${1}"
-            local -r bindings_fn="${2}"
-            local -r load_fn="${3}"
-            shift 3
-            "${load_fn}" | fzf \
-                --style=full \
-                --layout=reverse \
-                --no-input \
-                --cycle \
-                --header="$("${bindings_fn}" | fzf_help "${header}")" \
-                --bind="$("${bindings_fn}" | fzf_bind)" \
-                "${@}"
-            ;;
-        *)
-            local -r header="${1}"
-            local -r bindings_fn="${2}"
-            local -r reload_fn="${3}"
-            shift 3
-            "${reload_fn}" | fzf \
-                --style=full \
-                --layout=reverse \
-                --no-input \
-                --cycle \
-                --header="$("${bindings_fn}" | fzf_help "${header}")" \
-                --bind="$("${bindings_fn}" | fzf_bind "${reload_fn}")" \
-                "${@}"
-            ;;
-    esac
+    local -r header="${1}"
+    local -r bindings_fn="${2}"
+    local -r load_fn="${3}"
+    shift 3
+    "${load_fn}" | fzf \
+       --style=full \
+       --layout=reverse \
+       --no-input \
+       --cycle \
+       --header="$("${bindings_fn}" | fzf_help "${header}")" \
+       --bind="$("${bindings_fn}" | fzf_bind)" \
+       "${@}"
 }
 
 # Database Management *********************************************************
@@ -1316,7 +1289,6 @@ function choose {
     esac
 
     fzf_menu \
-      --no-reload \
       "Choose Node: ${SAVED_ARGV[*]}" \
       __choose_bindings \
       __choose_items \
@@ -2359,7 +2331,7 @@ function nav {
     # forward stdin to this temporary file
     prefs write "nav/initial"
     forbid_preview
-    fzf_menu --no-reload \
+    fzf_menu \
         "Graph Navigator" \
         __nav_bindings \
         __nav_items \
