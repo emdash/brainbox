@@ -109,18 +109,13 @@ function apply {
 # key     - fzf-compatible key spec
 # help    - text to show in the help menu
 # action  - fzf-compatible action to be bound
-# [extra] - optional additional action to be bound
+# [extra] - optional additional actions to be bound
 function fzf_bind_action {
     local key="${1}"
     local help="${2}"
-    local action="${3}"
-    if test -v 4
-    then
-        shift 3
-        echo "${key}|${help}|${action}+${*}"
-    else
-        echo "${key}|${help}|${action}"
-    fi
+    shift 2
+    local actions="$(splat "${@}" | paste -sd '+')"
+    echo "${key}|${help}|${actions}"
 }
 
 # Helper to create execution bindings.
@@ -128,9 +123,6 @@ function fzf_bind_action {
 # The `cmd` argument is wrapped in `execute(...)`, and any remaining
 # arguments are interpreted as extra actions to be performed
 # (e.g. "up" or "down").
-#
-# If you want to specify multiple extra bindings, it's up to you to
-# include the intervening '+'.
 #
 # You can bind any command you want, but it must be a string. To bind
 # an internal command, prefix the string with "$0". Because the
