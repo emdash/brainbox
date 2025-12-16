@@ -88,6 +88,24 @@ function map {
     done
 }
 
+# Print all arguments to stdout, one per line.
+function splat {
+    for id in "${@}"
+    do
+        echo "${id}"
+    done
+}
+
+# Invoke a command with arguments from stdin, one per line.
+#
+# Example:
+#   $ seq 10 | apply echo foo
+#   foo 1 2 3 4 5 6 7 8 9 10
+function apply {
+    declare -a args
+    readarray -t args
+    "${@}" "${args[@]}"
+}
 
 # Menu System *****************************************************************
 
@@ -2093,13 +2111,6 @@ function plan {
 }
 
 # Inbox Triage ****************************************************************
-
-function splat {
-    for id in "${@}"
-    do
-        echo "${id}"
-    done
-}
 
 function __triage_bucket {
     local bucket
