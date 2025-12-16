@@ -862,21 +862,25 @@ function task_details {
       then
         graph_datum subtasks read "${1}" \
           | tee -pa "${nodes_file}" \
-          | summarize \
-          | bat --terminal-width "${width}"
-        echo
+          | summarize -d '|' \
+          | cut -d '|' -f '2,3'
       fi
+      echo
     fi
 
     if prefs_bool_test "details/show_contexts" 1
     then
       echo "Contexts"
       echo "${1}" \
-          | graph adjacent contexts incoming \
-          | tee -pa "${nodes_file}" \
-          | tail -n +2 \
-          | summarize \
-          | bat --terminal-width "${width}"
+        | graph adjacent contexts incoming \
+        | tee -pa "${nodes_file}" \
+        | tail -n +2 \
+        | summarize -d '|' \
+        | cut -d '|' -f '3' \
+        | while read context
+          do
+            echo  "        ${context}"
+          done
       echo
     fi
 
@@ -884,11 +888,11 @@ function task_details {
     then
       echo "Depends"
       echo "${1}" \
-          | graph adjacent dependencies outgoing \
-          | tee -pa "${nodes_file}" \
-          | tail -n +2 \
-          | summarize \
-          | bat --terminal-width "${width}"
+        | graph adjacent dependencies outgoing \
+        | tee -pa "${nodes_file}" \
+        | tail -n +2 \
+        | summarize -d '|' \
+        | cut -d '|' -f '2,3'
       echo
     fi
 
@@ -896,12 +900,19 @@ function task_details {
     then
       echo "Blocks"
       echo "${1}" \
-          | graph adjacent dependencies incoming \
-          | tee -pa "${nodes_file}" \
-          | tail -n +2 \
-          | summarize \
-          | bat --terminal-width "${width}"
+        | graph adjacent dependencies incoming \
+        | tee -pa "${nodes_file}" \
+        | tail -n +2 \
+        | summarize -d '|' \
+        | cut -d '|' -f '2,3'
       echo
+    fi
+
+    if prefs_bool_test "details/show_buckets" 1
+    then
+        echo "Buckets"
+        buckets show
+        echo
     fi
 
     if prefs_bool_test "details/show_graph" 1
