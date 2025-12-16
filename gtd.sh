@@ -2109,7 +2109,7 @@ function __plan_modify {
     case "${1}" in
         add) all | choose >> "${path}";;
         capture) echo | xargs -o "$0" capture --oneline ; last_captured >> "${path}";;
-        edit) graph_datum contents edit "${2}";;
+        edit) echo "${2}" | edit;;
         *) ./subtasks.py "${path}" "${@}";;
     esac
 }
