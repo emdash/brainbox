@@ -922,11 +922,13 @@ function task_details {
 }
 
 function __details_bindings {
-    prefs_bind_toggle "ctrl-s" "Subtasks" "details/show_subtasks"
-    prefs_bind_toggle "ctrl-c" "Contexts" "details/show_contexts"
-    prefs_bind_toggle "ctrl-b" "Blocks"   "details/show_rdeps"
-    prefs_bind_toggle "ctrl-d" "Depends"  "details/show_deps"
-    prefs_bind_toggle "ctrl-g" "Graph"    "details/show_graph"
+    prefs_bind_toggle "ctrl-alt-c" "Contents" "details/show_contents"
+    prefs_bind_toggle "ctrl-alt-b" "Buckets"  "details/show_buckets"
+    prefs_bind_toggle "ctrl-s"     "Subtasks" "details/show_subtasks"
+    prefs_bind_toggle "ctrl-c"     "Contexts" "details/show_contexts"
+    prefs_bind_toggle "ctrl-b"     "Blocks"   "details/show_rdeps"
+    prefs_bind_toggle "ctrl-d"     "Depends"  "details/show_deps"
+    prefs_bind_toggle "ctrl-g"     "Graph"    "details/show_graph"
     __graph_bindings
 }
 
