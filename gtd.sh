@@ -876,7 +876,13 @@ function task_details {
 
     if prefs_bool_test "details/show_graph" 1
     then
-       chafa < "${nodes_file}"
+        local source
+        read source < <(prefs read "details/graph_nodes" selected)
+        echo "Graph Source: ${source}"
+        case "${source}" in
+            selected) chafa < "${nodes_file}";;
+            query)    chafa < "${DATA_DIR}/query_results";;
+        esac
     fi
 
     cat "${DATA_DIR}/contents.txt" \
@@ -896,6 +902,10 @@ function __details_bindings {
     prefs_bind_toggle "ctrl-b"     "Blocks"   "details/show_rdeps"
     prefs_bind_toggle "ctrl-d"     "Depends"  "details/show_deps"
     prefs_bind_toggle "ctrl-g"     "Graph"    "details/show_graph"
+    prefs_bind_cycle \
+        "alt-g" \
+        "Graph Source" \
+        "details/graph_nodes" "selected" "query"
     __graph_bindings
 }
 
@@ -1310,7 +1320,7 @@ function choose {
 }
 
 function __choose_items {
-    summarize -d '|'
+    tee -p "${DATA_DIR}/query_results" | summarize -d '|'
 }
 
 function __choose_bindings {
@@ -2071,7 +2081,9 @@ function __plan_modify {
 }
 
 function __plan_items {
-    graph_datum subtasks read "${SUBTASK_ID}" | summarize
+    graph_datum subtasks read "${SUBTASK_ID}" \
+      | tee -p "${DATA_DIR}/query_results" \
+      | summarize
 }
 
 function __plan_bindings {
@@ -2222,7 +2234,7 @@ function __nav_items {
           | filter test "${top}" !=
     else
         prefs read 'nav/initial'
-    fi | summarize -d '|'
+    fi | tee -p "${DATA_DIR}/query_results" | summarize -d '|'
 
 }
 
