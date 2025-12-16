@@ -1480,6 +1480,14 @@ function dot {
     graph dot
 }
 
+# render graph directly to svg, printed to stdout
+query_declare_type             svg formatter
+query_declare_default_producer svg all
+function svg {
+    end_filter_chain "$@"
+    graph dot | env dot -Tsvg
+}
+
 # render a project graph straight to the terminal (uses chafa).
 query_declare_type             chafa formatter
 query_declare_default_producer chafa from cur subtasks
@@ -1487,9 +1495,7 @@ function chafa {
     local -r width="${FZF_PREVIEW_COLUMNS:-"${COLUMNS:-80}"}"
     local -r height="${FZF_PREVIEW_LINES:-"${LINES:-24}"}"
     end_filter_chain "$@"
-    graph dot \
-      | env dot -Tpng \
-      | env chafa -s "${width}x$(("${height}" / 2))"
+    svg | env chafa -s "${width}x$(("${height}" / 2))"
 }
 
 # select nodes from input set to be placed into the given bucket
