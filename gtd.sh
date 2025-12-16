@@ -2631,25 +2631,32 @@ function dispatch {
     fi
 }
 
-if test "$1" = "--debug"
-then
-    shift
-    for name in GTD_COMMAND_ARGS GTD_QUERY_DEFAULT \
-		    GTD_QUERY_TYPE \
-		    GTD_QUERY_CANONICAL_NAME
-    do
-	declare -n arr="${name}"
-	echo "${name}"
-	for key in "${!arr[@]}"
-	do
-	    echo "    ${key} = ${arr[${key}]}"
-	done
-    done
+case "$1" in
+    "--debug")
+      shift
+      for name in GTD_COMMAND_ARGS GTD_QUERY_DEFAULT \
+          	    GTD_QUERY_TYPE \
+          	    GTD_QUERY_CANONICAL_NAME
+      do
+          declare -n arr="${name}"
+          echo "${name}"
+          for key in "${!arr[@]}"
+          do
+              echo "    ${key} = ${arr[${key}]}"
+          done
+      done
 
-    declare -a canonical
-    query_canonicalize "$@"
-    echo "Canonical query"
-    echo "${canonical[@]}"
-else
-    dispatch "$@"
-fi
+      declare -a canonical
+      query_canonicalize "$@"
+      echo "Canonical query"
+      echo "${canonical[@]}"
+      ;;
+    "--query")
+        declare -a query
+        read -a query < <(echo "${2}")
+        dispatch "${query[@]}" "${@:3}"
+        ;;
+    *)
+        dispatch "$@"
+        ;;
+esac
