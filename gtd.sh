@@ -2120,26 +2120,37 @@ function __triage_assign {
 }
 
 function __triage_items {
-    inbox | summarize
+    apply dispatch \
+      < "${DATA_DIR}/query" \
+      | tee -p "${DATA_DIR}/query_results" \
+      | summarize
 }
 
 function __triage_bindings {
-    fzf_bind_sexec  "delete" "Drop"           "$0 splat {+1} | $0 stdin drop"
-    fzf_bind_exec   "enter"  "Edit"           "$0 splat {+1} | $0 stdin edit"
-    fzf_bind_sexec  "a"      "Activate"       "$0 splat {+1} | $0 stdin activate"
-    fzf_bind_sexec  "P"      "Persist"        "$0 splat {+1} | $0 stdin persist"
-    fzf_bind_sexec  "p"      "Plan Project"   "$0 plan {1}"
-    fzf_bind_sexec  "C"      "Make Context"   "$0 splat {+1} | $0 stdin make_context"
-    fzf_bind_exec   "c"      "Capture"        "echo | xargs -o $0 capture --oneline"   "last"
-    fzf_bind_exec   "b"      "Bucket"         "$0 __triage_bucket {+1}"
-    fzf_bind_exec   "A"      "Assign Context" "$0 __triage_assign {+1}"
-    fzf_bind_action "q"      "Quit"           "accept"
-    fzf_bind_action "h"      "Toggle Help"    "toggle-header"
+    fzf_bind_sexec  "delete" "Drop"           "$0 splat {+1} | $0 stdin drop"         "reload-sync($0 __triage_items)"
+    fzf_bind_exec   "enter"  "Edit"           "$0 splat {+1} | $0 stdin edit"         "reload-sync($0 __triage_items)"
+    fzf_bind_exec   "u"      "Undo"           "$0 undo"                               "reload-sync($0 __triage_items)"
+    fzf_bind_exec   "U"      "Redo"           "$0 redo"                               "reload-sync($0 __triage_items)"
+    fzf_bind_sexec  "a"      "Activate"       "$0 splat {+1} | $0 stdin activate"     "reload-sync($0 __triage_items)"
+    fzf_bind_sexec  "P"      "Persist"        "$0 splat {+1} | $0 stdin persist"      "reload-sync($0 __triage_items)"
+    fzf_bind_sexec  "p"      "Plan Project"   "$0 plan {1}"                           "reload-sync($0 __triage_items)"
+    fzf_bind_sexec  "C"      "Make Context"   "$0 splat {+1} | $0 stdin make_context" "reload-sync($0 __triage_items)"
+    fzf_bind_exec   "c"      "Capture"        "echo | xargs -o $0 capture --oneline"  "reload-sync($0 __triage_items)" "last"
+    fzf_bind_exec   "b"      "Bucket"         "$0 __triage_bucket {+1}"               "reload-sync($0 __triage_items)"
+    fzf_bind_exec   "A"      "Assign Context" "$0 __triage_assign {+1}"               "reload-sync($0 __triage_items)"
+    fzf_bind_action "q"      "Quit"           "accept"                                "reload-sync($0 __triage_items)"
+    fzf_bind_action "h"      "Toggle Help"    "toggle-header"                         "reload-sync($0 __triage_items)"
     __details_bindings
 }
 
-command_declare triage
+command_declare triage query
 function triage {
+    if test -v 1
+    then
+        splat "${@}" > "${DATA_DIR}/query"
+    else
+        echo inbox > "${DATA_DIR}/query"
+    fi
     forbid_preview
     fzf_menu \
       "Triage Inbox" \
