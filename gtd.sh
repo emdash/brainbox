@@ -802,7 +802,7 @@ function task_details {
     local -r nodes_file="${DATA_DIR}/details/nodes"
 
     mkdir -p "$(dirname "${nodes_file}")"
-    rm "${nodes_file}" || true
+    rm -f "${nodes_file}" || true
 
     task_summary "${1}"
     echo
@@ -812,7 +812,7 @@ function task_details {
       task_contents read "${1}" \
           | bat -f --file-name "Contents" --terminal-width "${width}"
       echo
-    fi
+    fi > "${DATA_DIR}/contents.txt"
 
     if prefs_bool_test "details/show_subtasks" 1
     then
