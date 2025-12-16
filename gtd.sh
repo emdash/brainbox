@@ -846,8 +846,14 @@ function task_details {
     rm "${nodes_file}" || true
 
     task_summary "${1}"
-    task_contents read "${1}" \
-      | bat -f --file-name "Contents" --terminal-width "${width}"
+    echo
+
+    if prefs_bool_test "details/show_contents" 1
+    then
+      task_contents read "${1}" \
+          | bat -f --file-name "Contents" --terminal-width "${width}"
+      echo
+    fi
 
     if prefs_bool_test "details/show_subtasks" 1
     then
