@@ -167,11 +167,19 @@ function fzf_bind {
 # This first agument is used as the header label, followed by the
 # table of key bindings read from stdin.
 function fzf_help {
+    if test -v COLUMNS
+    then
+        local columns="${COLUMNS}"
+    else
+        read columns < <(tput cols)
+    fi
+    local -r width="$(( ("${columns}" / 2 ) ))"
+    debug "width: ${width}"
     echo "${1}"
     while IFS='|' read key help _
     do
-        echo "${key}|${help}"
-    done | tabulate -f fancy_grid -s '\|'
+      echo "${key}|${help}"
+    done | tabulate -f tsv -s '\|' | column -c "${width}" -S 1
 }
 
 # Display an interactive menu using FZF.
