@@ -49,11 +49,6 @@ function error {
     exit 1
 }
 
-# Return true if stdin is empty
-function empty {
-    xargs -rn 1 false
-}
-
 # Subclass of error for umimplemented features.
 function not_implemented {
     error "$1 is not implemented."
