@@ -2219,123 +2219,26 @@ function __nav_items {
 }
 
 function __nav_bindings {
-    fzf_bind_sexec \
-        "focus" \
-        "Select Next" \
-        "echo {1} | $0 stdin into next"
-
-    fzf_bind_sexec \
-        "enter" \
-        "Goto Cur" \
-        "$0 __nav_push {1}" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_exec \
-        "e" \
-        "Edit" \
-        "echo {1} | $0 stdin edit" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "backspace" \
-        "Move Back" \
-        "$0 __nav_pop" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "u" \
-        "Undo" \
-        "gtd undo" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "U" \
-        "Redo" \
-        "gtd redo" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "f" \
-        "Family" \
-        "$0 prefs write 'nav/mode' family" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "n" \
-        "Neighbors" \
-        "$0 prefs write 'nav/mode' neighbors" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "p" \
-        "Parents" \
-        "$0 prefs write 'nav/mode' parents" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "c" \
-        "Children" \
-        "$0 prefs write 'nav/mode' children" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "s" \
-        "Set Source" \
-        "echo {1} | $0 stdin into source" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "S" \
-        "Add Source" \
-        "echo {1} | $0 stdin into --union source" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "t" \
-        "Set Target" \
-        "echo {1} | $0 stdin into target" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "T" \
-        "Add Target" \
-        "echo {1} | $0 stdin into --union target" \
-        "reload-sync($0 __nav_items)"
-
-    fzf_bind_sexec \
-        "ctrl-up" \
-        "Swap Source / Target" \
-        "$0 swap source target" \
-        "refresh-preview"
-
-    fzf_bind_sexec \
-        "d" \
-        "Link source to target" \
-        "$0 add" \
-        "refresh-preview"
-
-    fzf_bind_sexec \
-        "A" \
-        "Unassign source from target" \
-        "$0 assign" \
-        "refresh-preview"
-
-    fzf_bind_sexec \
-        "A" \
-        "Unassign source from target" \
-        "$0 unassign" \
-        "refresh-preview"
-
-    fzf_bind_action \
-        "h" \
-        "Hide Help" \
-        "toggle-header"
-
-    fzf_bind_action \
-        "q" \
-        "Quit" \
-        "accept"
-
+    fzf_bind_sexec  "focus"     "Select Next" "echo {1} | $0 stdin into next"           "refresh-preview"
+    fzf_bind_sexec  "enter"     "Goto Cur"    "$0 __nav_push {1}"                       "reload-sync($0 __nav_items)"
+    fzf_bind_exec   "e"         "Edit"        "echo {1} | $0 stdin edit"                "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "backspace" "Move Back"   "$0 __nav_pop"                            "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "u"         "Undo"        "gtd undo"                                "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "U"         "Redo"        "gtd redo"                                "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "f"         "Family"      "$0 prefs write 'nav/mode' family"        "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "n"         "Neighbors"   "$0 prefs write 'nav/mode' neighbors"     "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "p"         "Parents"     "$0 prefs write 'nav/mode' parents"       "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "c"         "Children"    "$0 prefs write 'nav/mode' children"      "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "s"         "Set Source"  "echo {1} | $0 stdin into source"         "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "S"         "Add Source"  "echo {1} | $0 stdin into --union source" "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "t"         "Set Target"  "echo {1} | $0 stdin into target"         "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "T"         "Add Target"  "echo {1} | $0 stdin into --union target" "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "ctrl-up"   "Swap"        "$0 swap source target"                   "refresh-preview"
+    fzf_bind_sexec  "d"         "Link"        "$0 add"                                  "refresh-preview"
+    fzf_bind_sexec  "A"         "Aassign"     "$0 assign"                               "refresh-preview"
+    fzf_bind_sexec  "A"         "Unassign"    "$0 unassign"                             "refresh-preview"
+    fzf_bind_action "h"         "Hide Help"   "toggle-header"
+    fzf_bind_action "q"         "Quit"                                                  "accept"
     __details_bindings
 }
 
