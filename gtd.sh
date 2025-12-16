@@ -1325,10 +1325,11 @@ query_declare_type             is_active filter
 query_declare_default_producer is_active all
 function is_active {
     graph filter_state \
-	NEW \
-	TODO \
-	WAITING \
-	PERSIST \
+        NEW \
+        TODO \
+        WAITING \
+        PERSIST \
+        CONTEXT \
     | query_filter_chain "$@"
 }
 
