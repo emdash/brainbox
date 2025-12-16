@@ -531,6 +531,7 @@ if __name__ == "__main__":
     "is_project":    is_project,
     "is_root":       is_root,
     "is_unassigned": is_unassigned,
+    "is_nonterminal":is_nonterminal,
     "dot":           dot,
     "touches":       touches,
     "contained":     contained,
