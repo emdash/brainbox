@@ -200,13 +200,6 @@ function test_assert_false_true {
 # implementation detail of some other function, usually a recursion
 # helper. these do not need to be tested separately.
 
-function test_empty {
-    { echo -n ''         | gtd empty ; } || error "should be true"
-    { echo foo           | gtd empty ; } && error "should be false"
-    { echo -e 'foo\nbar' | gtd empty ; } && error "should be false"
-    true
-}
-
 function test_filter {
     local data=$'yes\nno\nyes\nyes\nno'
     local expected=$'yes\nyes\nyes'
@@ -355,33 +348,53 @@ function test_adjacent {
     local t4="$(make_test_node t4)"
     local t5="$(make_test_node t5)"
 
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
-    make_test_edge "${t3}" "${t4}" dep
+    make_test_edge "${t1}" "${t2}" dependencies
+    make_test_edge "${t1}" "${t3}" dependencies
+    make_test_edge "${t2}" "${t4}" dependencies
+    make_test_edge "${t3}" "${t4}" dependencies
 
     # test outgoing edges for t1
-    local -a actual=( $(echo "${t1}" | gtd - adjacent dependencies outgoing) )
-    local -a expected=( "${t1}" "${t2}" "${t3}" )
-    assert "${actual[*]}" = "${expected[*]}"
+    local -a actual
+    readarray -t actual < <(
+        echo "${t1}" \
+            | gtd stdin adjacent dependencies outgoing \
+            | gtd map task_gloss \
+            | sort
+    )
+    assert_true test "${actual[*]}" = "t1 t2 t3"
 
-    # # test outgoing edges for t2
-    # local -a actual=( $( echo "${t2}" | gtd - adjacent dependencies outgoing ) )
-    # local -a expected=("${t4}")
-    # assert "${actual[*]}" = "${expected[*]}"
+    # test outgoing edges for t2
+    readarray -t actual < <(
+        echo "${t2}" \
+            | gtd stdin adjacent dependencies outgoing \
+            | gtd map task_gloss
+    )
+    assert_true test "${actual[*]}" = "t2 t4"
 
-    # # test outgoing edges for t3
-    # local -a actual=($(gtd graph_node_adjacent "${t3}" dep outgoing))
-    # local -a expected=("${t4}")
-    # assert "${actual[*]}" = "${expected[*]}"
+    # test outgoing edges for t3
+    readarray -t actual < <(
+        echo "${t3}" \
+            | gtd stdin adjacent dependencies outgoing \
+            | gtd map task_gloss
+    )
+    assert_true test "${actual[*]}" = "t3 t4"
 
-    # # test outgoing edges for t4
-    # assert -z "$(gtd graph_node_adjacent "${t4}" dep outgoing)"
+    # test outgoing edges for t4
+    readarray -t actual < <(
+        echo "${t4}" \
+            | gtd stdin adjacent dependencies outgoing \
+            | gtd map task_gloss
+    )
+    assert_true test "${actual[*]}" = "t4"
 
-    # # test incoming edges for t4
-    # local -a actual=($(gtd graph_node_adjacent "${t4}" dep incoming))
-    # local -a expected=("${t2}" "${t3}")
-    # assert "${actual[*]}" = "${expected[*]}"
+    # test incoming edges for t4
+    readarray -t actual < <(
+        echo "${t4}" \
+            | gtd stdin adjacent dependencies incoming \
+            | gtd map task_gloss \
+            | sort
+    )
+    assert_true test "${actual[*]}" = "t2 t3 t4"
 }
 
 function test_graph_edge {
@@ -389,8 +402,6 @@ function test_graph_edge {
     local v="fake-uuid-2"
     local edge="fake-uuid-1:fake-uuid-2"
     assert "$(gtd graph_edge   "${u}" "${v}")" = "fake-uuid-1:fake-uuid-2"
-    # assert "$(gtd graph_edge_u "${edge}")" = "fake-uuid-1"
-    # assert "$(gtd graph_edge_v "${edge}")" = "fake-uuid-2"
 }
 
 function test_graph_edge_path {
@@ -404,8 +415,8 @@ function test_graph_edge_path {
     mkdir -p "${dep}"
     mkdir -p "${ctx}"
 
-    assert "$(gtd graph_edge_path "${u}" "${v}" dependencies)" = "${dep}"
-    assert "$(gtd graph_edge_path "${u}" "${v}" context)"      = "${ctx}"
+    assert "$(gtd graph_edge_path "${u}" "${v}" dependencies)"  = "${dep}"
+    assert "$(gtd graph_edge_path "${u}" "${v}" contexts)"      = "${ctx}"
 }
 
 function test_graph_edge_create {
@@ -415,12 +426,14 @@ function test_graph_edge_create {
 
     mkdir -p "./gtdgraph/state/nodes/${u}"
     mkdir -p "./gtdgraph/state/nodes/${v}"
+    mkdir -p "./gtdgraph/state/contexts"
+    mkdir -p "./gtdgraph/state/dependencies"
 
-    gtd graph_edge_create "${u}" "${v}" dep                  || error "should succeed"
-    gtd graph_edge_create "${u}" "${w}" dep     &> /dev/null && error "should fail"
-    gtd graph_edge_create "${u}" "${v}" context              || error "should succeed"
-    gtd graph_edge_create "${w}" "${v}" context &> /dev/null && error "should fail"
-    gtd graph_edge_create "${u}" "${v}" derp    &> /dev/null && error "should fail"
+    gtd graph_edge_create "${u}" "${v}" dependencies || error "should succeed"
+    gtd graph_edge_create "${u}" "${w}" dep          &> /dev/null && error "should fail"
+    gtd graph_edge_create "${u}" "${v}" contexts     || error "should succeed"
+    gtd graph_edge_create "${w}" "${v}" contexts     &> /dev/null && error "should fail"
+    gtd graph_edge_create "${u}" "${v}" derp         &> /dev/null && error "should fail"
 
     test -d "./gtdgraph/state/dependencies/fake-uuid-1:fake-uuid-2"
 }
@@ -435,7 +448,7 @@ function test_graph_edge_delete {
 
     assert -d "./gtdgraph/state/dependencies/${u}:${v}"
 
-    gtd graph_edge_delete "${u}" "${v}" dep || error "should succeed"
+    gtd graph_edge_delete "${u}" "${v}" dependencies || error "should succeed"
 
     assert ! -d "./gtdgraph/state/dependencies/${u}:${v}"
 }
@@ -449,19 +462,33 @@ function test_graph_traverse {
     local t4="$(make_test_node t4)"
     local t5="$(make_test_node t5)"
 
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
-    make_test_edge "${t3}" "${t4}" dep
-    make_test_edge "${t5}" "${t4}" dep
+    make_test_edge "${t1}" "${t2}" dependencies
+    make_test_edge "${t1}" "${t3}" dependencies
+    make_test_edge "${t2}" "${t4}" dependencies
+    make_test_edge "${t3}" "${t4}" dependencies
+    make_test_edge "${t5}" "${t4}" dependencies
 
-    local -a actual=($(gtd graph_traverse "${t1}" dep outgoing | gtd map task_gloss ))
-    local -a expected=("t1" "t2" "t4" "t3")
-    assert "${actual[*]}" = "${expected[*]}"
+    # XXX: output order is currently unstable, complicating testing
+    # for now we will sort the output results, because we're really
+    # interested in just the set of nodes, rather than the ordering.
+    #
+    # but this will likely change soon.
+    local -a actual
+    readarray -t actual < <(
+      echo "${t1}" \
+        | gtd graph reachable dependencies outgoing \
+        | gtd map task_gloss \
+        | sort
+    )
+    assert "${actual[*]}" = "t1 t2 t3 t4"
 
-    actual=($(gtd graph_traverse "${t4}" dep incoming | gtd map task_gloss ))
-    expected=("t4" "t2" "t1" "t3" "t5")
-    assert "${actual[*]}" = "${expected[*]}"
+    readarray -t actual < <(
+        echo "${t4}" \
+          | gtd graph reachable dependencies incoming \
+          | gtd map task_gloss \
+          | sort
+    )
+    assert "${actual[*]}" = "t1 t2 t3 t4 t5"
 }
 
 function test_graph_traverse_with_cycle {
@@ -472,101 +499,13 @@ function test_graph_traverse_with_cycle {
     local t3="$(make_test_node t3)"
     local t4="$(make_test_node t4)"
 
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
-    make_test_edge "${t4}" "${t1}" dep
+    make_test_edge "${t1}" "${t2}" dependencies
+    make_test_edge "${t1}" "${t3}" dependencies
+    make_test_edge "${t2}" "${t4}" dependencies
+    make_test_edge "${t4}" "${t1}" dependencies
 
     # will fail
-    gtd graph_traverse "${t1}" dep outgoing &> /dev/null
-}
-
-function test_graph_expand {
-    gtd database_init || error "couldn't initialize test db"
-
-    local t1="$(make_test_node t1)"
-    local t2="$(make_test_node t2)"
-    local t3="$(make_test_node t3)"
-    local t4="$(make_test_node t4)"
-
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
-    make_test_edge "${t3}" "${t4}" dep
-
-    local -a actual=($(gtd graph_expand "${t1}" dep outgoing | gtd map task_gloss ))
-    local -a expected=("t1" "t2" "t4" "t3" "t4")
-    assert "${actual[*]}" = "${expected[*]}"
-}
-
-function test_graph_expand_with_depth {
-    gtd database_init || error "couldn't initialize test db"
-
-    local t1="$(make_test_node t1)"
-    local t2="$(make_test_node t2)"
-    local t3="$(make_test_node t3)"
-    local t4="$(make_test_node t4)"
-
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
-    make_test_edge "${t3}" "${t4}" dep
-
-    local -a actual=($(gtd graph_expand --depth "${t1}" dep outgoing | cut -d ' ' -f 2 ))
-    local -a expected=("0" "1" "2" "1" "2")
-    assert "${actual[*]}" = "${expected[*]}"
-}
-
-function test_graph_expand_with_cycle {
-    gtd database_init || error "couldn't initialize test db"
-
-    local t1="$(make_test_node t1)"
-    local t2="$(make_test_node t2)"
-    local t3="$(make_test_node t3)"
-    local t4="$(make_test_node t4)"
-
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
-    make_test_edge "${t4}" "${t1}" dep
-
-    # will fail
-    gtd graph_expand "${t1}" dep outgoing &> /dev/null
-}
-
-function test_task_state_is_valid {
-    assert_true  gtd task_state_is_valid NEW
-    assert_true  gtd task_state_is_valid TODO
-    assert_true  gtd task_state_is_valid DONE
-    assert_true  gtd task_state_is_valid DROPPED
-    assert_true  gtd task_state_is_valid WAITING
-    assert_true  gtd task_state_is_valid SOMEDAY
-    assert_true  gtd task_state_is_valid PERSIST
-    assert_false gtd task_state_is_valid COMPLETE
-    assert_false gtd task_state_is_valid COMPLETED
-    assert_false gtd task_state_is_valid WAIT
-    assert_false gtd task_state_is_valid DEFERRED
-    assert_false gtd task_state_is_valid FOOBAR
-}
-
-function test_task_state_is_active {
-    assert_true  gtd task_state_is_active NEW
-    assert_true  gtd task_state_is_active TODO
-    assert_false gtd task_state_is_active DONE
-    assert_false gtd task_state_is_active DROPPED
-    assert_true  gtd task_state_is_active WAITING
-    assert_false gtd task_state_is_active SOMEDAY
-    assert_true  gtd task_state_is_active PERSIST
-}
-
-function test_task_state_is_actionable {
-    assert_true  gtd task_state_is_actionable NEW
-    assert_true  gtd task_state_is_actionable TODO
-    assert_false gtd task_state_is_actionable COMPLETE
-    assert_false gtd task_state_is_actionable DROPPED
-    assert_false gtd task_state_is_actionable WAITING
-    assert_false gtd task_state_is_actionable SOMEDAY
-    assert_false gtd task_state_is_actionable PERSIST
+    gtd graph_traverse "${t1}" dependencies outgoing &> /dev/null
 }
 
 function test_task_contents {
@@ -588,8 +527,8 @@ function test_task_state {
     echo "TODO" | gtd task_state write fake-uuid
     assert "$(gtd task_state read fake-uuid)" = "TODO"
 
-    echo "COMPLETE" | gtd task_state write fake-uuid
-    assert "$(gtd task_state read fake-uuid)" = "COMPLETE"
+    echo "DONE" | gtd task_state write fake-uuid
+    assert "$(gtd task_state read fake-uuid)" = "DONE"
 }
 
 function test_task_gloss {
@@ -605,7 +544,7 @@ function test_task_gloss {
     assert "$(gtd task_gloss fake-uuid)" = "foo"
 }
 
-function test_task_is_root {
+function test_is_root {
     gtd database_init || error "couldn't initialize test db"
 
     local t1="$(make_test_node t1)"
@@ -613,17 +552,17 @@ function test_task_is_root {
     local t3="$(make_test_node t3)"
     local t4="$(make_test_node t4)"
 
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t1}" "${t2}" dependencies
+    make_test_edge "${t1}" "${t3}" dependencies
+    make_test_edge "${t2}" "${t4}" dependencies
 
-    assert_true  gtd task_is_root "${t1}"
-    assert_false gtd task_is_root "${t2}"
-    assert_false gtd task_is_root "${t3}"
-    assert_false gtd task_is_root "${t4}"
+    # t1 should be the only root
+    declare -a results
+    readarray -t results < <(gtd is_root)
+    assert_true test "${results[*]}" = "${t1}"
 }
 
-function test_task_is_leaf {
+function test_is_leaf {
     gtd database_init || error "couldn't initialize test db"
 
     local t1="$(make_test_node t1)"
@@ -631,17 +570,21 @@ function test_task_is_leaf {
     local t3="$(make_test_node t3)"
     local t4="$(make_test_node t4)"
 
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t1}" "${t2}" dependencies
+    make_test_edge "${t1}" "${t3}" dependencies
+    make_test_edge "${t2}" "${t4}" dependencies
 
-    assert_false gtd task_is_leaf "${t1}"
-    assert_false gtd task_is_leaf "${t2}"
-    assert_true  gtd task_is_leaf "${t3}"
-    assert_true  gtd task_is_leaf "${t4}"
+    # t3 and t4 are leaves in this graph
+    declare -a results
+    readarray -t results < <(
+      gtd is_leaf \
+        | gtd map task_gloss \
+        | sort
+    )
+    assert_true test "${results[*]}" = "t3 t4"
 }
 
-function test_task_is_orphan {
+function test_is_orphan {
     gtd database_init || error "couldn't initialize test db"
 
     local t1="$(make_test_node t1)"
@@ -650,79 +593,98 @@ function test_task_is_orphan {
     local t4="$(make_test_node t4)"
     local t5="$(make_test_node t5)"
 
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t1}" "${t2}" dependencies
+    make_test_edge "${t1}" "${t3}" dependencies
+    make_test_edge "${t2}" "${t4}" dependencies
 
-    assert_false gtd task_is_orphan "${t1}"
-    assert_false gtd task_is_orphan "${t2}"
-    assert_false gtd task_is_orphan "${t3}"
-    assert_false gtd task_is_orphan "${t4}"
-    assert_true  gtd task_is_orphan "${t5}"
+    declare -a results
+    readarray -t results < <(
+      gtd is_orphan \
+        | gtd map task_gloss \
+        | sort
+    )
+    assert_true test "${results[*]}" = "t5"
 }
 
-function test_task_is_new {
+function test_is_new {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
 
     echo "NEW" | gtd task_state write fake-uuid
-    assert_true gtd task_is_new fake-uuid
+    assert_true test "$(gtd is_new)" = "fake-uuid"
 
-    echo "TODO" | gtd task_state write fake-uuid
-    assert_false gtd task_is_new fake-uuid
-
-    echo "COMPLETE" | gtd task_state write fake-uuid
-    assert_false gtd task_is_new fake-uuid
-
-    echo "WAITING" | gtd task_state write fake-uuid
-    assert_false gtd task_is_new fake-uuid
-
-    echo "SOMEDAY" | gtd task_state write fake-uuid
-    assert_false gtd task_is_new fake-uuid
+    for state in TODO DONE WAITING SOMEDAY
+    do
+        echo "${state}" | gtd task_state write fake-uuid
+        assert_true test -z "$(gtd is_new)"
+    done
 }
 
-function test_task_is_active {
+function test_is_active {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
 
-    echo "NEW" | gtd task_state write fake-uuid
-    assert_true gtd task_is_active fake-uuid
+    for state in NEW TODO WAITING PERSIST CONTEXT
+    do
+        echo "${state}" | gtd task_state write fake-uuid
+        assert_true test "$(gtd is_active)" = fake-uuid
+    done
 
-    echo "TODO" | gtd task_state write fake-uuid
-    assert_true gtd task_is_active fake-uuid
-
-    echo "COMPLETE" | gtd task_state write fake-uuid
-    assert_false gtd task_is_active fake-uuid
-
-    echo "WAITING" | gtd task_state write fake-uuid
-    assert_true gtd task_is_active fake-uuid
-
-    echo "SOMEDAY" | gtd task_state write fake-uuid
-    assert_false gtd task_is_active fake-uuid
-
+    for state in DONE DROPPED SOMEDAYx
+    do
+        echo "${state}" | gtd task_state write fake-uuid
+        assert_true test -z "$(gtd is_active)"
+    done
 }
 
-function test_task_is_actionable {
+function test_is_actionable {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
 
-    echo "NEW" | gtd task_state write fake-uuid
-    assert_true gtd task_is_actionable fake-uuid
+    for state in NEW TODO
+    do
+        echo "${state}" | gtd task_state write fake-uuid
+        assert_true test "$(gtd is_actionable)" = fake-uuid
+    done
 
-    echo "TODO" | gtd task_state write fake-uuid
-    assert_true gtd task_is_actionable fake-uuid
-
-    echo "COMPLETE" | gtd task_state write fake-uuid
-    assert_false gtd task_is_actionable fake-uuid
-
-    echo "WAITING" | gtd task_state write fake-uuid
-    assert_false gtd task_is_actionable fake-uuid
-
-    echo "SOMEDAY" | gtd task_state write fake-uuid
-    assert_false gtd task_is_active fake-uuid
+    for state in DONE WAITING SOMEDAY DROPPED
+    do
+        echo "${state}" | gtd task_state write fake-uuid
+        assert_true test -z "$(gtd is_actionable)"
+    done
 }
 
-function test_task_is_next_action {
+function test_is_next {
+    gtd init
+
+    local t1="$(make_test_node t1)"
+    local t2="$(make_test_node t2)"
+    local t3="$(make_test_node t3)"
+    local t4="$(make_test_node t4)"
+    # orphan nodes are also next actions
+    local t5="$(make_test_node t5)"
+
+    make_test_edge "${t1}" "${t2}" dependencies
+    make_test_edge "${t1}" "${t3}" dependencies
+    make_test_edge "${t3}" "${t4}" dependencies
+    make_test_edge "${t2}" "${t4}" dependencies
+
+    echo "TODO" | gtd task_state write "${t1}"
+    echo "TODO" | gtd task_state write "${t2}"
+    echo "TODO" | gtd task_state write "${t3}"
+    echo "TODO" | gtd task_state write "${t4}"
+    echo "TODO" | gtd task_state write "${t5}"
+
+    declare -a results
+    readarray -t results < <(
+      gtd is_next \
+        | gtd map task_gloss \
+        | sort
+    )
+    assert_true test "${results[*]}" = "t4 t5"
+}
+
+function test_is_unassigned {
     gtd init
 
     local t1="$(make_test_node t1)"
@@ -731,73 +693,58 @@ function test_task_is_next_action {
     local t4="$(make_test_node t4)"
     local t5="$(make_test_node t5)"
 
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t3}" "${t4}" dep
-    make_test_edge "${t2}" "${t4}" dep
+    make_test_edge "${t1}" "${t2}" dependencies
+    make_test_edge "${t1}" "${t3}" dependencies
+    make_test_edge "${t3}" "${t4}" dependencies
+    make_test_edge "${t2}" "${t4}" dependencies
 
-    gtd activate
+    echo "TODO" | gtd task_state write "${t1}"
+    echo "TODO" | gtd task_state write "${t2}"
+    echo "TODO" | gtd task_state write "${t3}"
+    echo "TODO" | gtd task_state write "${t4}"
+    echo "TODO" | gtd task_state write "${t5}"
 
-    assert_false gtd task_is_next_action "${t1}"
-    assert_false gtd task_is_next_action "${t2}"
-    assert_false gtd task_is_next_action "${t3}"
-    assert_true  gtd task_is_next_action "${t4}"
-    assert_true  gtd task_is_next_action "${t5}"
+    local -a results
+    readarray -t results < <(
+        gtd is_unassigned \
+            | gtd map task_gloss \
+            | sort
+    )
+    assert_true test "${results[*]}" = "t1 t2 t3 t4 t5"
+
+    make_test_edge "${t5}" "${t4}" contexts
+    local -a results
+    readarray -t results < <(
+        gtd is_unassigned \
+            | gtd map task_gloss \
+            | sort
+    )
+    assert_true test "${results[*]}" = "t1 t2 t3 t5"
+
+    make_test_edge "${t5}" "${t1}" contexts
+    make_test_edge "${t5}" "${t4}" contexts
+    local -a results
+    readarray -t results < <(
+        gtd is_unassigned \
+            | gtd map task_gloss \
+            | sort
+    )
+    assert_true test "${results[*]}"  = "t2 t3 t5"
 }
 
-function test_task_is_next_action {
-    gtd init
-
-    local t1="$(make_test_node t1)"
-    local t2="$(make_test_node t2)"
-    local t3="$(make_test_node t3)"
-    local t4="$(make_test_node t4)"
-    local t5="$(make_test_node t5)"
-
-    make_test_edge "${t1}" "${t2}" dep
-    make_test_edge "${t1}" "${t3}" dep
-    make_test_edge "${t3}" "${t4}" dep
-    make_test_edge "${t2}" "${t4}" dep
-
-    assert_true gtd task_is_unassigned "${t1}"
-    assert_true gtd task_is_unassigned "${t2}"
-    assert_true gtd task_is_unassigned "${t3}"
-    assert_true gtd task_is_unassigned "${t4}"
-    assert_true gtd task_is_unassigned "${t5}"
-
-    make_test_edge "${t5}" "${t4}" context
-    assert_true  gtd task_is_unassigned "${t1}"
-    assert_true  gtd task_is_unassigned "${t2}"
-    assert_true  gtd task_is_unassigned "${t3}"
-    assert_false gtd task_is_unassigned "${t4}"
-    assert_true  gtd task_is_unassigned "${t5}"
-
-    make_test_edge "${t5}" "${t1}" context
-    assert_false gtd task_is_unassigned "${t1}"
-    assert_true  gtd task_is_unassigned "${t2}"
-    assert_true  gtd task_is_unassigned "${t3}"
-    assert_false gtd task_is_unassigned "${t4}"
-    assert_true  gtd task_is_unassigned "${t5}"
-}
-
-function test_task_is_waiting {
+function test_is_waiting {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
 
-    echo "NEW" | gtd task_state write fake-uuid
-    assert_false gtd task_is_waiting fake-uuid
-
-    echo "TODO" | gtd task_state write fake-uuid
-    assert_false gtd task_is_waiting fake-uuid
-
-    echo "COMPLETE" | gtd task_state write fake-uuid
-    assert_false gtd task_is_waiting fake-uuid
+    local -a results
+    for state in NEW TODO DONE SOMEDAY
+    do
+        echo "${state}" | gtd task_state write fake-uuid
+        assert_true test "$(gtd is_waiting)" = ""
+    done
 
     echo "WAITING" | gtd task_state write fake-uuid
-    assert_true gtd task_is_waiting fake-uuid
-
-    echo "SOMEDAY" | gtd task_state write fake-uuid
-    assert_false gtd task_is_waiting fake-uuid
+    assert_true test "$(gtd is_waiting)" = "fake-uuid"
 }
 
 function test_task_summary {
@@ -806,39 +753,40 @@ function test_task_summary {
     echo "NEW" | gtd task_state write fake-uuid
 
     echo "foo bar baz" | gtd task_contents write fake-uuid
-    assert "$(gtd task_summary fake-uuid)" = "fake-uuid     NEW foo bar baz"
+    assert_true test "$(gtd task_summary fake-uuid)" = "fake-uuid     NEW foo bar baz"
 }
 
 function test_task_auto_triage {
     gtd init
 
-    # should automaticall transition from NEW to TODO
+    # should auto-transition from NEW to TODO
     gtd graph_node_create fake-uuid > /dev/null
     echo "NEW" | gtd task_state write fake-uuid
-    assert_true gtd task_is_new fake-uuid
+
+    assert_true test "$(gtd task_state read fake-uuid)" = "NEW"
     gtd task_auto_triage fake-uuid
-    assert "$(gtd task_state read fake-uuid)" = "TODO"
+    assert_true test "$(gtd task_state read fake-uuid)" = "TODO"
 
     # should not change state
-    echo "COMPLETE" | gtd task_state write fake-uuid
+    echo "DONE" | gtd task_state write fake-uuid
     gtd task_auto_triage fake-uuid
-    assert "$(gtd task_state read fake-uuid)" = "COMPLETE"
+    assert_true test "$(gtd task_state read fake-uuid)" = "DONE"
 }
 
 function test_task_activate {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
     echo "DROPPED" | gtd task_state write fake-uuid
-    assert_false gtd task_is_active fake-uuid
+    assert_true test "$(gtd task_state read fake-uuid)" = "DROPPED"
     gtd task_activate fake-uuid
-    assert_true gtd task_is_active fake-uuid
+    assert_true test "$(gtd task_state read fake-uuid)" = "TODO"
 }
 
 function test_task_drop {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
     echo "NEW" | gtd task_state write fake-uuid
-    assert_true gtd task_is_new fake-uuid
+    assert_true test "$(gtd task_state read fake-uuid)" = "NEW"
     gtd task_drop fake-uuid
     assert "$(gtd task_state read fake-uuid)" = "DROPPED"
 }
@@ -847,7 +795,7 @@ function test_task_complete {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
     echo "NEW" | gtd task_state write fake-uuid
-    assert_true gtd task_is_new fake-uuid
+    assert_true test "$(gtd task_state read fake-uuid)" = "NEW"
     gtd task_complete fake-uuid
     assert "$(gtd task_state read fake-uuid)" = "DONE"
 }
@@ -856,7 +804,7 @@ function test_task_defer {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
     echo "NEW" | gtd task_state write fake-uuid
-    assert_true gtd task_is_new fake-uuid
+    assert_true test "$(gtd task_state read fake-uuid)" = "NEW"
     gtd task_defer fake-uuid
     assert "$(gtd task_state read fake-uuid)" = "SOMEDAY"
 }
@@ -872,7 +820,6 @@ function run_all_tests {
     should_pass test_assert_false_false
     should_fail test_assert_false_true
 
-    should_pass test_empty
     should_pass test_filter
     should_pass test_map
 
@@ -884,7 +831,6 @@ function run_all_tests {
     should_pass test_graph_node_gen_id
     should_pass test_graph_node_list
     should_pass test_graph_node_create
-    # should_pass test_graph_node_adjacent
 
     should_pass test_graph_edge
     should_pass test_graph_edge_path
@@ -894,25 +840,21 @@ function run_all_tests {
     should_pass test_graph_datum
     should_pass test_graph_traverse
     should_fail test_graph_traverse_with_cycle
-    should_pass test_graph_expand
-    should_pass test_graph_expand_with_depth
-    should_fail test_graph_expand_with_cycle
 
     should_pass test_task_contents
-    should_pass test_task_gloss
-    should_pass test_task_is_root
-    should_pass test_task_is_leaf
     should_pass test_task_state
-    should_pass test_task_state_is_valid
-    should_pass test_task_state_is_active
-    should_pass test_task_state_is_actionable
+    should_pass test_task_gloss
+    should_pass test_is_new
+    should_pass test_is_next
+    should_pass test_adjacent
+    should_pass test_is_unassigned
+    should_pass test_is_root
+    should_pass test_is_leaf
+    should_pass test_is_orphan
+    should_pass test_is_active
+    should_pass test_is_actionable
     should_pass test_task_auto_triage
-    should_pass test_task_is_active
-    should_pass test_task_is_actionable
-    should_pass test_task_is_new
-    should_pass test_task_is_next_action
-    should_pass test_task_is_orphan
-    should_pass test_task_is_waiting
+    should_pass test_is_waiting
     should_pass test_task_summary
     should_pass test_task_drop
     should_pass test_task_activate

@@ -1411,6 +1411,11 @@ query_declare_type             is_root filter
 query_declare_default_producer is_root all
 function is_root { graph is_root | query_filter_chain "$@" ; }
 
+# Keep only tasks which are the root of a subgraph
+query_declare_type             is_leaf filter
+query_declare_default_producer is_leaf all
+function is_leaf { graph is_leaf | query_filter_chain "$@" ; }
+
 # Keep only tasks not assigned to any context
 query_declare_type             is_unassigned filter
 query_declare_default_producer is_unassigned all
