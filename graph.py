@@ -234,21 +234,6 @@ def traverse(node, edges, direction, ancestors=None, seen=None):
         seen    | {node}
       )
 
-def expand(node, edges, direction, ancestors, depth):
-  """Compute the tree expansion of the subgraph rooted at node.
-
-  XXX: I'm inclined to think this function isn't super useful. The
-  trees it produces will be counter-intutive to those folks expecting
-  an outline format, and we'd do better to think of how to extract an
-  outline format instead. But that would be a different algorithm.
-  """
-  if node in ancestors:
-    print("Graph contains a cycle", file=sys.stderr)
-    exit(1)
-  print(node, depth)
-  for adj in node_adjacent(node, edges, direction):
-    expand(adj, edges, direction, ancestors | {node}, depth + 1)
-
 def has_adjacent(node, edges, direction):
   """True if a node has edges in the given direction"""
   return len(list(node_adjacent(node, edges, direction))) > 0

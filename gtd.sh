@@ -1631,30 +1631,6 @@ function summarize {
     map task_summary -d "${sep}"
 }
 
-# tree expansion of project rooted at the given node for given edge set and direction.
-#
-# tree filters can be chained onto this, but not graph filters
-query_declare_type             tree formatter
-query_declare_default_producer tree inbox
-function tree { graph expand "$1" "$2" | __tree_indent "$@" ; }
-
-function __tree_indent {
-    local marker='  '
-
-    local depth
-    while IFS="" read -r id depth; do
-	printf "%s %7s" "${id}" "$(task_state read "${id}")"
-
-	# indent the line.
-	for i in $(seq $(("${depth}"))); do
-	    echo -n "${marker}"
-	done
-
-	printf " $(task_gloss "${id}")\n"
-    done
-}
-
-
 ## Updates ********************************************************************
 
 # Reactivate each task id
