@@ -2,3 +2,5 @@ gtdgraph/*
 *~
 test/*
 tattle/*
+__pycache__/*
+schedule/__pycache__/*
