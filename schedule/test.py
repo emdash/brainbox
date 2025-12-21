@@ -7,9 +7,7 @@ import json
 from schedule import *
 import sys
 
-def test_superordinal():
-  assert superordinal(datetime(2025, 12, 17)) == 63901612800
-  assert superordinal(1 * day) == 86400
+from itertools import islice
 
 def test_first_of_month():
   for month in range(1, 13):
@@ -81,9 +79,6 @@ def test_intervals():
     assert i1.intersects(i)
   assert not i1.intersects(i4)
 
-  # assert     i1.contains(Interval(now + 1 * minute, now + 3 * day - 1 * minute))
-  # assert not Interval(now + 1 * minute, now + 3 * day - 1 * minute).contains(i)
-
   assert list(Interval(today, tomorrow).subdivide(4 * hour)) == [
     Interval(today            , today +  4 * hour),
     Interval(today +  4 * hour, today +  8 * hour),
@@ -93,52 +88,226 @@ def test_intervals():
     Interval(today + 20 * hour, tomorrow),
   ]
 
-def test_periodic():
-  p = Periodic(4 * hour, 10 * minute, 0 * minute)
-  step = 1 * hour
-  for i in range(1 * day // step):
-    x = today + i * step
-    if p.intersects(Interval(x, x + step)):
-      print('|', end='')
-    else:
-      print('.', end='')
-  print()
-
 def test_display_month():
   pass
 
 def test_interval_sequence():
-  pass
+  assert list(islice(Interval.sequence(
+    datetime(2025, 11, 10),
+    5 * minute
+  ), 0, 3)) == [
+    Interval.fromStartDuration(datetime(2025, 11, 10),        5 * minute),
+    Interval.fromStartDuration(datetime(2025, 11, 10, 0, 5),  5 * minute),
+    Interval.fromStartDuration(datetime(2025, 11, 10, 0, 10), 5 * minute)
+  ]
+
+  assert list(islice(Interval.sequence(
+    datetime(2025, 11, 10),
+    5 * minute,
+    1 * hour
+  ), 0, 3)) == [
+    Interval.fromStartDuration(datetime(2025, 11, 10, 0, 0), 5 * minute),
+    Interval.fromStartDuration(datetime(2025, 11, 10, 1, 0), 5 * minute),
+    Interval.fromStartDuration(datetime(2025, 11, 10, 2, 0), 5 * minute)
+  ]
+
+  assert list(islice(Interval.sequence(
+    datetime(2025, 11, 10),
+    5 * minute,
+    1 * hour,
+    2 * minute
+  ), 0, 3)) == [
+    Interval.fromStartDuration(datetime(2025, 11, 10, 0, 2), 5 * minute),
+    Interval.fromStartDuration(datetime(2025, 11, 10, 1, 2), 5 * minute),
+    Interval.fromStartDuration(datetime(2025, 11, 10, 2, 2), 5 * minute)
+  ]
+
 
 def test_interval_merge_consecutive():
-  pass
+  assert list(Interval.mergeConsecutive([
+    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15, 00))
+  ])) == [
+    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15, 00))
+  ]
+
+  assert list(Interval.mergeConsecutive([
+    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15)),
+    Interval(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 16)),
+    Interval(datetime(2025, 11, 10, 16, 00), datetime(2025, 11, 10, 19, 39))
+  ])) == [Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 19,  39))]
+
+  assert list(Interval.mergeConsecutive([
+    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 14, 45)),
+    Interval(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 16, 1)),
+    Interval(datetime(2025, 11, 10, 16, 00), datetime(2025, 11, 10, 19, 39))
+  ])) == [
+    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 14,  45)),
+    Interval(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 19,  39)),
+  ]
 
 def test_interval_within():
-  pass
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).within(datetime(2025, 10, 11, 12, 30)) == True
+
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).within(datetime(2025, 10, 12, 0, 0)) == False
+
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).within(datetime(2025, 10, 12, 23, 59, 59, 999999)) == False
+
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).within(datetime(2025, 10, 10, 23, 59, 59, 999999)) == False
+
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).within(datetime(2025, 10, 9, 9, 30)) == False
+
 
 def test_interval_intersects():
-  pass
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).intersects(Interval(
+    datetime(2025, 10, 11, 12, 30),
+    datetime(2025, 10, 11, 13, 00)
+  )) == True
+
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).intersects(Interval(
+    datetime(2025, 10, 10, 23, 30),
+    datetime(2025, 10, 10, 23, 59, 59, 999999)
+  )) == False
+
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).intersects(Interval(
+    datetime(2025, 10, 10, 23, 30),
+    datetime(2025, 10, 11)
+  )) == True
+
+  assert Interval(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ).intersects(Interval(
+    datetime(2025, 10, 12),
+    datetime(2025, 10, 13)
+  )) == True
 
 def test_interval_span():
-  pass
+  assert Interval(
+    datetime(2025, 10, 11, 16, 00),
+    datetime(2025, 10, 11, 16, 30)
+  ).span(Interval(
+    datetime(2025, 10, 11, 16, 45),
+    datetime(2025, 10, 11, 17, 20)
+  )) == Interval(
+    datetime(2025, 10, 11, 16, 00),
+    datetime(2025, 10, 11, 17, 20)
+  )
 
 def test_interval_intersection():
-  pass
+  assert Interval(
+    datetime(2025, 10, 11, 16, 00),
+    datetime(2025, 10, 11, 16, 45)
+  ).intersection(Interval(
+    datetime(2025, 10, 11, 16, 30),
+    datetime(2025, 10, 11, 17, 20)
+  )) == Interval(
+    datetime(2025, 10, 11, 16, 30),
+    datetime(2025, 10, 11, 16, 45)
+  )
 
 def test_interval_ordinals():
-  pass
+  assert list(Interval(
+    datetime(2025, 10, 11, 16, 30),
+    datetime(2025, 10, 11, 17, 30)
+  ).ordinals()) == [739535]
+
+  assert list(Interval(
+    datetime(2025, 10, 11, 16, 30),
+    datetime(2025, 10, 12, 17, 30)
+  ).ordinals()) == [739535, 739536]
 
 def test_explicit():
-  pass
+  # no overlap
+  assert list(Explicit([
+    Interval(
+      datetime(2025, 10, 11, 16, 00),
+      datetime(2025, 10, 11, 16, 30)
+    ), Interval(
+      datetime(2025, 10, 11, 16, 45),
+      datetime(2025, 10, 11, 17, 20)
+    ), Interval(
+      datetime(2025, 10, 11, 17, 35),
+      datetime(2025, 10, 11, 17, 47)
+    )
+  ]).intervals(Interval(
+      datetime(2025, 10, 10, 16, 00),
+      datetime(2025, 10, 13, 16, 30),
+  ))) == [
+    Interval(
+      datetime(2025, 10, 11, 16, 00),
+      datetime(2025, 10, 11, 16, 30)
+    ), Interval(
+      datetime(2025, 10, 11, 16, 45),
+      datetime(2025, 10, 11, 17, 20)
+    ), Interval(
+      datetime(2025, 10, 11, 17, 35),
+      datetime(2025, 10, 11, 17, 47)
+    )
+  ]
 
-def test_union():
-  pass
-
-def test_intersection():
-  pass
+  # no overlap
+  assert list(Explicit([
+    Interval(
+      datetime(2025, 10, 11, 16, 00),
+      datetime(2025, 10, 11, 16, 30)
+    ), Interval(
+      datetime(2025, 10, 11, 16, 45),
+      datetime(2025, 10, 11, 17, 20)
+    ), Interval(
+      datetime(2025, 10, 11, 17, 15),
+      datetime(2025, 10, 11, 17, 47)
+    )
+  ]).intervals(Interval(
+      datetime(2025, 10, 10, 16, 00),
+      datetime(2025, 10, 13, 16, 30),
+  ))) == [
+    Interval(
+      datetime(2025, 10, 11, 16, 00),
+      datetime(2025, 10, 11, 16, 30)
+    ), Interval(
+      datetime(2025, 10, 11, 16, 45),
+      datetime(2025, 10, 11, 17, 47)
+    )
+  ]
 
 def test_periodic():
-  pass
+  assert list(Periodic(
+    4 * hour,
+    15 * minute,
+  ).intervals(Interval.fromDate(datetime(2025, 10, 11)))
+  ) == [
+    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)),
+    Interval(start=datetime(2025, 10, 11, 4, 0), end=datetime(2025, 10, 11, 4, 15)),
+    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)),
+    Interval(start=datetime(2025, 10, 11, 12, 0), end=datetime(2025, 10, 11, 12, 15)),
+    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)),
+    Interval(start=datetime(2025, 10, 11, 20, 0), end=datetime(2025, 10, 11, 20, 15)),
+    Interval(start=datetime(2025, 10, 12, 0, 0), end=datetime(2025, 10, 12, 0, 1))
+  ]
 
 def test_at_time():
   pass
@@ -152,7 +321,16 @@ def test_weekly():
 def test_monthly():
   pass
 
+def test_not():
+  pass
+
 def test_nth_weekday_set():
+  pass
+
+def test_union():
+  pass
+
+def test_intersection():
   pass
 
 def test_fromJSON():

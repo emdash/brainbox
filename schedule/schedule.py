@@ -41,21 +41,6 @@ def debug(*args):
   print(*args)
   return args[-1]
 
-def superordinal(x):
-  """Like datetime.toordinal, but in seconds."""
-  match x:
-    case datetime() as dt:
-      return dt.second           \
-        +  60 * (dt.minute       \
-        + (60 * (dt.hour         \
-        + (24 * dt.toordinal()))))
-    case timedelta() as td:
-      return td.seconds + 60 * 60 * 24 * td.days
-    case date() as d:
-      return d.toordinal() * 86400
-    case invalid:
-      raise ValueError(f"Cannot convert {invalid} to superordinal")
-
 def firstOfMonth(month=today.month, year=today.year):
   """Return the date on which the given month begins."""
   return datetime(year, month, 1)
@@ -120,7 +105,7 @@ def nthWeekday(n, weekday, month=today.month, year=today.year):
   else:
     raise ValueError("`n` cannot be 0")
 
-@dataclass
+@dataclass(order=True)
 class Interval:
   """The time between two timestamps, or a start timestamp and duration.
 
@@ -148,21 +133,24 @@ class Interval:
   def fromDate(self, dt, end=None):
     """Construct an interval that spans a date or date range."""
     match end:
-      case None: return Interval(startOfDay(dt), endOfDay(dt))
-      case end:  return Interval(startOfDay(dt), endOfDay(end))
+      case None: return Interval(startOfDay(dt), startOfDay(dt  + 1 * day))
+      case end:  return Interval(startOfDay(dt), startOfDay(end + 1 * day))
 
   @classmethod
-  def sequence(self, start, duration, period=None, phase=0):
+  def sequence(self, start, duration, period=None, phase=None):
     """Yields an infinite sequence of evenly-spaced intervals."""
     if period is None:
       period = duration
 
-    assert isinstance(datetime, start)
-    assert isinstance(timedelta, duration)
-    assert isinstance(timedelta, period)
-    assert period > 0
-    assert duration > 0
-    assert phase >= 0
+    if phase is None:
+      phase = timedelta()
+
+    assert isinstance(start, datetime)
+    assert isinstance(duration, timedelta)
+    assert isinstance(period, timedelta)
+    assert period > timedelta()
+    assert duration > timedelta()
+    assert phase >= timedelta()
     assert phase < period
 
     i = start
@@ -184,8 +172,8 @@ class Interval:
           else:
             yield next
             next = i
-    if i:
-      yield i
+    if next:
+       yield next
 
   def within(self, timestamp):
     """True if timestamp occurs on or before start, and strictly before end.
@@ -196,29 +184,10 @@ class Interval:
     return self.start <= timestamp < self.end
 
   def intersects(self, interval):
-    """True if any part of this interval overlaps with the other interval."""
-    # These are the cases that match --
-    #     [ss---------------se]
-    #----------------------------------
-    #  [is-----------------------ie]
-    #  [is----------ie]
-    #         [is--------ie]
-    #                [is----------ie]
-
-    points = [
-      (self.start,     "ss"),
-      (self.end,       "se"),
-      (interval.start, "is"),
-      (interval.end,   "ie")
-    ]
-    points.sort(key = lambda x: x[0])
-
-    match [p[1] for p in points]:
-      case ["is", "ss", "se", "ie"]: return True
-      case ["is", "ss", "ie", "se"]: return True
-      case ["ss", "is", "ie", "se"]: return True
-      case ["ss", "is", "se", "ie"]: return True
-      case _:                        return False
+    return self.within(interval.start) \
+      or self.within(interval.end)     \
+      or interval.within(self.start)   \
+      or interval.within(self.end)
 
   def subdivide(self, interval):
     """Subdivide this interval evenly into n subintervals"""
@@ -255,24 +224,28 @@ class Interval:
 
     This will always yield at least one value.
     """
-    return range(self.start.toordinal(), self.end.toordinal() + 1, 1)
+    return range(self.start.toordinal(), self.end.toordinal() + 1)
 
 @dataclass
 class DateSet:
   """Represents when an event can happen.
 
   We can ask a date set whether or not an arbitrary interval
-  intersects it, and we can ask for the set of intervals contained
-  within the date set down to some precision.
+  intersects it, and we can ask for the set for all the intervals it
+  contains which intersect the window.
 
-  A date set can be finite or infinite. For finite date sets, we can
-  find the span.
-
+  A DateSet can be finite or infinite. For finite sets, we can find
+  the span (i.e. bounding interval, or the smallest interval that
+  contains every interval in the set).
   """
 
   def intersects(window):
-    """True if window coincides with any portion"""
-    raise NotImplemented
+    """True if window intersects any interval in the set."""
+    try:
+      self.intervals(window).next()
+    except StopIteration:
+      return False
+    return True
 
   def is_finite(self):
     """True if this date set is finite."""
@@ -290,11 +263,14 @@ class DateSet:
 class Explicit(DateSet):
   """An explicit list of intervals.
 
-  Intersection is defined in terms of `intervals`, returning true if any
+  Intersection and containment is defined in terms of `intervals`, returning true if any
   of the subintervals intersects.
   """
 
   given : List[Interval]
+
+  def __post_init__(self):
+    self.given = list(Interval.mergeConsecutive(sorted(self.given)))
 
   def is_finite(self):
     return True
@@ -317,26 +293,57 @@ class Explicit(DateSet):
 
 @dataclass
 class Implicit(DateSet):
-  """Base class for types defining intervals via an implicit function.
+  """Base class for types defining intervals via an implicit function
+  `within`, which subclasses must implement.
 
-  `intervals` is defined in terms of `intersection`, sampling the
-  `intersection` at some precision, and then merging the result.
+  Certain patterns of repetition are simpler to define implicitly
+  rather than explicitly, particularly when used with logical
+  operations.
+
+  An implicit function is a predicate that defines a set, where True
+  indicates that its argument is within the boundary of the set.
+
+  We can't know exactly which intervals such a set contains, but we
+  can sample it down to some arbitrary resolution and then look for
+  runs of contigous sub-intervals. As long as the sample points align
+  with the actual subintervals, there won't be any artifacts or gaps.
+
+  Given that most real-world institutions divide the day into
+  15-minute intervals, this doesn't seem like a huge problem;
+  therefore, a 1-minute resolution is the default, as a compromise
+  between precision and performance.
+
+  If you needed more precision, you could decrease the resolution, at
+  the expense of performance. Conversely, if you need things to run
+  faster, and you don't mind losing some precision, increase the
+  resolution to 5-, 10-, or 15- minutes.
   """
 
   def is_finite(self):
     return False
 
-  def implicit(self, window, resolution=minute):
-    return filter(self.intersects, Interval.sequence(window.start, resolution))
+  def within(self, sample):
+    raise NotImplemented
+
+  def contains(self, interval):
+    """True if the window is completely contained within this set."""
+    return self.within(interval.start) and self.within(interval.end)
 
   def intervals(self, window, resolution=minute):
-    return takewhile(
-      window.intersects,
-      Interval.mergeConsecutive(self.implicit(window, resolution))
+    # sample the set at regular intervals which intersect the current window,
+    # merging consecutive subintervals in the final result.
+    return Interval.mergeConsecutive(
+      filter(
+        self.contains,
+        itertools.takewhile(
+          window.intersects,
+          Interval.sequence(window.start, resolution)
+        )
+      )
     )
 
 @dataclass
-class Not:
+class Not(Implicit):
   """The logical inverse of the given subexpression.
 
   E.g. Not(AtTime(12:00, 13:00)) would be all day *except* from noon
@@ -345,8 +352,8 @@ class Not:
 
   subexpr : DateSet
 
-  def intersects(self, window):
-    return not self.subexpr.intersects(window)
+  def within(self, dt):
+    return not self.subexpr.within(dt)
 
 @dataclass
 class Compound(Implicit):
@@ -360,7 +367,7 @@ class Compound(Implicit):
       ends = [s.end for s in spans]
       return Interval(min(starts), max(ends))
     else:
-      raise ValueError("Expr is not Finite")
+      raise ValueError("Cannot take the span of a possiby-infinite set.")
 
 @dataclass
 class Union(Compound):
@@ -368,49 +375,58 @@ class Union(Compound):
 
   If all the subsets are finite, then the union over them is finite.
   """
+
   def is_finite(self):
-    return all(e.is_finite() for e in self.subsets)
+    return all(s.is_finite() for s in self.subsets)
+
+  def contains(self, interval):
+    return any(s.contains(interval) for s in self.subsets)
 
   def intersects(self, interval):
-    return any(e.intersects(interval) for e in self.subsets)
+    return any(s.intersects(interval) for s in self.subsets)
 
 @dataclass
 class Intersection(Compound):
-  """Take the intersection of two arbitrary subsets.
+  """Take the intersection of arbitrary subsets.
 
   If any of the subsets is finite, then the intersection is finite.
   """
+
   def is_finite(self):
-    return any(e.is_finite() for e in self.subsets)
+    return any(s.is_finite() for s in self.subsets)
+
+  def contains(self, interval):
+    return all(s.contains(interval) for s in self.subsets)
 
   def intersects(self, interval):
-    return all(e.intersects(interval) for e in self.subsets)
+    return all(s.intersects(interval) for s in self.subsets)
 
 @dataclass
 class Periodic(Implicit):
-  """An infinite set of intervals repeating evenly at arbitrary times."""
+  """Repeats evenly at arbitrary time periods."""
 
-  period   : timedelta               # defines time between intervals
+  period   : timedelta               # time between intervals
   duration : timedelta = 1 * day     # length of the interval.
-  phase    : timedelta = timedelta() # shifts start time by up to one period
+  phase    : timedelta = timedelta() # shift start time by up to one period
 
   def __post_init__(self):
     assert self.duration <= self.period
     assert self.phase < self.period
 
-  def intervals(self, interval):
-    period   = superordinal(self.period)
-    duration = superordinal(self.duration)
-    phase    = superordinal(self.phase)
-    start    = superordinal(interval.start) % period
-    end      = superordinal(interval.end)   % period
-    return Interval(phase, phase + duration).intersects(Interval(start, end))
+  def within(self, dt):
+    # convert timestamp to an equivalent timedelta
+    since_midnight = dt - datetime(1, 1, 1)
+    return self.phase <= since_midnight % self.period <= (self.duration + self.phase)
 
 @dataclass
 class AtTime(Implicit):
-  """Repeat at a particular time, for a particular duration every day.
+  """A special-case of Periodic where the period is always exactly one day.
 
-  To schedule an event at multiple times, take the union.
+  We don't really need this, but it's more efficient than Periodic,
+  and is by far the more common case.
+
+  To schedule an event at multiple times, union multiple AtTime
+  instances.
   """
   start    : time
   duration : timedelta
@@ -419,76 +435,109 @@ class AtTime(Implicit):
     assert self.duration > timedelta()
     # assert (self.start + self.duration) < (1 * day)
 
-  def intersects(self, interval):
-    return Interval.fromStartDuration(
-      datetime(
-        interval.start.year,
-        interval.start.month,
-        interval.start.day,
-        self.start.hour,
-        self.start.minute,
-        self.start.second,
-        self.start.microsecond
-      ),
-      duration
-    ).intersects(interval)
+  def within(self, dt):
+    start = startOfDay(dt) + self.start
+    end   = start + duration
+    return start <= dt <= end
 
 @dataclass
 class OrdinalSet(Implicit):
-  """A date set based on day patterns.
+  """Base class for DateSets defined by a predicate over julian ordinals.
 
-  This implements weekday and other day-based patterns.
-
-  You can think of this as consisting of an arbitrary, infinite
-  sequence of full-day intervals.
-
-  If you also wish to schedule at a particular time, take the
-  intersection with a
-
+  Instances of this type will yield all-day intervals. To restrict to
+  particular times, intersect with AtTime or Periodic.
   """
   def is_finite(self):
     return False
 
-  def test(self, date):
-    pass
+  def has(self, ordinal):
+    raise NotImplemented
 
-  def intersects(self, interval):
-    return any(self.test(o) for o in interval.ordinals())
+  def within(self, dt):
+    return self.has(dt.toordinal())
 
 @dataclass
 class Weekly(OrdinalSet):
-  """An arbitrary pattern that repeats every N days"""
+  """An arbitrary pattern that repeats every week on particular days.
+
+  Multiple days on a given week can be specified.
+  """
+
   which : set[int]
 
   def __post_init__(self):
     assert all(0 <= day < 7 for day in self.which)
 
-  def test(self, ordinal):
+  def has(self, ordinal):
     return (ordinal % 7) in self.which
 
 @dataclass
 class Monthly(Implicit):
-  days : set[int]
+  """Repeats every month on the given days.
 
-  def intersects(self, window):
-    dt = window.start
-    while dt < window.end:
-      if dt.day in self.days:
-        return True
-    return False
+  If `month` is given, then repeats yearly during the given month,
+  otherwise repeats all year.
+
+  This will not repeat on days that are not part of the month (Feb
+  29th on non-leap years, or Apr 31st).
+
+  XXX: allow using negative days to count from the last day of the
+  month.
+
+  XXX: allow a fallback when a day doesn't exist.
+  """
+
+  days : set[int]
+  month : Option[int] = None
+
+  def within(self, dt):
+    match self.month:
+      case None:  return dt.day in self.days
+      case month: return dt.day in self.days and dt.month == month
 
 @dataclass
 class NthWeekday(Implicit):
+  """Repeats on the nth instance of the given weekday of a month.
+
+  If `month` is given, then repeats yearly during the given month,
+  otherwise repeats all year.
+
+  This will not repeat if the nth instance of a given weekday does not
+  exist.
+
+  XXX: allow a  fallback when a day doesn't exist.
+  """
   n : int
   weekday : int
+  month : Option[int] = None
 
-  def intersects(self, window):
-    return window.intersects(nthWeekday(
-      self.n,
-      self.weekday,
-      window.month,
-      window.year
-    ))
+  def within(self, dt):
+    match self.month:
+      case None: month = dt.month
+      case m: month = m
+
+    return Interval.fromDate(
+      nthWeekday(self.n, self.weekday, month, dt.year)
+    ).within(dt)
+
+@dataclass
+class Shift(Implicit):
+  """Shift a given DateSet by an arbitrary time offset.
+
+  A positive time-delta shifts events later, while a negative
+  offset shifts them earlier.
+
+  e.g. "two days before thanksgiving" -> Offset(-2 * day, NthWeekday(4, 3, 11))
+  """
+
+  offset : timedelta
+  subset : DateSet
+
+  def is_finite(self):
+    return self.subset.is_finite()
+
+  def within(self, dt):
+    return self.subset.within(dt - offset)
 
 def parseDuration(time):
   """Parse a string into a timedelta.
