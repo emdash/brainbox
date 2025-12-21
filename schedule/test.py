@@ -2,9 +2,10 @@
 
 """Test of calendar functions"""
 
+from datetime import *
+import json
 from schedule import *
 import sys
-from datetime import *
 
 def test_superordinal():
   assert superordinal(datetime(2025, 12, 17)) == 63901612800
@@ -154,8 +155,65 @@ def test_monthly():
 def test_nth_weekday_set():
   pass
 
-def test_parse_pattern():
-  pass
+def test_fromJSON():
+  assert fromJSON('2025-11-10') == datetime(2025, 11, 10)
+  assert fromJSON('12:00') == time(hour=12)
+  assert fromJSON('01:30') == time(hour=1, minute=30)
+  assert fromJSON('01:30:59') == time(hour=1, minute=30, second=59)
+  assert fromJSON('3d')  == timedelta(days=3)
+  assert fromJSON('10m') == timedelta(minutes=10)
+  assert fromJSON('10s') == timedelta(seconds=10)
+  assert fromJSON('10w') == timedelta(days=70)
+
+  assert fromJSON([
+    "explicit",
+    '2025-11-10',
+    '2025-01-20',
+    '2025-02-14'
+  ]) == Explicit([
+    Interval.fromDate(datetime(2025, 11, 10)),
+    Interval.fromDate(datetime(2025,  1, 20)),
+    Interval.fromDate(datetime(2025,  2, 14)),
+  ])
+
+  assert fromJSON(["weekly", 5, 6]) == Weekly({5, 6})
+
+  assert fromJSON(["monthly", 28, 29, 30]) == Monthly({28, 29, 30})
+  assert fromJSON(["nth", 3, 1])           == NthWeekday(3, 1)
+
+  assert fromJSON(
+    ["|", ["explicit", '2025-11-10'], ["explicit", '2025-01-20']]
+  ) == Union([
+    Explicit([Interval.fromDate(datetime(2025, 11, 10))]),
+    Explicit([Interval.fromDate(datetime(2025,  1, 20))])
+  ])
+
+  assert fromJSON(
+    ["&", ["explicit", '2025-11-10'], ["explicit", '2025-01-20']]
+  ) == Intersection([
+    Explicit([Interval.fromDate(datetime(2025, 11, 10))]),
+    Explicit([Interval.fromDate(datetime(2025,  1, 20))])
+  ])
+
+  assert fromJSON(["~", ["weekly", 5, 6]]) == Not(Weekly({5, 6}))
+
+  assert fromJSON(["++", "3d"])             == Periodic(3 * day, 1 * day)
+  assert fromJSON(["++", "3d", "1h"])       == Periodic(3 * day, 1 * hour)
+  assert fromJSON(["++", "3d", "1h", "8h"]) == Periodic(3 * day, 1 * hour, 8 * hour)
+
+  assert fromJSON(["@", "12:00", "15m"]) == AtTime(time(hour=12), 15 * minute)
+
+  assert fromJSON(
+    ["@", "20:30", ["+", "3h", "15m"]]
+  ) == AtTime(
+    time(hour=20, minute=30),
+    timedelta(hours=3, minutes=15)
+  )
+
+  assert fromJSON(
+    ["@", "20:30", ["*", 3, "15m"]]
+  ) == AtTime(time(hour=20, minute=30), timedelta(minutes=45))
+
 
 def main(*args):
   self = __import__(__name__)

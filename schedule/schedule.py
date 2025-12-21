@@ -14,13 +14,15 @@ sake of simplicity, we do a number of calculations as if a second is
 always exactly 1/86,400 of a solar day.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from dataclasses import dataclass
 
 import itertools
+import json
 import sys
 
 # convenient constants for working with time deltas.
+second   = timedelta(seconds = 1)
 minute   = timedelta(minutes = 1)
 hour     = timedelta(hours = 1)
 day      = timedelta(days = 1)
@@ -334,6 +336,19 @@ class Implicit(DateSet):
     )
 
 @dataclass
+class Not:
+  """The logical inverse of the given subexpression.
+
+  E.g. Not(AtTime(12:00, 13:00)) would be all day *except* from noon
+  to 13:00. Not(Weekly({5, 6})) would be every day *except* weekends.
+  """
+
+  subexpr : DateSet
+
+  def intersects(self, window):
+    return not self.subexpr.intersects(window)
+
+@dataclass
 class Compound(Implicit):
   """Base class for date sets which are composed of arbitrary subsets."""
   subsets: set[DateSet]
@@ -375,9 +390,9 @@ class Intersection(Compound):
 class Periodic(Implicit):
   """An infinite set of intervals repeating evenly at arbitrary times."""
 
-  period   : timedelta # defines time between intervals
-  duration : timedelta # length of the interval.
-  phase    : timedelta # shifts start time by up to one period
+  period   : timedelta               # defines time between intervals
+  duration : timedelta = 1 * day     # length of the interval.
+  phase    : timedelta = timedelta() # shifts start time by up to one period
 
   def __post_init__(self):
     assert self.duration <= self.period
@@ -397,21 +412,23 @@ class AtTime(Implicit):
 
   To schedule an event at multiple times, take the union.
   """
-  start    : timedelta # offset from midnight
+  start    : time
   duration : timedelta
 
   def __post_init__(self):
-    assert start > 0
-    assert duration > 0
-    assert (start + duration) < (1 * day)
+    assert self.duration > timedelta()
+    # assert (self.start + self.duration) < (1 * day)
 
   def intersects(self, interval):
-    # Comp
     return Interval.fromStartDuration(
       datetime(
         interval.start.year,
         interval.start.month,
-        interval.start.day
+        interval.start.day,
+        self.start.hour,
+        self.start.minute,
+        self.start.second,
+        self.start.microsecond
       ),
       duration
     ).intersects(interval)
@@ -439,21 +456,9 @@ class OrdinalSet(Implicit):
     return any(self.test(o) for o in interval.ordinals())
 
 @dataclass
-class Daily(OrdinalSet):
-  """A pattern that repeats every n days.
-
-  The offset
-  """
-  offset : int # from 1/1/1 AD
-  period : int # in days
-
-  def test(self, ordinal):
-    return (ordinal + offset) % periods == 0
-
-@dataclass
 class Weekly(OrdinalSet):
   """An arbitrary pattern that repeats every N days"""
-  which = set[int]
+  which : set[int]
 
   def __post_init__(self):
     assert all(0 <= day < 7 for day in self.which)
@@ -463,7 +468,7 @@ class Weekly(OrdinalSet):
 
 @dataclass
 class Monthly(Implicit):
-  days = set[int]
+  days : set[int]
 
   def intersects(self, window):
     dt = window.start
@@ -484,6 +489,80 @@ class NthWeekday(Implicit):
       window.month,
       window.year
     ))
+
+def parseDuration(time):
+  """Parse a string into a timedelta.
+
+  This can be a clock format, like 12:00, or a unit like 1m.
+  """
+  if time.endswith("d"):
+    return int(time[:-1]) * day
+  elif time.endswith("h"):
+    return int(time[:-1]) * hour
+  elif time.endswith("m"):
+    return int(time[:-1]) * minute
+  elif time.endswith("s"):
+    return int(time[:-1]) * second
+  elif time.endswith("w"):
+    return int(time[:-1]) * week
+  else:
+    raise ValueError(f"Invalid Duration: {time}")
+
+
+def fromJSON(decoded):
+  """Quick-and-dirty DateSet expression DSL evaluator.
+
+  Think of it like s-expressions, with the function name first. Except
+  square backets and arguments separated by commas.
+
+  Date-times are always in iso format.
+  See parseDuration for time format.
+  """
+  match decoded:
+    case int(i):
+      return i
+    case str(date):
+      try:
+        return datetime.fromisoformat(date)
+      except ValueError:
+        try:
+          return time.fromisoformat(date)
+        except ValueError:
+            return parseDuration(date)
+    case ["explicit", *dates]:
+      return Explicit([Interval.fromDate(fromJSON(d)) for d in dates])
+    case ["weekly", *days]:
+      return Weekly({d for d in days})
+    case ["monthly", *days]:
+      return Monthly({d for d in days})
+    case ["nth", n, wd]:
+      return NthWeekday(n, wd)
+    case ["++", period]:
+      return Periodic(fromJSON(period), 1 * day)
+    case ["++", period, duration]:
+      return Periodic(fromJSON(period), fromJSON(duration))
+    case ["++", period, duration, phase]:
+      return Periodic(fromJSON(period), fromJSON(duration), fromJSON(phase))
+    case ["@", time_, duration]:
+      return AtTime(fromJSON(time_), fromJSON(duration))
+    case ["|", *subexprs]:
+      return Union([fromJSON(e) for e in subexprs])
+    case ["&", *subexprs]:
+      return Intersection([fromJSON(e) for e in subexprs])
+    case ["~", subexpr]:
+      return Not(fromJSON(subexpr))
+    case ["except", a, b]:
+      return Intersection([fromJSON(a), Not(fromJSON(b))])
+    case ["+", a, b]:
+      return fromJSON(a) + fromJSON(b)
+    case ["-", a, b]:
+      return fromJSON(a) - fromJSON(b)
+    case ["*", a, b]:
+      return fromJSON(a) * fromJSON(b)
+    case ["/", a, b]:
+      return fromJSON(a) / fromJSON(b)
+    case e:
+      raise ValueError("Illegal date expr: {e}")
 
 @dataclass
 class Event:
