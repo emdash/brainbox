@@ -291,7 +291,7 @@ class Explicit(DateSet):
 
   def intervals(self, window):
     for i in Interval.mergeConsecutive(self.given):
-      if i.intersects(window):
+      if window.contains(i):
         yield i
 
 @dataclass
@@ -335,12 +335,14 @@ class Implicit(DateSet):
   def intervals(self, window, resolution=minute):
     # sample the set at regular intervals which intersect the current window,
     # merging consecutive subintervals in the final result.
-    return Interval.mergeConsecutive(
+    sample_points = Interval.sequence(window.start, resolution)
+
+    yield from Interval.mergeConsecutive(
       filter(
         self.contains,
         itertools.takewhile(
           window.contains,
-          Interval.sequence(window.start, resolution)
+          sample_points
         )
       )
     )
@@ -460,7 +462,18 @@ class Weekly(Implicit):
   def __post_init__(self):
     assert all(0 <= day < 7 for day in self.which)
 
+  # override here to prevent 1-sample gap at end of day, where the
+  # ordinal advances to the next day. the *start* of this interval
+  # will lie within the set, but the end will not. This redefines
+  # "contains" to be a partial intersection, so we can prevent this
+  # "off-by-1"-style issue.
+  def contains(self, interval):
+    return self.within(interval.start)
+
   def within(self, dt):
+    # I'll admit this is rather ugly, but the alternative is a
+    # one-minute gap at the end of each event, and possible failure of
+    # truly-consecutive intervals to merge.
     return dt.weekday() in self.which
 
 @dataclass
@@ -481,6 +494,14 @@ class Monthly(Implicit):
 
   days : set[int]
   month : Option[int] = None
+
+  # override here to prevent 1-sample gap at end of day, where the
+  # ordinal advances to the next day. the *start* of this interval
+  # will lie within the set, but the end will not. This redefines
+  # "contains" to be a partial intersection, so we can prevent this
+  # "off-by-1"-style issue.
+  def contains(self, interval):
+    return self.within(interval.start)
 
   def within(self, dt):
     match self.month:

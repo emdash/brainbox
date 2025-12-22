@@ -368,25 +368,164 @@ def test_weekly():
     # It's expected that the event will end one minute early.
     Interval.fromStartDuration(
       datetime(2025, 12, 8),
-      1 * day - 1 * minute
+      1 * day
     ),
     Interval.fromStartDuration(
       datetime(2025, 12, 10),
-      1 * day - 1 * minute
+      1 * day
     ),
     Interval.fromStartDuration(
       datetime(2025, 12, 12),
-      1 * day - 1 * minute
+      1 * day
+    )
+  ]
+
+  # check whether adjacent day are merged
+  assert list(
+    Weekly({0, 2, 3}).intervals(
+      Interval.fromDate(
+        datetime(2025, 12, 7),
+        datetime(2025, 12, 14)
+      )
+    )
+  ) == [
+    Interval.fromStartDuration(
+      datetime(2025, 12, 8),
+      1 * day
+    ),
+    # It's expected that the event will end one minute early.
+    Interval.fromStartDuration(
+      datetime(2025, 12, 10),
+      2 * day
     )
   ]
 
 def test_monthly():
-  pass
+  assert list(
+    Monthly({14, 30, 10}).intervals(
+      Interval.fromDate(
+        datetime(2025, 12, 1),
+        datetime(2025, 12, 31)
+      )
+    )
+  ) == [
+    # It's expected that the event will end one minute early.
+    Interval.fromStartDuration(
+      datetime(2025, 12, 10),
+      1 * day
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 12, 14),
+      1 * day
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 12, 30),
+      1 * day
+    )
+  ]
 
-def test_not():
-  pass
+  # check that adjacent days are merged
+  assert list(
+    Monthly({10, 11, 15}).intervals(
+      Interval.fromDate(
+        datetime(2025, 12, 1),
+        datetime(2025, 12, 31)
+      )
+    )
+  ) == [
+    Interval.fromStartDuration(
+      datetime(2025, 12, 10),
+      2 * day
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 12, 15),
+      1 * day
+    )
+  ]
+
+  # check that giving a month works as expected
+  assert list(
+    Monthly({10, 11, 15}, 11).intervals(
+      Interval.fromDate(
+        datetime(2025, 10, 1),
+        datetime(2025, 12, 31)
+      )
+    )
+  ) == [
+    Interval.fromStartDuration(
+      datetime(2025, 11, 10),
+      2 * day
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 11, 15),
+      1 * day
+    )
+  ]
+
+  # check that monthy repetition works
+  assert list(
+    Monthly({10}).intervals(
+      Interval.fromDate(
+        datetime(2025, 10, 1),
+        datetime(2025, 12, 31)
+      )
+    )
+  ) == [
+    Interval.fromStartDuration(
+      datetime(2025, 10, 10),
+      1 * day
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 11, 10),
+      1 * day
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 12, 10),
+      1 * day
+    )
+  ]
 
 def test_nth_weekday_set():
+  # every third wednesday
+  assert list(
+    NthWeekday(3, 2).intervals(
+      Interval.fromDate(
+        datetime(2025, 10, 1),
+        datetime(2025, 12, 31)
+      )
+    )
+  ) == [
+    Interval.fromStartDuration(
+      datetime(2025, 10, 15),
+      1 * day
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 11, 19),
+      1 * day
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 12, 17),
+      1 * day
+    )
+  ]
+
+  # every third wednesday of november
+  assert list(
+    NthWeekday(3, 2, 11).intervals(
+      Interval.fromDate(
+        datetime(2025, 10, 1),
+        datetime(2025, 12, 31)
+      )
+    )
+  ) == [
+    Interval.fromStartDuration(
+      datetime(2025, 11, 19),
+      1 * day
+    )
+  ]
+
+
+def test_not():
   pass
 
 def test_union():
