@@ -449,23 +449,7 @@ class AtTime(Implicit):
     return start <= dt <= end
 
 @dataclass
-class OrdinalSet(Implicit):
-  """Base class for DateSets defined by a predicate over julian ordinals.
-
-  Instances of this type will yield all-day intervals. To restrict to
-  particular times, intersect with AtTime or Periodic.
-  """
-  def is_finite(self):
-    return False
-
-  def has(self, ordinal):
-    raise NotImplemented
-
-  def within(self, dt):
-    return self.has(dt.toordinal())
-
-@dataclass
-class Weekly(OrdinalSet):
+class Weekly(Implicit):
   """An arbitrary pattern that repeats every week on particular days.
 
   Multiple days on a given week can be specified.
