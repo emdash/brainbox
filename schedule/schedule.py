@@ -357,6 +357,10 @@ class Not(Implicit):
 
   subexpr : DateSet
 
+  # override here to get expected behaivor for the common ase.
+  def contains(self, interval):
+    return self.within(interval.start) or self.within(interval.end)
+
   def within(self, dt):
     return not self.subexpr.within(dt)
 
@@ -550,7 +554,7 @@ class Shift(Implicit):
     return self.subset.is_finite()
 
   def within(self, dt):
-    return self.subset.within(dt - offset)
+    return self.subset.within(dt - self.offset)
 
 def parseDuration(time):
   """Parse a string into a timedelta.

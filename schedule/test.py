@@ -61,7 +61,6 @@ def test_nth_weekday():
   assert nthWeekday(-1, 4,  9, 2025) == datetime(2025,  9, 26)
   assert nthWeekday(-2, 5, 12, 2025) == datetime(2025, 12, 20)
 
-
 def test_intervals():
   i1 = Interval.fromStartDuration(now,             3 * day)
   i2 = Interval.fromStartDuration(yesterday,       3 * day)
@@ -121,7 +120,6 @@ def test_interval_sequence():
     Interval.fromStartDuration(datetime(2025, 11, 10, 1, 2), 5 * minute),
     Interval.fromStartDuration(datetime(2025, 11, 10, 2, 2), 5 * minute)
   ]
-
 
 def test_interval_merge_consecutive():
   assert list(Interval.mergeConsecutive([
@@ -325,7 +323,6 @@ def test_periodic():
     Interval(start=datetime(2025, 10, 11, 23, 50), end=datetime(2025, 10, 12, 0, 0))
   ]
 
-
 def test_at_time():
   assert list(AtTime(
     time(8, 0, 0),
@@ -524,15 +521,107 @@ def test_nth_weekday_set():
     )
   ]
 
+def test_shift():
+  assert list(Shift(2 * hour, AtTime(
+    time(8, 0, 0),
+    2 * hour + 30 * minute
+  )).intervals(Interval.fromDate(
+    datetime(2025, 10, 11)
+  ))) == [
+    Interval(
+      datetime(2025, 10, 11, 10,  0),
+      datetime(2025, 10, 11, 12, 30)
+    )
+  ]
+
+  assert list(Shift(-2 * hour, AtTime(
+    time(8, 0, 0),
+    2 * hour + 30 * minute
+  )).intervals(Interval.fromDate(
+    datetime(2025, 10, 11)
+  ))) == [
+    Interval(
+      datetime(2025, 10, 11, 6,  0),
+      datetime(2025, 10, 11, 8, 30)
+    )
+  ]
 
 def test_not():
-  pass
+  assert list(Not(AtTime(
+    time(8, 0, 0),
+    2 * hour + 30 * minute
+  )).intervals(Interval.fromDate(
+    datetime(2025, 10, 11)
+  ))) == [
+    Interval(
+      datetime(2025, 10, 11, 0 , 0),
+      datetime(2025, 10, 11, 8,  0)
+    ),
+    Interval(
+      datetime(2025, 10, 11, 10 , 30),
+      datetime(2025, 10, 12, 0, 0)
+    )
+  ]
+
+  assert list(
+    Not(Weekly({2})
+  ).intervals(Interval.fromDate(
+    datetime(2025, 10, 5),
+    datetime(2025, 10, 12)
+  ))) == [
+    Interval(
+      datetime(2025, 10,  5,  0, 0),
+      datetime(2025, 10,  8,  0, 0)
+    ),
+    Interval(
+      datetime(2025, 10,  8, 23, 59),
+      datetime(2025, 10, 13,  0, 0)
+    )
+  ]
 
 def test_union():
-  pass
+  assert list(
+    Union([
+      Periodic(2 * hour, 30 * minute),
+      Periodic(3 * hour, 15 * minute)
+    ]).intervals(
+      Interval.fromDate(datetime(2025, 11, 10))
+    )
+  ) == [
+    Interval(datetime(2025, 11, 10, 0,  0), datetime(2025, 11, 10, 0,  30)),
+    Interval(datetime(2025, 11, 10, 2,  0), datetime(2025, 11, 10, 2,  30)),
+    Interval(datetime(2025, 11, 10, 3,  0), datetime(2025, 11, 10, 3,  15)),
+    Interval(datetime(2025, 11, 10, 4,  0), datetime(2025, 11, 10, 4,  30)),
+    Interval(datetime(2025, 11, 10, 6,  0), datetime(2025, 11, 10, 6,  30)),
+    Interval(datetime(2025, 11, 10, 8,  0), datetime(2025, 11, 10, 8,  30)),
+    Interval(datetime(2025, 11, 10, 9,  0), datetime(2025, 11, 10, 9,  15)),
+    Interval(datetime(2025, 11, 10, 10, 0), datetime(2025, 11, 10, 10, 30)),
+    Interval(datetime(2025, 11, 10, 12, 0), datetime(2025, 11, 10, 12, 30)),
+    Interval(datetime(2025, 11, 10, 14, 0), datetime(2025, 11, 10, 14, 30)),
+    Interval(datetime(2025, 11, 10, 15, 0), datetime(2025, 11, 10, 15, 15)),
+    Interval(datetime(2025, 11, 10, 16, 0), datetime(2025, 11, 10, 16, 30)),
+    Interval(datetime(2025, 11, 10, 18, 0), datetime(2025, 11, 10, 18, 30)),
+    Interval(datetime(2025, 11, 10, 20, 0), datetime(2025, 11, 10, 20, 30)),
+    Interval(datetime(2025, 11, 10, 21, 0), datetime(2025, 11, 10, 21, 15)),
+    Interval(datetime(2025, 11, 10, 22, 0), datetime(2025, 11, 10, 22, 30)),
+  ]
 
 def test_intersection():
-  pass
+  assert list(
+    Intersection([
+      Weekly({1, 3, 5}),
+      AtTime(time(8, 0, 0), 1 * hour)
+    ]).intervals(
+      Interval.fromDate(
+        datetime(2025, 10, 5),
+        datetime(2025, 10, 12)
+      )
+    )
+  ) == [
+    Interval(datetime(2025, 10, 7,  8, 0), datetime(2025, 10, 7,  9, 0)),
+    Interval(datetime(2025, 10, 9,  8, 0), datetime(2025, 10, 9,  9, 0)),
+    Interval(datetime(2025, 10, 11, 8, 0), datetime(2025, 10, 11, 9, 0))
+  ]
 
 def test_fromJSON():
   assert fromJSON('2025-11-10') == datetime(2025, 11, 10)
@@ -589,7 +678,6 @@ def test_fromJSON():
   assert fromJSON(
     ["@", "20:30", ["*", 3, "15m"]]
   ) == AtTime(time(hour=20, minute=30), timedelta(minutes=45))
-
 
 def main(*args):
   import traceback
