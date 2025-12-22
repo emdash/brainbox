@@ -579,7 +579,7 @@ function graph {
         "graph/rankdir"       GTD_GRAPH_RANKDIR       "TB"        \
         "graph/show_contexts" GTD_GRAPH_SHOW_CONTEXTS "1"         \
         "graph/show_deps"     GTD_GRAPH_SHOW_DEPS     "1"         \
-        -- "${GTD_DIR}/graph.py" "$@"
+        -- "${GTD_DIR}/components/graph.py" "$@"
 }
 
 # list all the valid edge sets
@@ -2057,7 +2057,7 @@ function __plan_modify {
         add) all | choose >> "${path}";;
         capture) echo | xargs -o "$0" capture --oneline ; last_captured >> "${path}";;
         edit) echo "${2}" | edit;;
-        *) ./subtasks.py "${path}" "${@}";;
+        *) "${GTD_DIR}/components/subtasks.py" "${path}" "${@}";;
     esac
 }
 

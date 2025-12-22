@@ -17,6 +17,7 @@ always exactly 1/86,400 of a solar day.
 from datetime import date, datetime, time, timedelta
 from dataclasses import dataclass
 
+import graph
 import itertools
 import json
 import sys
@@ -670,8 +671,58 @@ def display_month(highlight, month=today.month, year=today.year):
     d += 1 * day
   print()
 
+def partition(pred, seq):
+  left = set()
+  right = set()
+  for i in seq:
+    if pred(i):
+      right.add(i)
+    else:
+      left.add(i)
+  return (left, right)
+
+def is_scheduled(nodes):
+  return filter(lambda id: graph.has(id, 'schedule'), nodes)
+
+def is_unscheduled(nodes):
+  return filter(
+    lambda id: not graph.has(id, 'schedule'),
+    nodes
+  )
+
+def is_active():
+  return filter(event_is_active())
+
+def is_upcoming(start, end):
+  return filter(event_is_upcoming(horizon), events)
+
+def is_due(tasks, deadline=today):
+  return filter(task_is_due(deadline), tasks)
+
+def printall(iter):
+  for i in iter:
+    print(i)
+
+def agenda(type, window):
+  events = [
+    Event(
+      task_gloss(id),
+      fromJSON(
+        json.load(
+          open(graph_datum_path(id, 'schedule'), 'r')
+        )
+      )
+    )
+    for id in is_scheduled()
+  ]
+
+  print("Schedule")
+  match type:
+    case "day": day_view(window)
+    case "week": week_view(window)
+    case "month": month_viw(window)
+
 def display_agenda(events, start=today, end=today + 7 * day):
-  """Display a formatted agend view"""
   pass
 
 def display_completion_calendar(habit, window):
@@ -680,29 +731,18 @@ def display_completion_calendar(habit, window):
 def display_habit_graph(habitx, window):
   pass
 
-def get_events():
-  """Read an event list from stdin"""
-  for line in sys.stdin():
-    match line.split('|'):
-      case [id, pattern]:
-        yield Event(id, DateSet.parsePattern(pattern), set([]))
-      case [id, pattern, reminders]:
-        yield Event(
-          id,
-          DateSet.parsePattern(pattern),
-          map(datetime.fromisoformat, set(reminders.split(',')))
-        )
-      case invalid:
-        raise ValueError(f"Invalid line: {invalid}")
 
-def is_upcoming(events, horizon=tomorrow):
-  return filter(event_is_upcoming(horizon), events)
-
-def is_overdue(tasks, deadline=today):
-  return filter(task_is_due(deadline), tasks)
-
-def is_ontime(tasks, deadline=today):
-  return filter(task_is_ontime(deadline), tasks)
-
-def is_ontrack(habits):
-  pass
+if __name__ == "__main__":
+  match sys.argv[1:]:
+    case ["is_active"]:
+        printall(is_active())
+    case ["is_inactive"]:
+      is_inactive()
+    case ["is_upcoming"]:
+      is_upcoming()
+    case ["is_upcoming", start, end]:
+      is_upcoming(start, end)
+    case ["is_due"]:
+      is_due()
+    case ["is_due", date]:
+      is_due(date)
