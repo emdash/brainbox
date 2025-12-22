@@ -460,8 +460,8 @@ class Weekly(Implicit):
   def __post_init__(self):
     assert all(0 <= day < 7 for day in self.which)
 
-  def has(self, ordinal):
-    return (ordinal % 7) in self.which
+  def within(self, dt):
+    return dt.weekday() in self.which
 
 @dataclass
 class Monthly(Implicit):
