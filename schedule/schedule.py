@@ -439,8 +439,13 @@ class AtTime(Implicit):
     # assert (self.start + self.duration) < (1 * day)
 
   def within(self, dt):
-    start = startOfDay(dt) + self.start
-    end   = start + duration
+    start = dt.replace(
+      hour = self.start.hour,
+      minute = self.start.minute,
+      second = self.start.second,
+      microsecond = self.start.microsecond
+    )
+    end = start + self.duration
     return start <= dt <= end
 
 @dataclass
