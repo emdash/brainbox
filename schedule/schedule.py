@@ -181,7 +181,10 @@ class Interval:
     This is so that back-to-events will not supriously register as
     overlapping.
     """
-    return self.start <= timestamp < self.end
+    return self.start <= timestamp <= self.end
+
+  def contains(self, interval):
+    return self.within(interval.start) and self.within(interval.end)
 
   def intersects(self, interval):
     return self.within(interval.start) \
@@ -336,7 +339,7 @@ class Implicit(DateSet):
       filter(
         self.contains,
         itertools.takewhile(
-          window.intersects,
+          window.contains,
           Interval.sequence(window.start, resolution)
         )
       )
@@ -411,12 +414,12 @@ class Periodic(Implicit):
 
   def __post_init__(self):
     assert self.duration <= self.period
-    assert self.phase < self.period
+    assert abs(self.phase) < self.period
 
   def within(self, dt):
     # convert timestamp to an equivalent timedelta
     since_midnight = dt - datetime(1, 1, 1)
-    return self.phase <= since_midnight % self.period <= (self.duration + self.phase)
+    return (since_midnight - self.phase) % self.period <= self.duration
 
 @dataclass
 class AtTime(Implicit):
