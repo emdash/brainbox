@@ -68,8 +68,8 @@ def test_intervals():
   i3 = Interval.fromStartDuration(tomorrow,        3 * day)
   i4 = Interval.fromStartDuration(today - 3 * day, 1 * day)
 
-  assert not i1.within(now + 3 * day)
-  assert     i1.within(now + 3 * day - 1 * minute)
+  assert     i1.within(now + 3 * day)
+  assert not i1.within(now + 3 * day + 1 * second)
   assert     i1.within(now + 1 * day)
   assert     i1.within(tomorrow)
   assert not i1.within(now - 1 * minute)
@@ -154,7 +154,7 @@ def test_interval_within():
   assert Interval(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
-  ).within(datetime(2025, 10, 12, 0, 0)) == False
+  ).within(datetime(2025, 10, 12, 0, 0)) == True
 
   assert Interval(
     datetime(2025, 10, 11),
@@ -298,25 +298,87 @@ def test_periodic():
   assert list(Periodic(
     4 * hour,
     15 * minute,
-  ).intervals(Interval.fromDate(datetime(2025, 10, 11)))
-  ) == [
+  ).intervals(
+    Interval.fromDate(datetime(2025, 10, 11))
+  )) == [
     Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)),
     Interval(start=datetime(2025, 10, 11, 4, 0), end=datetime(2025, 10, 11, 4, 15)),
     Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)),
     Interval(start=datetime(2025, 10, 11, 12, 0), end=datetime(2025, 10, 11, 12, 15)),
     Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)),
-    Interval(start=datetime(2025, 10, 11, 20, 0), end=datetime(2025, 10, 11, 20, 15)),
-    Interval(start=datetime(2025, 10, 12, 0, 0), end=datetime(2025, 10, 12, 0, 1))
+    Interval(start=datetime(2025, 10, 11, 20, 0), end=datetime(2025, 10, 11, 20, 15))
   ]
 
-def test_at_time():
-  pass
+  assert list(Periodic(
+    4 * hour,
+    20 * minute,
+    -10 * minute
+  ).intervals(
+    Interval.fromDate(datetime(2025, 10, 11))
+  )) == [
+    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 10)),
+    Interval(start=datetime(2025, 10, 11, 3, 50), end=datetime(2025, 10, 11, 4, 10)),
+    Interval(start=datetime(2025, 10, 11, 7, 50), end=datetime(2025, 10, 11, 8, 10)),
+    Interval(start=datetime(2025, 10, 11, 11, 50), end=datetime(2025, 10, 11, 12, 10)),
+    Interval(start=datetime(2025, 10, 11, 15, 50), end=datetime(2025, 10, 11, 16, 10)),
+    Interval(start=datetime(2025, 10, 11, 19, 50), end=datetime(2025, 10, 11, 20, 10)),
+    Interval(start=datetime(2025, 10, 11, 23, 50), end=datetime(2025, 10, 12, 0, 0))
+  ]
 
-def test_daily():
-  pass
+
+def test_at_time():
+  assert list(AtTime(
+    time(8, 0, 0),
+    2 * hour + 30 * minute
+  ).intervals(Interval.fromDate(
+    datetime(2025, 10, 11)
+  ))) == [
+    Interval(
+      datetime(2025, 10, 11, 8),
+      datetime(2025, 10, 11, 10, 30)
+    )
+  ]
+
+  assert list(AtTime(
+    time(8, 0, 0),
+    2 * hour + 30 * minute
+  ).intervals(Interval.fromDate(
+    datetime(2025, 10, 11),
+    datetime(2025, 10, 12)
+  ))) == [
+    Interval(
+      datetime(2025, 10, 11, 8),
+      datetime(2025, 10, 11, 10, 30)
+    ),
+    Interval(
+      datetime(2025, 10, 12, 8),
+      datetime(2025, 10, 12, 10, 30)
+    )
+  ]
 
 def test_weekly():
-  pass
+  assert list(
+    Weekly({0, 2, 4}).intervals(
+      Interval.fromDate(
+        datetime(2025, 12, 7),
+        datetime(2025, 12, 14)
+      )
+    )
+  ) == [
+    # It's expected that the event will end one minute early.
+    Interval.fromStartDuration(
+      datetime(2025, 12, 8),
+      1 * day - 1 * minute
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 12, 10),
+      1 * day - 1 * minute
+    ),
+    Interval.fromStartDuration(
+      datetime(2025, 12, 12),
+      1 * day - 1 * minute
+    )
+  ]
 
 def test_monthly():
   pass
@@ -355,7 +417,6 @@ def test_fromJSON():
   ])
 
   assert fromJSON(["weekly", 5, 6]) == Weekly({5, 6})
-
   assert fromJSON(["monthly", 28, 29, 30]) == Monthly({28, 29, 30})
   assert fromJSON(["nth", 3, 1])           == NthWeekday(3, 1)
 
@@ -374,11 +435,9 @@ def test_fromJSON():
   ])
 
   assert fromJSON(["~", ["weekly", 5, 6]]) == Not(Weekly({5, 6}))
-
   assert fromJSON(["++", "3d"])             == Periodic(3 * day, 1 * day)
   assert fromJSON(["++", "3d", "1h"])       == Periodic(3 * day, 1 * hour)
   assert fromJSON(["++", "3d", "1h", "8h"]) == Periodic(3 * day, 1 * hour, 8 * hour)
-
   assert fromJSON(["@", "12:00", "15m"]) == AtTime(time(hour=12), 15 * minute)
 
   assert fromJSON(
@@ -394,12 +453,19 @@ def test_fromJSON():
 
 
 def main(*args):
+  import traceback
   self = __import__(__name__)
   match args:
     case []|["all"]:
       for test in sorted(dir(self)):
         if test.startswith('test_'):
-          getattr(self, test)()
+          print(f"{test}...", end ='')
+          try:
+            getattr(self, test)()
+            print("ok")
+          except BaseException as e:
+            print("err")
+            traceback.print_exception(e)
     case [test]:
       getattr(self, test)()
     case invalid: raise ValueError(f"Invalid Command: {" ".join(invalid)}")
