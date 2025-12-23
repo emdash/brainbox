@@ -290,6 +290,9 @@ class Explicit(DateSet):
   def intersects(self, window):
     return any(i.intersects(window) for i in self.intervals(window))
 
+  def within(self, dt):
+    return any(i.within(dt) for i in self.given)
+
   def intervals(self, window):
     for i in Interval.mergeConsecutive(self.given):
       if window.contains(i):
