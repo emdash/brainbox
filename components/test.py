@@ -634,7 +634,7 @@ def test_fromJSON():
   assert fromJSON('10w') == timedelta(days=70)
 
   assert fromJSON([
-    "explicit",
+    "dates",
     '2025-11-10',
     '2025-01-20',
     '2025-02-14'
@@ -649,14 +649,14 @@ def test_fromJSON():
   assert fromJSON(["nth", 3, 1])           == NthWeekday(3, 1)
 
   assert fromJSON(
-    ["|", ["explicit", '2025-11-10'], ["explicit", '2025-01-20']]
+    ["|", ["dates", '2025-11-10'], ["dates", '2025-01-20']]
   ) == Union([
     Explicit([Interval.fromDate(datetime(2025, 11, 10))]),
     Explicit([Interval.fromDate(datetime(2025,  1, 20))])
   ])
 
   assert fromJSON(
-    ["&", ["explicit", '2025-11-10'], ["explicit", '2025-01-20']]
+    ["&", ["dates", '2025-11-10'], ["dates", '2025-01-20']]
   ) == Intersection([
     Explicit([Interval.fromDate(datetime(2025, 11, 10))]),
     Explicit([Interval.fromDate(datetime(2025,  1, 20))])

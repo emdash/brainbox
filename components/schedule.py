@@ -596,7 +596,7 @@ def fromJSON(decoded):
           return time.fromisoformat(date)
         except ValueError:
             return parseDuration(date)
-    case ["explicit", *dates]:
+    case ["dates", *dates]:
       return Explicit([Interval.fromDate(fromJSON(d)) for d in dates])
     case ["weekly", *days]:
       return Weekly({d for d in days})
