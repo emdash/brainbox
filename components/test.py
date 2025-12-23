@@ -679,6 +679,12 @@ def test_fromJSON():
     ["@", "20:30", ["*", 3, "15m"]]
   ) == AtTime(time(hour=20, minute=30), timedelta(minutes=45))
 
+  assert fromJSON(
+    ["range", "2025-10-1", "2025-10-31"]
+  ) == Explicit(
+    [Interval(datetime(2025, 10, 1), datetime(2025, 10, 31))]
+  )
+
 def main(*args):
   import traceback
   self = __import__(__name__)

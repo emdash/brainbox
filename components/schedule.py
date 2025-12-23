@@ -598,6 +598,8 @@ def fromJSON(decoded):
             return parseDuration(date)
     case ["dates", *dates]:
       return Explicit([Interval.fromDate(fromJSON(d)) for d in dates])
+    case ["range", start, end]:
+      return Explicit([Interval(fromJSON(start), fromJSON(end))])
     case ["weekly", *days]:
       return Weekly({d for d in days})
     case ["monthly", *days]:
