@@ -809,11 +809,6 @@ function test_task_defer {
     assert "$(gtd task_state read fake-uuid)" = "SOMEDAY"
 }
 
-function test_python {
-    ../components/test.py all
-}
-
-
 # Entry Point *****************************************************************
 
 
@@ -864,7 +859,8 @@ function run_all_tests {
     should_pass test_task_activate
     should_pass test_task_complete
     should_pass test_task_defer
-    should_pass test_python
+
+    components/test.py
 
     print_summary
 }

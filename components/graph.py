@@ -53,10 +53,10 @@ def read_ids(f=sys.stdin):
   for line in f:
     yield line.strip()
 
-def filter_nodes(predicate):
+def filter_nodes(predicate, *args, f=sys.stdin):
   "Yields all nodes from stdin which satisfy `predicate`."
-  for node in read_ids():
-    if predicate(node):
+  for node in read_ids(f):
+    if predicate(*args, node):
       print(node)
 
 def filter_nodes_with_edges(edge_set, predicate):
@@ -305,6 +305,12 @@ def reachable(edges, direction):
 
 ## Data #################################################################
 
+def datum_path(datum, id):
+  return os.path.join(os.getenv("NODE_DIR"), id, datum)
+
+def datum_open(datum, id, mode="r"):
+  return open(datum_path(datum, id), mode)
+
 def datum_read(datum, id):
   """Python implementation of `graph_datum <datum> read`.
 
@@ -313,10 +319,9 @@ def datum_read(datum, id):
   cache = {}
   if (datum, id) not in cache:
     try:
-      path = os.path.join(os.getenv("NODE_DIR"), id, datum)
-      cache[(datum, id)]=open(path, "r").read().strip()
+      cache[(datum, id)] = datum_open(datum, id, "r").read().strip()
     except OSError:
-      cache[(datum, id)]="[no contents]"
+      cache[(datum, id)] = "[no contents]"
   return cache[(datum, id)]
 
 # re-implementations of gtd.sh functions to avoid shelling out.

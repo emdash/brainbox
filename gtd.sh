@@ -1648,14 +1648,8 @@ query_declare_type             complete update
 query_declare_default_producer complete from target
 function complete {
     forbid_preview
-    local date
-    read date < <(date -Iminutes)
     end_filter_chain "$@"
-    while IFS='' read id
-    do
-        task_complete "${id}"
-        echo "${date}" | graph_datum completed append "${id}"
-    done
+    map task_complete
     database_commit "${SAVED_ARGV}"
 }
 
