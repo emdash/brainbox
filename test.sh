@@ -630,7 +630,7 @@ function test_is_active {
         assert_true test "$(gtd is_active)" = fake-uuid
     done
 
-    for state in DONE DROPPED SOMEDAYx
+    for state in DONE DROPPED SOMEDAY
     do
         echo "${state}" | gtd task_state write fake-uuid
         assert_true test -z "$(gtd is_active)"
