@@ -105,7 +105,7 @@ def nthWeekday(n, weekday, month=today.month, year=today.year):
   else:
     raise ValueError("`n` cannot be 0")
 
-@dataclass(order=True)
+@dataclass(order=True, frozen=True)
 class Interval:
   """The time between two timestamps, or a start timestamp and duration.
 
