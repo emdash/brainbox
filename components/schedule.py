@@ -21,6 +21,7 @@ import graph
 import itertools
 import json
 import sys
+import tabulate
 
 # convenient constants for working with time deltas.
 second   = timedelta(seconds = 1)
