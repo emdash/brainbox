@@ -235,6 +235,12 @@ class Interval:
     """
     return range(self.start.toordinal(), self.end.toordinal() + 1)
 
+  def days(self):
+    return map(
+      lambda d: Interval.fromDate(datetime.fromordinal(d)),
+      self.ordinals()
+    )
+
 @dataclass
 class DateSet:
   """Represents when an event can happen.
