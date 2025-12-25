@@ -46,9 +46,8 @@ def firstOfMonth(month=today.month, year=today.year):
   """Return the date on which the given month begins."""
   return datetime(year, month, 1)
 
-def startOfWeek(day=today.day, month=today.month, year=today.year):
+def startOfWeek(dt):
   """Return the monday which begins the week containing the given day."""
-  dt = datetime(year, month, day)
   return dt - timedelta(days=dt.weekday())
 
 def daysOfMonth(month=today.month, year=today.year):
