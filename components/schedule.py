@@ -137,7 +137,7 @@ class Interval:
       case end:  return Interval(startOfDay(dt), startOfDay(end + 1 * day))
 
   @classmethod
-  def sequence(self, start, duration, period=None, phase=None):
+  def sequence(self, start, duration, period=None, phase=None, end=None):
     """Yields an infinite sequence of evenly-spaced intervals."""
     if period is None:
       period = duration
@@ -154,9 +154,15 @@ class Interval:
     assert phase < period
 
     i = start
-    while True:
-      yield Interval.fromStartDuration(i + phase, duration)
-      i += period
+    match end:
+      case None:
+        while True:
+          yield Interval.fromStartDuration(i + phase, duration)
+          i += period
+      case end:
+        while i <= end:
+          yield Interval.fromStartDuration(i + phase, duration)
+          i += period
 
   @classmethod
   def mergeConsecutive(self, intervals):
