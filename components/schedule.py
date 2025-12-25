@@ -675,7 +675,7 @@ def fromJSON(decoded):
     case ["/", a, b]:
       return fromJSON(a) / fromJSON(b)
     case e:
-      raise ValueError("Illegal date expr: {e}")
+      raise ValueError(f"Illegal date expr: {e}")
 
 @dataclass
 class Event:
