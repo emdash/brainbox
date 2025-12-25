@@ -39,7 +39,7 @@ tomorrow  = today + day
 ticks = 86400
 
 def debug(*args):
-  print(*args)
+  print(*args, file=sys.stderr)
   return args[-1]
 
 def firstOfMonth(month=today.month, year=today.year):
