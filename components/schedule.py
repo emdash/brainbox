@@ -400,14 +400,14 @@ class Not(Implicit):
   to 13:00. Not(Weekly({5, 6})) would be every day *except* weekends.
   """
 
-  subexpr : DateSet
+  subset : DateSet
 
   # override here to get expected behaivor for the common ase.
   def contains(self, interval):
     return self.within(interval.start) or self.within(interval.end)
 
   def within(self, dt):
-    return not self.subexpr.within(dt)
+    return not self.subset.within(dt)
 
 @dataclass
 class Compound(Implicit):
