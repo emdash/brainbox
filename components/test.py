@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-"""Test of calendar functions"""
+""" of calendar functions"""
 
 from datetime import *
 import json
@@ -19,7 +19,7 @@ def test_start_of_week():
   for year in range(2000, 2025):
     for month in range(1, 12):
       for day in range(1, 28):
-        assert startOfWeek(day, month, year).weekday() == 0
+        assert startOfWeek(datetime(year, month, day)).weekday() == 0
 
 def test_days_of_month():
   assert len(list(daysOfMonth(2025, 1))) == 31
@@ -680,7 +680,7 @@ def test_fromJSON():
   ) == AtTime(time(hour=20, minute=30), timedelta(minutes=45))
 
   assert fromJSON(
-    ["range", "2025-10-1", "2025-10-31"]
+    ["range", "2025-10-01", "2025-10-31"]
   ) == Explicit(
     [Interval(datetime(2025, 10, 1), datetime(2025, 10, 31))]
   )
