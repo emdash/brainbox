@@ -248,10 +248,10 @@ class DateSet:
   contains every interval in the set).
   """
 
-  def intersects(window):
+  def intersects(self, window):
     """True if window intersects any interval in the set."""
     try:
-      self.intervals(window).next()
+      self.intervals(window).__next__()
     except StopIteration:
       return False
     return True
