@@ -270,9 +270,42 @@ class DateSet:
     """Returns the smallest interval which contains the entire set."""
     raise NotImplemented
 
+  def resolution(self):
+    """A hint to the scheduler about the smallest time scales within the set."""
+    raise NotImplemented
+
+  def within(self, dt):
+    """True if the given dt is part of this set."""
+    raise NotImplemented
+
+  def contains(self, window):
+    """True if the given window is completely contained by this set."""
+    raise NotImplemented
+
+  def intersect(self, window):
+    """True if the given window is at least partially contained by this set."""
+    raise NotImplemented
+
   def intervals(self, window):
     """Return an ordered sequence of intervals which intersect `window`."""
     raise NotImplemented
+
+  def completions(self, window, history):
+    """Return the set of incomplete intervals according to the completion history..
+
+    A single timestamp within an interval is considered a "completion
+    event." Multiple timestamps within an interval are ignored, as are
+    timestamps outside of a completion window.
+    """
+    for i in self.intervals(window):
+      yield (i, any(map(i.within, history)))
+
+  def missed(self, window, history):
+    return {
+      interval
+      for (interval, completed)
+      in self.completions(window, history) if completed
+    }
 
 @dataclass
 class Explicit(DateSet):
@@ -339,9 +372,6 @@ class Implicit(DateSet):
 
   def is_finite(self):
     return False
-
-  def within(self, sample):
-    raise NotImplemented
 
   def contains(self, interval):
     """True if the window is completely contained within this set."""
