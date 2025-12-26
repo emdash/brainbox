@@ -291,21 +291,32 @@ class DateSet:
     """True if the given window is at least partially contained by this set."""
     raise NotImplemented
 
-  def intervals(self, window):
-    """Return an ordered sequence of intervals which intersect `window`."""
+  def intervals(self, window=None):
+    """Return an ordered sequence of intervals which intersect `window`.
+
+    If window is not given, and dateset is finite, then yields every
+    interval in the date set.
+
+    If this window is not given, and the dateset is not finite, this
+    will raise `ValueError'.
+    """
     raise NotImplemented
 
-  def completions(self, window, history):
-    """Return the set of incomplete intervals according to the completion history..
+  def completions(self, history, window=None):
+    """Yield tuples of `(intervals, completed)`.
 
     A single timestamp within an interval is considered a "completion
-    event." Multiple timestamps within an interval are ignored, as are
+    event", which discharges the obligation implied by the interval.
+
+    Multiple timestamps within an interval are ignored, as are
     timestamps outside of a completion window.
+
+    `window` is treated the same as in `intervals`.
     """
     for i in self.intervals(window):
       yield (i, any(map(i.within, history)))
 
-  def missed(self, window, history):
+  def missed(self, history, window=None):
     return {
       interval
       for (interval, completed)
@@ -330,22 +341,28 @@ class Explicit(DateSet):
 
   def span(self):
     def _spanRec(list):
-      match given:
+      match list:
         case []: raise ValueError("Empty")
         case [x]: return x
         case [first, *rest]: return first.span(span_rec(rest))
-    return spanRec(self.given)
+    return _spanRec(self.given)
 
   def intersects(self, window):
     return any(i.intersects(window) for i in self.intervals(window))
 
+  def contains(self, window):
+    return any(i.contains(window) for i in self.given)
+
   def within(self, dt):
     return any(i.within(dt) for i in self.given)
 
-  def intervals(self, window):
-    for i in Interval.mergeConsecutive(self.given):
-      if window.contains(i):
-        yield i
+  def intervals(self, window=None):
+    if window is None:
+      return iter(self.given)
+    else:
+      for i in Interval.mergeConsecutive(self.given):
+        if window.contains(i):
+          yield i
 
 @dataclass
 class Implicit(DateSet):
@@ -378,16 +395,20 @@ class Implicit(DateSet):
   def is_finite(self):
     return False
 
+  def span(self):
+    raise ValueError(f"{self} is not finite")
+
   def contains(self, interval):
     """True if the window is completely contained within this set."""
     return self.within(interval.start) and self.within(interval.end)
 
-  def intervals(self, window, resolution=minute):
+  def intervals(self, window=None, resolution=minute):
     # sample the set at regular intervals which intersect the current window,
     # merging consecutive subintervals in the final result.
+    if window is None:
+      window = self.span()
     sample_points = Interval.sequence(window.start, resolution)
-
-    yield from Interval.mergeConsecutive(
+    return Interval.mergeConsecutive(
       filter(
         self.contains,
         itertools.takewhile(
@@ -415,25 +436,22 @@ class Not(Implicit):
     return not self.subset.within(dt)
 
 @dataclass
-class Compound(Implicit):
-  """Base class for date sets which are composed of arbitrary subsets."""
+class Union(Implicit):
+  """Take the union of arbitrary subsets.
+
+  If all the subsets are finite, then the union over them is finite.
+  """
+
   subsets: set[DateSet]
 
   def span(self):
     if self.is_finite():
-      spans = [span(e) for e in self.subsets]
+      spans = [s.span() for s in self.subsets]
       starts = [s.start for s in spans]
       ends = [s.end for s in spans]
       return Interval(min(starts), max(ends))
     else:
       raise ValueError("Cannot take the span of a possiby-infinite set.")
-
-@dataclass
-class Union(Compound):
-  """Take the union of arbitrary subsets.
-
-  If all the subsets are finite, then the union over them is finite.
-  """
 
   def is_finite(self):
     return all(s.is_finite() for s in self.subsets)
@@ -445,11 +463,22 @@ class Union(Compound):
     return any(s.intersects(interval) for s in self.subsets)
 
 @dataclass
-class Intersection(Compound):
+class Intersection(Implicit):
   """Take the intersection of arbitrary subsets.
 
   If any of the subsets is finite, then the intersection is finite.
   """
+
+  subsets: set[DateSet]
+
+  def span(self):
+    if self.is_finite():
+      spans = [s.span() for s in self.subsets if s.is_finite()]
+      starts = [s.start for s in spans]
+      ends = [s.end for s in spans]
+      return Interval(min(starts), max(ends))
+    else:
+      raise ValueError("Cannot take the span of a possiby-infinite set.")
 
   def is_finite(self):
     return any(s.is_finite() for s in self.subsets)
@@ -686,114 +715,428 @@ def fromJSON(decoded):
 class Event:
   """A calendar item, which occurs at a particular (possibly repeating) time.
 
+  Events are considered *active* w/r/t a given timestamp IFF
+  `when.within()` returns True for this timestamp.
+
+  Therefore, an Event will appear in the `is_active` query if the
+  query is given a timestamp as above. If omitted, `is_active`
+  to the current time.
+
+  An event will appear in the "is_upcoming" query if the query is
+  given a time window (which defaults to the current calendar day)
+  that intersects `when`.
+
+  Calendar events are not Actionable. They will appear in the agenda
+  view as a schedule item, but not in the `next actions` list.
+
   @id     - the graph node associated with this item
   @notify - how long before the next occurrence to remind the user.
+
   """
-  id: str
-  reminders: list[timedelta]
-  when : set[timedelta]
+  gloss : str
+  when : DateSet
 
 @dataclass
 class Task(Event):
-  """An event with a completion requirement and history."""
-  completed : Set[datetime]
+  """A an actionable item which must be completed within a particular
+  (possibly repeating) window.
+
+  A Task is considered *active* and *actionable* w/r/t a given
+  timestamp if the `when.within()` matches, similar to Event *and* a
+  completion has not been logged within this same interval.
+  """
+  completions : set[datetime]
+
+  def completion_graph(self, window, mode="bar"):
+    """Show the completion history for the given time interval.
+
+    @window - the given time interval.
+    @mode - the style of completion to display. One of:
+            * percentage (default)
+            * week
+            * month
+    """
+    ret = ''
+    for d in window.days():
+      for i in self.when.intervals(d):
+        if any(map(i.within, self.completed)):
+          ret += '|'
+        else:
+          ret += '.'
+    return ret
 
 @dataclass
 class Habit(Task):
-  """A recurring task which progresses towards some goal.
+  """A Task which also tracks progress towards a larger goal.
+
+  Habits behave like Tasks, except that the user is also expected to
+  log progress, and the Habit as a whole is complete when the goal is
+  reached. If the goal is a simple numeric condition, this completion
+  can be automatic, otherwise it is up to the use to explicitly mark
+  the task as DONE.
   """
-  goal : str
-  progress : str
+  progress : Dict[Interval, datetime]
 
-def display_month(highlight, month=today.month, year=today.year):
-  """Display a text calendar with matching dates highlighted"""
-  days = daysOfMonth(dt.year, dt.month)
-  first = days.next()
-  print('Mo Tu We Th Fr Sa Su')
-  print('   ' * first.weekday(), end = '')
-  for d in days:
-    cell = f"{d.day:02d} "
-    if Interval.fromDate(d).intersects(highlight):
-      print(reverse(cell), end='')
-    else:
-      print(cell, end='')
-    if d.weekday() == 6:
-      print()
-    d += 1 * day
-  print()
+def reverse(s):
+  """Use ansi codes to invert video."""
+  return f"\x1b[7m{s}\x1b[m"
 
-def partition(pred, seq):
-  left = set()
-  right = set()
-  for i in seq:
-    if pred(i):
-      right.add(i)
-    else:
-      left.add(i)
-  return (left, right)
+def preview(mode, *args):
+  """Dispatch to different preview submodes.
+  """
+  try:
+    ds = fromJSON(json.load(sys.stdin))
+  except ValueError as e:
+    print("Parse Error")
+    traceback.print_exception(e)
+    return
 
-def is_scheduled(nodes):
-  return filter(lambda id: graph.has(id, 'schedule'), nodes)
+  match args:
+    case (): window = Interval.fromDate(today)
+    case (start,): window = Interval.fromDate(datetime.fromisoformat(start))
+    case (start, end): window = Interval.fromDate(
+        datetime.fromisoformat(start),
+        datetime.fromisoformat(end)
+    )
+    case invalid: raise ValueError("Expected one - 3 arguments")
 
-def is_unscheduled(nodes):
-  return filter(
-    lambda id: not graph.has(id, 'schedule'),
-    nodes
+  match mode:
+    case "list":
+      preview_list(ds, window)
+    case "month":
+      i = window.start
+      while i < window.end:
+        preview_month(ds, i.month, i.year)
+        i = nextMonth(i.month, i.year)
+    case "week":
+      preview_week(ds, window)
+    case invalid:
+      raise ValueError(f"Invalid mode: {mode}")
+
+def preview_list(ds, window):
+  """Render preview as a simple list.
+
+  This is mainly useful for trouble-shooting, but it's also sometimes
+  the best way to view a set of intervals.
+  """
+  print(
+    tabulate.tabulate(
+      ((i.start, i.end) for i in ds.intervals(window)),
+      headers=("Start", "End")
+    )
   )
 
-def is_active():
-  return filter(event_is_active())
+def preview_month(ds, month, year):
+  """Preview a DateSet using monthly calendars.
 
-def is_upcoming(start, end):
-  return filter(event_is_upcoming(horizon), events)
+  Highlights days on which at least one interval is present.
+  """
 
-def is_due(tasks, deadline=today):
-  return filter(task_is_due(deadline), tasks)
+  def printDay(dt):
+    if ds.intersects(Interval.fromDate(dt)):
+      print(f"{reverse(f"{dt.day:2d}")} ", end='')
+    else:
+      print(f"{dt.day:2d} ", end='')
+    if dt.weekday() == 6:
+      print()
 
-def printall(iter):
-  for i in iter:
-    print(i)
+  print()
+  days = daysOfMonth(year, month)
+  first = datetime(year, month, days.__next__())
+  print('Mo Tu We Th Fr Sa Su')
+  print('   ' * first.weekday(), end = '')
+  printDay(first)
 
-def agenda(type, window):
-  events = [
-    Event(
-      task_gloss(id),
-      fromJSON(
-        json.load(
-          open(graph_datum_path(id, 'schedule'), 'r')
+  for day in days:
+    dt = datetime(year, month, day)
+    printDay(dt)
+
+  if not dt.weekday() == 6:
+    print()
+
+def preview_week(
+    ds,
+    window,
+    increment=hour,
+    start_of_day=8 * hour,
+    end_of_day=22 * hour
+):
+  """Preview a DateSet as a weekly calendar.
+
+  You can make the increment as large as one day, or as small as one
+  minute, but 1 hour is the default increment.
+  """
+  headers = ("Time", "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+  dates = []
+
+  start = startOfWeek(window.start)
+  end = start + 7 * day
+
+  h = datetime(1, 1, 1)
+  hh = start_of_day
+  while hh < end_of_day:
+    week = [[] for _ in range(8)]
+    week[0] = f"{(h + hh).hour:02d}:{(h + hh).minute:02d}"
+    d = start
+    while d < end:
+      if ds.intersects(Interval.fromStartDuration(d + hh, increment)):
+        week[d.weekday() + 1] = reverse(' ' * 4)
+      else:
+        week[d.weekday() + 1] = ' ' * 4
+      d += day
+    dates.append(week)
+    hh += increment
+
+  print(tabulate.tabulate(dates, headers = headers, tablefmt='simple_outline'))
+
+def agenda(
+    date=None,
+    interval=15 * minute,
+    start_of_day=8 * hour,
+    end_of_day=22 * hour
+):
+  """Print agenda view for a single day.
+
+  This will show scheduled and unscheduled activity for the given
+  input set.
+  """
+  # read ids from stdin and load in scheduling information
+  match date:
+    case None:
+      dt = today
+    case date:
+      dt = datetime.fromisoformat(date)
+
+  todo = set()
+  scheduled = {}
+  habits = {}
+  for id in graph.read_ids():
+    match classify_node(id):
+      case "unscheduled": todo.add(id)
+      case "event":
+        scheduled[id] = Event(graph.task_gloss(id), read_schedule(id))
+      case "habit":
+        habits[id] = Event(
+          graph.task_gloss(id),
+          read_schedule(id),
+          read_completion_history(id)
         )
+
+  # build a mapping from time blocks to events.
+  i = datetime(dt.year, dt.month, dt.day) + start_of_day
+  end = datetime(dt.year, dt.month, dt.day) + end_of_day
+  time_map = {}
+  while i < end:
+    cur = Interval.fromStartDuration(i, interval)
+    timestr = f"{cur.start.hour:02d}:{cur.start.minute:02d}"
+    for (id, event) in scheduled.items():
+      if event.when.intersects(cur):
+        graph.dict_append(time_map, timestr, id)
+    i += interval
+  width = int(os.getenv("COLUMNS", "80"))
+  schedule = []
+
+  # format the time map into an agenda view
+  print("Agenda")
+  for hour, items in time_map.items():
+    if items:
+      schedule.append((hour, "\n".join(map(graph.task_gloss, items))))
+  print(tabulate.tabulate(schedule))
+  print()
+
+  # build habit graphs
+  print("Habits")
+  print(tabulate.tabulate(
+    ((habit.gloss, habit.completion_graph(dt)) for habit in habits.values())
+  ))
+  print()
+
+  # print the unscheduled tasks
+  print("Unscheduled Tasks")
+  print(tabulate.tabulate(
+    ((graph.task_state(id), graph.task_gloss(id)) for id in todo),
+    headers=["State", "Task"],
+    tablefmt="simple"
+  ))
+  print()
+
+def datum_read_json(datum, id):
+  """Read the given datum and try to decode it as JSON."""
+  return json.load(open(graph.datum_path(datum, id)))
+
+def read_date_set(datum, id):
+  """Read the given datum and try to construct a DateSet from it.
+
+  For now this uses fromJSON to parse the ad-hoc DateSet DSL.
+  """
+  return fromJSON(datum_read_json(datum, id))
+
+def read_completion_history(id):
+  """Read the `completed` datum into a `Set[datetime]`.
+
+  These are assumed to be in iso format, one per line.
+  """
+  try:
+    return set(
+      map(datetime.fromisoformat,
+          map(str.strip, graph.datum_open("completed", id))))
+  except ValueError:
+    return set()
+
+def classify_node(id):
+  """Determine node type from its data.
+
+  Nodes can be events, tasks, habits, or unscheduled.
+  """
+  if graph.has('schedule', id):
+    if graph.has('completed', id):
+      if graph.has('progress', id):
+        return "habit"
+      else:
+        return "task"
+    else:
+      return "event"
+  else:
+    return "unscheduled"
+
+def is_scheduled(id):
+  """True if a node's active / actionable status is determined by the scheduler.
+  """
+  match classify_node(id):
+    case "unscheduled": return False
+    case _:             return True
+
+def is_unscheduled(id):
+  """True if a node's active / actionable status is not determined solely by the task state.
+  """
+  return not is_scheduled(id)
+
+def is_complete(window, id):
+  """Filter nodes that are completed.
+
+  True if a node is in state DONE, or, for scheduled nodes, if they
+  have been completed within their prescribed time windows.
+  """
+  if graph.task_state(id) == "DONE":
+    return True
+  else:
+    match classify_node(id):
+      case "event"|"unscheduled":
+        return False
+      case "task" | "habit" as kind:
+        when = read_date_set("schedule", id)
+        return \
+              graph.has("completed", id) \
+          and bool(when.missed(read_completion_history(id)))
+      case invalid:
+        raise ValueError(f"Invalid Node Classification: {invalid}")
+
+def is_in_progress(dt, id):
+  match classify_node(id):
+    case "event":
+      return read_date_set("schedule", id).within(dt)
+    case _:
+      return False
+
+def is_actionable(window, id):
+  """Filter nodes that are actionable.
+
+  Unscheduled tasks are actionable if they are in state NEW or TODO.
+
+  Events are never considered actionable. They simply exist.
+
+  Tasks and habits are actionable if the current time is within a
+  completion window, as defined by the node's `schedule` datum, *and*
+  no completion has been logged that discharges the task's obligation.
+
+  """
+  match classify_node(id):
+    case "unscheduled":
+        return graph.task_state(id) in ["NEW", "TODO"]
+    case "event":
+      return False
+    case "task" | "habit":
+      when = read_date_set("schedule", id)
+      history = debug("xxa:", read_completion_history(id))
+      return debug("xxb:", when.within(dt)) and debug("xxc:", not any(map(when.within, history)))
+    case invalid:
+      raise ValueError(f"Invalid Node Classification: {invalid}")
+
+def is_upcoming(window, id):
+  """True if an activity will become active within the given window.
+
+  The default window is the current day, but arbitrary intervals are
+  accepted. If a duration is given instead, then it is relative to the
+  current time.
+  """
+  raise NotImplemented
+
+def is_due(window, tasks):
+  """True if a task or habit's completion window will end within the
+  given window.
+
+  Defaults and arguments are the same as for `is_upcoming`.
+  """
+  raise NotImplemented
+
+def window_args(*args):
+  """Helper function to handle parsing dates and intervals from arguments.
+  """
+
+  match args:
+    case []: return today
+    case [s]:
+      try:
+        return parseDuration(str)
+      except ValueError:
+        return Interval.fromDate(datetime.fromisoformat(s))
+    case [start, end]|[start, "-", end]:
+      return Interval.fromDate(
+        datetime.fromisoformat(start),
+        datetime.fromisoformat(end)
       )
-    )
-    for id in is_scheduled()
-  ]
+    case ["until", end]:
+      return Interval.fromDate(
+        today,
+        datetime.fromisoformat(end)
+      )
+    case _: raise ValueError("Invalid window: {args}")
 
-  print("Schedule")
-  match type:
-    case "day": day_view(window)
-    case "week": week_view(window)
-    case "month": month_viw(window)
+def filter_window(f, *args):
+  return graph.filter_nodes(f, window_args(*args))
 
-def display_agenda(events, start=today, end=today + 7 * day):
-  pass
+def filter_datetime(f, *args):
+  match args:
+    case [str]:
+      return graph.filter_nodes(f, datetime.fromisoformat(str))
+    case []:
+      return graph.filter_nodes(f, now)
+    case invalid:
+      raise ValueError("Invalid arguments: {args}")
 
-def display_completion_calendar(habit, window):
-  pass
+def foreach(f, *args):
+  """Call f(args, node) on each node read from stdin, and print the result.
 
-def display_habit_graph(habitx, window):
-  pass
-
+  This is a helper function to make it easier to extend the
+  command-line interface with ad-hoc subcommands, and a candidate to
+  be moved to a utility library.
+  """
+  for node in graph.read_ids():
+    print(f(*args, node))
 
 if __name__ == "__main__":
   match sys.argv[1:]:
-    case ["is_active"]:
-        printall(is_active())
-    case ["is_inactive"]:
-      is_inactive()
-    case ["is_upcoming"]:
-      is_upcoming()
-    case ["is_upcoming", start, end]:
-      is_upcoming(start, end)
-    case ["is_due"]:
-      is_due()
-    case ["is_due", date]:
-      is_due(date)
+    case ["is_upcoming", *args]:   filter_window(is_upcoming, *args)
+    case ["is_complete", *args]:   filter_window(is_complete, *args)
+    case ["is_in_progress", * args]: filter_datetime(is_in_progress, *args)
+    case ["is_due", *args]:        filter_window(is_due,      *args)
+    case ["is_actionable", *args]: filter_datetime(is_actionable, *args)
+    case ["complete", *args]:      complete(*args)
+    case ["completed"]:            foreach(read_completion_history)
+    case ["schedule"]:             foreach(read_date_set, 'schedule')
+    case ["deadline"]:             foreach(read_date_set, 'deadline')
+    case ["classify"]:             foreach(classify_node)
+    case ["preview", *args]:       preview(*args)
+    case ["agenda", *args]:        agenda(*args)
+    case invalid:
+      raise ValueError("Invalid Command:", invalid)

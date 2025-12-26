@@ -623,6 +623,17 @@ def test_intersection():
     Interval(datetime(2025, 10, 11, 8, 0), datetime(2025, 10, 11, 9, 0))
   ]
 
+  assert list(
+    Intersection([
+      Periodic(8 * hour, 15 * minute),
+      Explicit([Interval.fromDate(datetime(2025, 10, 11))])
+    ]).intervals()
+  ) == [
+    Interval(datetime(2025, 10, 11,  0, 0), datetime(2025, 10, 11,  0, 15)),
+    Interval(datetime(2025, 10, 11,  8, 0), datetime(2025, 10, 11,  8, 15)),
+    Interval(datetime(2025, 10, 11,  16, 0), datetime(2025, 10, 11, 16, 15)),
+  ]
+
 def test_fromJSON():
   assert fromJSON('2025-11-10') == datetime(2025, 11, 10)
   assert fromJSON('12:00') == time(hour=12)
@@ -684,6 +695,156 @@ def test_fromJSON():
   ) == Explicit(
     [Interval(datetime(2025, 10, 1), datetime(2025, 10, 31))]
   )
+
+def test_interval_is_finite():
+  assert Explicit([Interval.fromDate(today)]).is_finite() == True
+  assert Periodic(4 * hour, 15 * minute).is_finite() == False
+  assert Monthly({23, 24, 25}).is_finite() == False
+  assert Weekly({2, 3}).is_finite() == False
+  assert NthWeekday(2, 3).is_finite() == False
+
+  assert Union([
+    Periodic(4 * hour, 15 * minute),
+    Monthly({23, 24, 25}),
+  ]).is_finite() == False
+
+  assert Intersection([
+    Periodic(4 * hour, 15 * minute),
+    Monthly({23, 24, 25}),
+  ]).is_finite() == False
+
+  assert Intersection([
+    Periodic(4 * hour, 15 * minute),
+    Monthly({23, 24, 25}),
+    Explicit([
+      Interval.fromDate(datetime(2025, 10, 1), datetime(2025, 10, 31))
+    ])
+  ]).is_finite() == True
+
+def test_interval_span():
+  try:
+    Explicit([Interval.fromDate(today)]).span()
+  except ValueError:
+    pass
+
+  try:
+    Periodic(4 * hour, 15 * minute).span()
+  except ValueError:
+    pass
+
+  try:
+    Monthly({23, 24, 25}).span()
+  except ValueError:
+    pass
+
+  try:
+    Weekly({2, 3}).span()
+  except ValueError:
+    pass
+
+  try:
+    NthWeekday(2, 3).span()
+  except ValueError:
+    pass
+
+  try:
+    Union([
+      Periodic(4 * hour, 15 * minute),
+      Monthly({23, 24, 25}),
+    ]).span()
+  except ValueError:
+    pass
+
+  assert Intersection([
+    Periodic(4 * hour, 15 * minute),
+    Monthly({23, 24, 25}),
+    Explicit([
+      Interval.fromDate(datetime(2025, 10, 1), datetime(2025, 10, 31))
+    ])
+  ]).span() == Interval.fromDate(datetime(2025, 10, 1), datetime(2025, 10, 31))
+
+def test_completions():
+  assert not any(
+    completed for (_, completed)
+    in Periodic(2 * hour, 15 * minute).completions(
+      window = Interval.fromDate(datetime(2025, 10, 11)),
+      history = {}
+    )
+  )
+
+  assert {
+    interval: completed
+    for (interval, completed)
+    in Periodic(8 * hour, 15 * minute).completions(
+      window = Interval.fromDate(datetime(2025, 10, 11)), history = {
+        datetime(2025, 10, 11, 0, 10),
+      }
+    )
+  } == {
+    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
+    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
+    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): False
+  }
+
+  assert {
+    interval: completed
+    for (interval, completed)
+    in Periodic(8 * hour, 15 * minute).completions(
+      window = Interval.fromDate(datetime(2025, 10, 11)), history = {
+        datetime(2025, 10, 11, 8, 10),
+      }
+    )
+  } == {
+    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): False,
+    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): True,
+    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): False
+  }
+
+  assert {
+    interval: completed
+    for (interval, completed)
+    in Periodic(8 * hour, 15 * minute).completions(
+      window = Interval.fromDate(datetime(2025, 10, 11)), history = {
+        datetime(2025, 10, 11, 16, 10),
+      }
+    )
+  } == {
+    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): False,
+    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
+    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
+  }
+
+  assert {
+    interval: completed
+    for (interval, completed)
+    in Periodic(8 * hour, 15 * minute).completions(
+      window = Interval.fromDate(datetime(2025, 10, 11)), history = {
+        datetime(2025, 10, 11, 0, 10),
+        datetime(2025, 10, 11, 16, 10),
+      }
+    )
+  } == {
+    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
+    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
+    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
+  }
+
+  assert {
+    interval: completed
+    for (interval, completed)
+    in Intersection([
+      Periodic(8 * hour, 15 * minute),
+      Explicit([Interval.fromDate(datetime(2025, 10, 11))])
+    ]).completions({
+      datetime(2025, 10, 11,  0, 15),
+      datetime(2025, 10, 11, 16, 15)
+    })
+  } == {
+    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
+    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
+    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
+  }
+
 
 def main(*args):
   import traceback
