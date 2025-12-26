@@ -78,15 +78,6 @@ def test_intervals():
     assert i1.intersects(i)
   assert not i1.intersects(i4)
 
-  assert list(Interval(today, tomorrow).subdivide(4 * hour)) == [
-    Interval(today            , today +  4 * hour),
-    Interval(today +  4 * hour, today +  8 * hour),
-    Interval(today +  8 * hour, today + 12 * hour),
-    Interval(today + 12 * hour, today + 16 * hour),
-    Interval(today + 16 * hour, today + 20 * hour),
-    Interval(today + 20 * hour, tomorrow),
-  ]
-
 def test_display_month():
   pass
 

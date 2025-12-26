@@ -202,16 +202,6 @@ class Interval:
       or interval.within(self.start)   \
       or interval.within(self.end)
 
-  def subdivide(self, interval):
-    """Subdivide this interval evenly into n subintervals"""
-    i = 0
-    start = self.start
-    n = self.duration // interval
-    while start < self.end:
-      end = start + interval
-      yield Interval(start, end)
-      start = end
-
   def span(self, interval):
     """Return the smallest interval containg self and interval."""
     return Interval(
