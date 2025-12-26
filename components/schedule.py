@@ -142,34 +142,6 @@ class Interval:
       case end:  return Interval(startOfDay(dt), startOfDay(end + 1 * day))
 
   @classmethod
-  def sequence(self, start, duration, period=None, phase=None, end=None):
-    """Yields an infinite sequence of evenly-spaced intervals."""
-    if period is None:
-      period = duration
-
-    if phase is None:
-      phase = timedelta()
-
-    assert isinstance(start, datetime)
-    assert isinstance(duration, timedelta)
-    assert isinstance(period, timedelta)
-    assert period > timedelta()
-    assert duration > timedelta()
-    assert phase >= timedelta()
-    assert phase < period
-
-    i = start
-    match end:
-      case None:
-        while True:
-          yield Interval.fromStartDuration(i + phase, duration)
-          i += period
-      case end:
-        while i <= end:
-          yield Interval.fromStartDuration(i + phase, duration)
-          i += period
-
-  @classmethod
   def mergeConsecutive(self, intervals):
     """Yields intervals, merging runs of intersecting intervals."""
     next = None
@@ -185,6 +157,33 @@ class Interval:
             next = i
     if next:
        yield next
+
+  def sequence(self, duration, period=None, phase=None):
+    """Yield evenly-spaced intervals intersecting the window."""
+    if period is None:
+      period = duration
+
+    if phase is None:
+      phase = timedelta()
+
+    assert isinstance(duration, timedelta)
+    assert isinstance(period, timedelta)
+    assert period > timedelta()
+    assert duration > timedelta()
+    assert phase >= timedelta()
+    assert phase < period
+
+    i = self.start + phase
+    end = self.end
+    while i < end:
+      yield Interval.fromStartDuration(i, duration)
+      i += period
+
+  def sequenceMonths(self):
+    i = self.start
+    while i <= self.end:
+      yield firstOfMonth(self.year, self.month)
+      i = nextMonth(i.year, i.month)
 
   def within(self, timestamp):
     """True if timestamp occurs on or before start, and strictly before end.
@@ -407,15 +406,8 @@ class Implicit(DateSet):
     # merging consecutive subintervals in the final result.
     if window is None:
       window = self.span()
-    sample_points = Interval.sequence(window.start, resolution)
     return Interval.mergeConsecutive(
-      filter(
-        self.contains,
-        itertools.takewhile(
-          window.contains,
-          sample_points
-        )
-      )
+      filter(self.contains, window.sequence(resolution))
     )
 
 @dataclass

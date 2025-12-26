@@ -91,31 +91,28 @@ def test_display_month():
   pass
 
 def test_interval_sequence():
-  assert list(islice(Interval.sequence(
-    datetime(2025, 11, 10),
-    5 * minute
-  ), 0, 3)) == [
+  assert list(
+    Interval.fromStartDuration(datetime(2025, 11, 10), 15 * minute)
+    .sequence(5 * minute)
+  ) == [
     Interval.fromStartDuration(datetime(2025, 11, 10),        5 * minute),
     Interval.fromStartDuration(datetime(2025, 11, 10, 0, 5),  5 * minute),
     Interval.fromStartDuration(datetime(2025, 11, 10, 0, 10), 5 * minute)
   ]
 
-  assert list(islice(Interval.sequence(
-    datetime(2025, 11, 10),
-    5 * minute,
-    1 * hour
-  ), 0, 3)) == [
+  assert list(
+    Interval.fromStartDuration(datetime(2025, 11, 10), 3 * hour)
+    .sequence(5 * minute, 1 * hour)
+  ) == [
     Interval.fromStartDuration(datetime(2025, 11, 10, 0, 0), 5 * minute),
     Interval.fromStartDuration(datetime(2025, 11, 10, 1, 0), 5 * minute),
     Interval.fromStartDuration(datetime(2025, 11, 10, 2, 0), 5 * minute)
   ]
 
-  assert list(islice(Interval.sequence(
-    datetime(2025, 11, 10),
-    5 * minute,
-    1 * hour,
-    2 * minute
-  ), 0, 3)) == [
+  assert list(
+    Interval.fromStartDuration(datetime(2025, 11, 10, 0, 0), 3 * hour)
+    .sequence(5 * minute, 1 * hour, 2 * minute)
+  )  == [
     Interval.fromStartDuration(datetime(2025, 11, 10, 0, 2), 5 * minute),
     Interval.fromStartDuration(datetime(2025, 11, 10, 1, 2), 5 * minute),
     Interval.fromStartDuration(datetime(2025, 11, 10, 2, 2), 5 * minute)
