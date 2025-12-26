@@ -43,6 +43,10 @@ def debug(*args):
   print(*args, file=sys.stderr)
   return args[-1]
 
+def debug_iter(prefix, it):
+  for x in it:
+    yield debug(prefix, x)
+
 def firstOfMonth(month=today.month, year=today.year):
   """Return the date on which the given month begins."""
   return datetime(year, month, 1)
