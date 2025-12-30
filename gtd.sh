@@ -1447,6 +1447,92 @@ function subtasks {
     done | "${@}"
 }
 
+# Schedule queries ************************************************************
+
+# invoke schedule component with preferences exported to environment.
+function _schedule {
+    prefs_export_env \
+        "schedule/default_reminders" GTD_SCHEDULE_DEFAULT_REMINDERS '
+           -10 * minute,
+           -2  * hour,
+           -1  * day,
+           -1  * week' \
+        -- "${GTD_DIR}/components/schedule.py" "$@"
+}
+
+# keep nodes which have an associated schedule
+query_declare_type             is_scheduled filter
+query_declare_default_producer is_scheduled all
+function is_scheduled { _schedule is_scheduled ; }
+
+# keep nodes which have do not have an associated schedule.
+query_declare_type             is_scheduled filter
+query_declare_default_producer is_scheduled all
+function is_unscheduled { _schedule is_unscheduled ; }
+
+# keep nodes which have an infinite schedule.
+query_declare_type             is_scheduled filter
+query_declare_default_producer is_scheduled all
+function is_eternal { _schedule is_eternal ; }
+
+# keep nodes which have a finite schedule.
+query_declare_type             is_scheduled filter
+query_declare_default_producer is_scheduled all
+function is_temporal { _schedule is_temporal ; }
+
+# keep nodes with schedule intervals beginning within the given time window.
+query_declare_type             is_upcoming filter window
+query_declare_default_producer is_upcoming all
+function is_upcoming {
+    declare -x GTD_DEFAULT_REMINDERS
+    read GTD_DEFAULT_REMINDERS < <(
+        prefs read 'schedule/default_reminders' '
+        -10 * minute,
+        -2  * hour,
+        -1  * day,
+        -1  * week
+        '
+    )
+    case "${1}" in
+        -d|--date)
+            shift
+            _schedule is_upcoming "${1}" | query_filter_chain "${@}"
+            ;;
+        *)
+            _schedule is_upcoming  | query_filter_chain "${@}"
+            ;;
+    esac
+}
+
+# keep nodes with schedule intervals ending within the given time window.
+query_declare_type             is_due filter "--window:window"
+query_declare_default_producer is_due all
+function is_due {
+    case "${1}" in
+        -w|--window)
+            shift
+            _schedule is_due "${1}" | query_filter_chain "${@}"
+            ;;
+        *)
+            _shchedule is_due  | query_filter_chain "${@}"
+            ;;
+    esac
+}
+
+# keep nodes which are complete
+query_declare_type             is_complete filter "--window:window"
+query_declare_default_producer is_complete all
+function is_complete {
+    case "${1}" in
+        -w|--window)
+            shift
+            _schedule is_complete "${1}" | query_filter_chain "${@}"
+            ;;
+        *)
+            _schedule is_complete | query_filter_chain "${@}"
+            ;;
+    esac
+}
 
 # keep nodes which are actionable at the given timestamp
 query_declare_type             is_actionable filter "--date:string"

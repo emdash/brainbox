@@ -967,11 +967,18 @@ def is_unscheduled(id):
   """
   return not is_scheduled(id)
 
-def is_complete(window, id):
+def is_eternal(id):
+  """True if a node has a schedule with no end date."""
+  return is_scheduled(id) and not read_date_set(id).is_finite()
+
+def is_temporal(id):
+  """True if a task has a schedule with an end date."""
+  return is_scheduled(id) and read_date_set(id).is_finite()
+
+def is_complete(id):
   """Filter nodes that are completed.
 
-  True if a node is in state DONE, or, for scheduled nodes, if they
-  have been completed within their prescribed time windows.
+  True if a node is in state DONE, or, for scheduled nodes with
   """
   if graph.task_state(id) == "DONE":
     return True
@@ -979,11 +986,10 @@ def is_complete(window, id):
     match classify_node(id):
       case "event"|"unscheduled":
         return False
-      case "task" | "habit" as kind:
+      case "habit" as kind:
         when = read_date_set("schedule", id)
-        return \
-              graph.has("completed", id) \
-          and bool(when.missed(read_completion_history(id)))
+        return graph.has("completed", id) \
+          and when.is_complete(history, window)
       case invalid:
         raise ValueError(f"Invalid Node Classification: {invalid}")
 
