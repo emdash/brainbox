@@ -2228,21 +2228,26 @@ function __plan_modify {
 }
 
 function __plan_items {
-    graph_datum subtasks read "${SUBTASK_ID}" \
-      | tee -p "${DATA_DIR}/query_results" \
-      | summarize
+    graph_datum subtasks read "${SUBTASK_ID}" | summarize -d '|'
+}
+
+function __plan_preview {
+    task_details "${SUBTASK_ID}"
 }
 
 function __plan_bindings {
-    fzf_bind_sexec  "shift-up"   "Move Up"     "$0 __plan_modify up     {n}" "up"
-    fzf_bind_sexec  "shift-down" "Move Down"   "$0 __plan_modify down   {n}" "down"
-    fzf_bind_sexec  "delete"     "Delete"      "$0 __plan_modify delete {n}"
-    fzf_bind_exec   "enter"      "Edit"        "$0 __plan_modify edit   {1}"
-    fzf_bind_exec   "a"          "Add"         "$0 __plan_modify add"
-    fzf_bind_exec   "c"          "Capture"     "$0 __plan_modify capture"    "last"
-    fzf_bind_action "q"          "Quit"        "accept"
-    fzf_bind_action "h"          "Toggle Help" "toggle-header"
+    local rls="reload-sync($0 __plan_items)"
+    local plm="$0 __plan_modify"
+    fzf_bind_sexec  "shift-up"   "Move Up"     "${plm} up     {n}"      "${rls}" "up"
+    fzf_bind_sexec  "shift-down" "Move Down"   "${plm} down   {n}"      "${rls}" "down"
+    fzf_bind_sexec  "delete"     "Delete"      "${plm} delete {n}"      "${rls}"
+    fzf_bind_exec   "enter"      "Edit"        "${plm} edit   {1}"      "${rls}"
+    fzf_bind_exec   "a"          "Add"         "${plm} add"             "${rls}"
+    fzf_bind_exec   "c"          "Capture"     "${plm} capture"         "${rls}" "last"
+    fzf_bind_action "q"          "Quit"        "accept"                 "${rls}"
+    fzf_bind_action "h"          "Toggle Help" "toggle-header"          "${rls}"
     fzf_bind_sexec  "focus"      ""            "echo {1} | $0 into cur"
+    __details_bindings
 }
 
 command_declare plan
@@ -2253,7 +2258,7 @@ function plan {
     then
        export SUBTASK_ID="${1}"
     else
-        declare SUBTASK_ID
+        declare SUBTASK_IDf
         read SUBTASK_ID < <(dispatch "${@}" choose --single)
         export SUBTASK_ID
     fi
@@ -2262,7 +2267,9 @@ function plan {
       "Edit Project Subtasks" \
       __plan_bindings \
       __plan_items \
-      --with-nth='{2..}'
+      --preview="$0 __plan_preview" \
+      --with-nth='{2} {3}' \
+      -d '|'
 }
 
 # Inbox Triage ****************************************************************
