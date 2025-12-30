@@ -318,7 +318,7 @@ class DateSet:
       - self is finite     -- uses the entire span.
       - self is not finite -- always returns False
     """
-    if window is None and not self.finite():
+    if window is None and not self.is_finite():
       return False
     else:
       return all(completed for (_, completed) in self.completions(history, window))
