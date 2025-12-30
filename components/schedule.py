@@ -747,7 +747,7 @@ def completion_graph(when, history, window):
           * month
   """
   ret = ''
-  for (_, completed) in when.completions(d, history):
+  for (_, completed) in when.completions(history, window):
     if completed:
       ret += '|'
     else:
@@ -891,22 +891,22 @@ def agenda(
     match classify_node(id):
       case "unscheduled": todo.add(id)
       case "event":
-        scheduled[id] = Event(graph.task_gloss(id), read_schedule(id))
+        scheduled[id] = (graph.task_gloss(id), read_date_set('schedule', id))
       case "habit":
-        habits[id] = Event(
+        habits[id] = (
           graph.task_gloss(id),
-          read_schedule(id),
+          read_date_set('schedule', id),
           read_completion_history(id)
         )
 
   # build a mapping from time blocks to events.
-  datetime(dt.year, dt.month, dt.day) + start_of_day
+  start = datetime(dt.year, dt.month, dt.day) + start_of_day
   end = datetime(dt.year, dt.month, dt.day) + end_of_day
   time_map = {}
   for cur in Interval(start, end).sequence(interval):
     timestr = f"{cur.start.hour:02d}:{cur.start.minute:02d}"
-    for (id, event) in scheduled.items():
-      if event.when.intersects(cur):
+    for (id, (_, when)) in scheduled.items():
+      if when.intersects(cur):
         graph.dict_append(time_map, timestr, id)
   width = int(os.getenv("COLUMNS", "80"))
   schedule = []
@@ -922,7 +922,9 @@ def agenda(
   # build habit graphs
   print("Habits")
   print(tabulate.tabulate(
-    ((habit.gloss, habit.completion_graph(dt)) for habit in habits.values())
+    ((gloss, completion_graph(ds, hist, Interval.fromDate(dt)))
+     for (gloss, ds, hist)
+     in habits.values())
   ))
   print()
 
