@@ -1338,10 +1338,21 @@ function has {
 }
 
 # Keep only actionable tasks.
-query_declare_type             is_actionable filter
+query_declare_type             is_actionable filter "--date:string"
 query_declare_default_producer is_actionable all
 function is_actionable {
-    graph filter_state NEW TODO | query_filter_chain "$@"
+    echo "got here"
+    exit 0
+    case "${1}" in
+        -d|--date)
+            local date="${2}"
+            shift 2
+            ;;
+        *)
+            local date
+            read date < <(date -Iminutes)
+    esac
+    _schedule is_actionable "${date}" | query_filter_chain "$@"
 }
 
 # Keep only active tasks.

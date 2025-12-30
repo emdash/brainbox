@@ -311,12 +311,27 @@ class DateSet:
     for i in self.intervals(window):
       yield (i, any(map(i.within, history)))
 
-  def missed(self, history, window=None):
-    return {
-      interval
-      for (interval, completed)
-      in self.completions(window, history) if completed
-    }
+  def is_complete(self, history, window=None):
+    """True if all intervals within the window have a completion event.
+
+    If window is not given:
+      - self is finite     -- uses the entire span.
+      - self is not finite -- always returns False
+    """
+    if window is None and not self.finite():
+      return False
+    else:
+      return all(completedf for (_, completed) in self.intervals(window))
+
+  def find_interval(self, history, dt):
+    """Try to find the smallest interval in DateSet which contains dt."""
+    raise NotImplemented
+
+  def is_actionable(self, history, dt):
+    """True if a completion event already exists for the interval containing `dt`."""
+    match self.find_interval(dt):
+      case None:     return False
+      case interval: return not self.is_complete(history, interval)
 
 @dataclass
 class Explicit(DateSet):
@@ -350,6 +365,12 @@ class Explicit(DateSet):
 
   def within(self, dt):
     return any(i.within(dt) for i in self.given)
+
+  def find_interval(self, dt):
+    for i in self.given:
+      if i.within(dt):
+        return i
+    return None
 
   def intervals(self, window=None):
     if window is None:
@@ -396,6 +417,24 @@ class Implicit(DateSet):
   def contains(self, interval):
     """True if the window is completely contained within this set."""
     return self.within(interval.start) and self.within(interval.end)
+
+  def find_interval(self, dt, window=None):
+    def findStart(dt):
+      if not self.within(dt):
+        return dt
+      else:
+        return findStart(dt - minute)
+
+    def findEnd(dt):
+      if not self.within(dt):
+        return dt
+      else:
+        return findStart(dt + minute)
+
+    if self.within(dt):
+      return Interval(findStart(dt), findEnd(dt))
+    else:
+      return None
 
   def intervals(self, window=None, resolution=minute):
     # sample the set at regular intervals which intersect the current window,
@@ -967,12 +1006,12 @@ def is_in_progress(dt, id):
     case _:
       return False
 
-def is_actionable(window, id):
+def is_actionable(dt, id):
   """Filter nodes that are actionable.
 
   Unscheduled tasks are actionable if they are in state NEW or TODO.
 
-  Events are never considered actionable. They simply exist.
+  Events are never considered actionable (see in_progress).
 
   Tasks and habits are actionable if the current time is within a
   completion window, as defined by the node's `schedule` datum, *and*
@@ -984,10 +1023,10 @@ def is_actionable(window, id):
         return graph.task_state(id) in ["NEW", "TODO"]
     case "event":
       return False
-    case "task" | "habit":
+    case "habit":
       when = read_date_set("schedule", id)
-      history = debug("xxa:", read_completion_history(id))
-      return debug("xxb:", when.within(dt)) and debug("xxc:", not any(map(when.within, history)))
+      history = read_completion_history(id)
+      return when.is_actionable(history, dt)
     case invalid:
       raise ValueError(f"Invalid Node Classification: {invalid}")
 
