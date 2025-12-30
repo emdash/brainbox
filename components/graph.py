@@ -153,15 +153,15 @@ def dependencies():
     yield from project_subgraph(node, subtasks)
 
   # Emit all the explicit edges in the graph, special-casing direct
-  # dependencies from project nodes -- these are linked to the last
-  # subtask in the project, rather than the project itself.
+  # dependencies from project nodes -- these are linked to the subtask
+  # start node, which is a virtual node.
   #
   # While counter-intuitive, this the correct graph shape give our
   # definition of a "next" action as a node with no active
   # dependencies.
   for (u, v) in read_edges("dependencies"):
     if u in projects and projects[u]:
-      yield (projects[u][-1], v)
+      yield (f"{u}@start", v)
     else:
       yield (u, v)
 
@@ -327,7 +327,12 @@ def datum_read(datum, id):
 
 # re-implementations of gtd.sh functions to avoid shelling out.
 def task_contents(id): return datum_read("contents", id)
-def task_gloss(id):    return task_contents(id).split('\n')[0]
+def task_gloss(id):
+  match id.split("@"):
+    case [id]:
+      return task_contents(id).split('\n')[0]
+    case [id, "start"]:
+      return task_contents(id).split('\n')[0] + "@start"
 def task_state(id):    return datum_read("state", id)
 
 def filter_state(*keep):
