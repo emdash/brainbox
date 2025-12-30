@@ -932,7 +932,27 @@ function task_drop {
 
 # mark the given task as completed
 function task_complete {
-    echo "DONE" | task_state write "$1"
+    case "${1}" in
+        -d|--date)
+            local date="${2}"
+            shift 2
+            ;;
+        *)
+            local date
+            read date < <(date -Iminute)
+            ;;
+    esac
+
+    local -r id="${1}"
+
+    if graph_datum schedule exists "${id}"
+    then
+        :
+    else
+      echo "DONE" | task_state write "${id}"
+    fi
+
+    echo "${date}" | graph_datum completed append "${id}"
 }
 
 # mark the given task as someday
@@ -1041,6 +1061,7 @@ function query_declare_type {
         filter|producer|consumer|formatter|update|binop|selection) : ;;
         *) error "Invalid query type: ${2}" ;;
     esac
+
     GTD_QUERY_TYPE["$1"]="$2"
     command_declare "$1" "${@:3:$# - 2}"
 }
