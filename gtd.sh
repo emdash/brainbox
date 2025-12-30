@@ -2221,7 +2221,7 @@ function __plan_modify {
     read path < <(graph_datum subtasks path "${SUBTASK_ID}")
     case "${1}" in
         add) all | choose >> "${path}";;
-        capture) echo | xargs -o "$0" capture --oneline ; last_captured >> "${path}";;
+        capture) echo | xargs -o "$0" capture --oneline;;
         edit) echo "${2}" | edit;;
         *) "${GTD_DIR}/components/subtasks.py" "${path}" "${@}";;
     esac
@@ -2397,13 +2397,14 @@ function __nav_bindings {
     fzf_bind_sexec  "focus"     "Select Next" "echo {1} | $0 stdin into next"           "refresh-preview"
     fzf_bind_sexec  "enter"     "Goto Cur"    "$0 __nav_push {1}"                       "reload-sync($0 __nav_items)"
     fzf_bind_exec   "e"         "Edit"        "echo {1} | $0 stdin edit"                "reload-sync($0 __nav_items)"
+    fzf_bind_exec   "c"         "Capture"     "$0 __nav_capture"                        "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "backspace" "Move Back"   "$0 __nav_pop"                            "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "u"         "Undo"        "gtd undo"                                "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "U"         "Redo"        "gtd redo"                                "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "f"         "Family"      "$0 prefs write 'nav/mode' family"        "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "n"         "Neighbors"   "$0 prefs write 'nav/mode' neighbors"     "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "p"         "Parents"     "$0 prefs write 'nav/mode' parents"       "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "c"         "Children"    "$0 prefs write 'nav/mode' children"      "reload-sync($0 __nav_items)"
+    fzf_bind_sexec  "C"         "Children"    "$0 prefs write 'nav/mode' children"      "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "s"         "Set Source"  "echo {1} | $0 stdin into source"         "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "S"         "Add Source"  "echo {1} | $0 stdin into --union source" "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "t"         "Set Target"  "echo {1} | $0 stdin into target"         "reload-sync($0 __nav_items)"
