@@ -847,7 +847,7 @@ function task_details {
     then
       echo "Depends"
       echo "${1}" \
-        | graph adjacent dependencies outgoing \
+        | graph adjacent dependencies outgoing --nost \
         | tee -pa "${nodes_file}" \
         | tail -n +2 \
         | summarize -d '|' \

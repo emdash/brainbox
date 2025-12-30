@@ -165,7 +165,7 @@ def dependencies():
     else:
       yield (u, v)
 
-def edge_list(edge_set):
+def edge_list(edge_set, no_subtasks=None):
   """Get the set of edges for the given edge set.
 
   Client code should call this function to so that project subtasks
@@ -173,7 +173,8 @@ def edge_list(edge_set):
   """
   try:
     match edge_set:
-      case "dependencies": return set(dependencies())
+      case "dependencies" if no_subtasks is None:
+        return set(dependencies())
       case _: return set(read_edges(edge_set))
   except OSError as e:
     print(e, sys.stderr)
@@ -238,10 +239,10 @@ def has_adjacent(node, edges, direction):
   """True if a node has edges in the given direction"""
   return len(list(node_adjacent(node, edges, direction))) > 0
 
-def adjacent(edge_set, direction):
+def adjacent(edge_set, direction, subtasks=True):
   """Get directly adjacent nodes from edge set, along a given direction.
   """
-  edges = edge_list(edge_set)
+  edges = edge_list(edge_set, subtasks)
   seen = set()
   for node in read_ids():
     print(node)
