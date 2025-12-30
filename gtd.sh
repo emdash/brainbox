@@ -1553,6 +1553,19 @@ function is_actionable {
     esac
 }
 
+
+# set the schedule for the given nodes
+query_declare_type             schedule update dateset
+query_declare_default_producer schedule all
+function schedule {
+    echo "${@}" | graph_datum schedule write
+}
+
+# remove any scheduling from the given node
+query_declare_type             schedule update
+query_declare_default_producer schedule all
+function unschedule { filter graph_datum schedule rm ; }
+
 # show an agenda view with the given nodes
 query_declare_type             agenda formatter type window
 query_declare_default_producer agenda is_actionable
