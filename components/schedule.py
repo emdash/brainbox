@@ -194,7 +194,10 @@ class Interval:
     This is so that back-to-events will not supriously register as
     overlapping.
     """
-    return self.start <= timestamp <= self.end
+    # XXX: we're clobbering the timezone here, because datetime
+    # complains about naive vs tz-aware dates. It's a rabbit hole I
+    # don't want to go down just yet.
+    return self.start <= timestamp.replace(tzinfo=None) <= self.end
 
   def contains(self, interval):
     return self.within(interval.start) and self.within(interval.end)
