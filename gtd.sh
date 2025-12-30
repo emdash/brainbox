@@ -1337,24 +1337,6 @@ function has {
     filter graph_datum "${datum}" exists | query_filter_chain "$@"
 }
 
-# Keep only actionable tasks.
-query_declare_type             is_actionable filter "--date:string"
-query_declare_default_producer is_actionable all
-function is_actionable {
-    echo "got here"
-    exit 0
-    case "${1}" in
-        -d|--date)
-            local date="${2}"
-            shift 2
-            ;;
-        *)
-            local date
-            read date < <(date -Iminutes)
-    esac
-    _schedule is_actionable "${date}" | query_filter_chain "$@"
-}
-
 # Keep only active tasks.
 query_declare_type             is_active filter
 query_declare_default_producer is_active all
@@ -1465,6 +1447,21 @@ function subtasks {
     done | "${@}"
 }
 
+
+# keep nodes which are actionable at the given timestamp
+query_declare_type             is_actionable filter "--date:string"
+query_declare_default_producer is_actionable all
+function is_actionable {
+    case "${1}" in
+        -d|--date)
+            shift
+            _schedule is_actionable "${1}" | query_filter_chain "${@}"
+            ;;
+        *)
+            _schedule is_actionable | query_filter_chain "${@}"
+            ;;
+    esac
+}
 ## Binary queries *************************************************************
 
 query_declare_type             union binop query
