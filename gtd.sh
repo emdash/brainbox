@@ -2422,13 +2422,16 @@ function __nav_bindings {
     __details_bindings
 }
 
-query_declare_type             nav filter
+query_declare_type             nav formatter
 query_declare_default_producer nav all
 function nav {
     prefs clobber "nav/path"
     # forward stdin to this temporary file
     prefs write "nav/initial"
     forbid_preview
+
+    end_filter_chain "${@}"
+
     fzf_menu \
         "Graph Navigator" \
         __nav_bindings \
