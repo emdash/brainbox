@@ -807,7 +807,7 @@ def preview_month(ds, month, year):
     if dt.weekday() == 6:
       print()
 
-  print()
+  print(f"{year}-{month}")
   days = daysOfMonth(year, month)
   first = datetime(year, month, days.__next__())
   print('Mo Tu We Th Fr Sa Su')
@@ -867,13 +867,7 @@ def agenda(
   This will show scheduled and unscheduled activity for the given
   input set.
   """
-  # read ids from stdin and load in scheduling information
-  match date:
-    case None:
-      dt = today
-    case date:
-      dt = datetime.fromisoformat(date)
-
+  dt = today if date is None else datetime.fromisoformat(date)
   todo = set()
   scheduled = {}
   habits = {}
@@ -890,16 +884,14 @@ def agenda(
         )
 
   # build a mapping from time blocks to events.
-  i = datetime(dt.year, dt.month, dt.day) + start_of_day
+  datetime(dt.year, dt.month, dt.day) + start_of_day
   end = datetime(dt.year, dt.month, dt.day) + end_of_day
   time_map = {}
-  while i < end:
-    cur = Interval.fromStartDuration(i, interval)
+  for cur in Interval(start, end).sequence(interval):
     timestr = f"{cur.start.hour:02d}:{cur.start.minute:02d}"
     for (id, event) in scheduled.items():
       if event.when.intersects(cur):
         graph.dict_append(time_map, timestr, id)
-    i += interval
   width = int(os.getenv("COLUMNS", "80"))
   schedule = []
 
