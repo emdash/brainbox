@@ -999,7 +999,7 @@ def is_complete(window, id):
       case invalid:
         raise ValueError(f"Invalid Node Classification: {invalid}")
 
-def is_in_progress(dt, id):
+def in_progress(dt, id):
   match classify_node(id):
     case "event":
       return read_date_set("schedule", id).within(dt)
