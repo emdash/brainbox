@@ -949,10 +949,7 @@ def classify_node(id):
   """
   if graph.has('schedule', id):
     if graph.has('completed', id):
-      if graph.has('progress', id):
-        return "habit"
-      else:
-        return "task"
+      return "habit"
     else:
       return "event"
   else:
