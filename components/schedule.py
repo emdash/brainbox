@@ -758,6 +758,21 @@ def reverse(s):
   """Use ansi codes to invert video."""
   return f"\x1b[7m{s}\x1b[m"
 
+def parse_window(args):
+  match args:
+    case ():           return Interval.fromDate(today)
+    case (start,):     return Interval.fromDate(datetime.fromisoformat(start))
+    case (start, end): return Interval.fromDate(datetime.fromisoformat(start), datetime.fromisoformat(end))
+    case invalid:      raise ValueError("Expected one - 3 arguments")
+
+def parse_datetime(args):
+  match args:
+    case []:           return today
+    case ["today"]:    return today
+    case ["tomorrow"]: return tomorrow
+    case [iso]:        return datetime.fromisoformat(iso)
+    case invalid:      raise ValueError(f"Invalid datetime: {args}")
+
 def preview_dateset(mode, *args):
   """Parse arguments and dispatch to different preview submodes.
   """
@@ -768,16 +783,19 @@ def preview_dateset(mode, *args):
     traceback.print_exception(e)
     return
 
-  match args:
-    case ():           window = Interval.fromDate(today)
-    case (start,):     window = Interval.fromDate(datetime.fromisoformat(start))
-    case (start, end): window = Interval.fromDate(datetime.fromisoformat(start), datetime.fromisoformat(end))
-    case invalid:      raise ValueError("Expected one - 3 arguments")
+  try:
+    match ds.span():
+      case Interval(start, end):
+        print("Start:", start)
+        print("End:  ", end)
+  except ValueError:
+    print("Start: None")
+    print("End:   None")
 
   match mode:
-    case "list":  preview_list(ds, window)
-    case "month": preview_month(ds, window)
-    case "week":  preview_week(ds, window)
+    case "list":  preview_list(ds, parse_window(args))
+    case "month": preview_month(ds, parse_datetime(args))
+    case "week":  preview_week(ds, parse_window(args))
     case invalid: raise ValueError(f"Invalid mode: {mode}")
 
 def preview_list(ds, window):
@@ -793,7 +811,7 @@ def preview_list(ds, window):
     )
   )
 
-def preview_month(ds, month, year):
+def preview_month(ds, dt):
   """Preview a DateSet using monthly calendars.
 
   Highlights days on which at least one interval is present.
@@ -807,17 +825,15 @@ def preview_month(ds, month, year):
     if dt.weekday() == 6:
       print()
 
-  print(f"{year}-{month}")
-  days = daysOfMonth(year, month)
-  first = datetime(year, month, days.__next__())
+  print(f"{dt.year}-{dt.month}")
+  days = daysOfMonth(dt.year, dt.month)
+  first = datetime(dt.year, dt.month, days.__next__())
   print('Mo Tu We Th Fr Sa Su')
   print('   ' * first.weekday(), end = '')
   printDay(first)
-
   for day in days:
-    dt = datetime(year, month, day)
+    dt = dt.replace(day = day)
     printDay(dt)
-
   if not dt.weekday() == 6:
     print()
 
@@ -1010,7 +1026,6 @@ def is_actionable(dt, id):
   Tasks and habits are actionable if the current time is within a
   completion window, as defined by the node's `schedule` datum, *and*
   no completion has been logged that discharges the task's obligation.
-
   """
   match classify_node(id):
     case "unscheduled":

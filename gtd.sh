@@ -1557,6 +1557,34 @@ function is_actionable {
     esac
 }
 
+# preview date patterns according to mode
+query_declare_type             preview_schedule formatter "list|month|week"
+query_declare_default_producer preview_schedule last_captured
+function preview_schedule {
+    if test -v 1
+    then
+        local style="${1}"
+        shift
+    else
+        local style="week"
+    fi
+
+    end_filter_chain "${@}"
+
+    local schedule
+    local path
+
+    while read id
+    do
+        read path < <(graph_datum schedule path "${id}")
+        if test -f "${path}"
+        then
+            task_summary "${id}"
+            graph_datum schedule read "${id}" | _schedule preview "${style}"
+            echo
+        fi
+    done
+}
 
 # set the schedule for the given nodes
 query_declare_type             schedule update dateset
