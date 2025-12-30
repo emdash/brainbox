@@ -1090,6 +1090,8 @@ if __name__ == "__main__":
   match sys.argv[1:]:
     case ["is_upcoming", *args]:   filter_window(is_upcoming, *args)
     case ["is_complete", *args]:   filter_window(is_complete, *args)
+    case ["is_scheduled"]:         graph.filter_nodes(is_scheduled)
+    case ["is_unscheduled"]:       graph.filter_nodes(is_unscheduled)
     case ["is_in_progress", * args]: filter_datetime(is_in_progress, *args)
     case ["is_due", *args]:        filter_window(is_due,      *args)
     case ["is_actionable", *args]: filter_datetime(is_actionable, *args)

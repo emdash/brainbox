@@ -1467,12 +1467,16 @@ function _schedule {
 # keep nodes which have an associated schedule
 query_declare_type             is_scheduled filter
 query_declare_default_producer is_scheduled all
-function is_scheduled { _schedule is_scheduled ; }
+function is_scheduled {
+    _schedule is_scheduled | query_filter_chain "${@}"
+}
 
 # keep nodes which have do not have an associated schedule.
-query_declare_type             is_scheduled filter
-query_declare_default_producer is_scheduled all
-function is_unscheduled { _schedule is_unscheduled ; }
+query_declare_type             is_unscheduled filter
+query_declare_default_producer is_unscheduled all
+function is_unscheduled {
+    _schedule is_unscheduled | query_filter_chain "${@}"
+}
 
 # keep nodes which have an infinite schedule.
 query_declare_type             is_scheduled filter
