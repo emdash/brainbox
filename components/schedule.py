@@ -321,7 +321,7 @@ class DateSet:
     if window is None and not self.finite():
       return False
     else:
-      return all(completedf for (_, completed) in self.intervals(window))
+      return all(completed for (_, completed) in self.completions(history, window))
 
   def find_interval(self, history, dt):
     """Try to find the smallest interval in DateSet which contains dt."""
@@ -993,7 +993,7 @@ def is_temporal(id):
   """True if a task has a schedule with an end date."""
   return is_scheduled(id) and read_date_set(id).is_finite()
 
-def is_complete(id):
+def is_complete(window, id):
   """Filter nodes that are completed.
 
   True if a node is in state DONE, or, for scheduled nodes with
@@ -1006,6 +1006,7 @@ def is_complete(id):
         return False
       case "habit" as kind:
         when = read_date_set("schedule", id)
+        history = read_completion_history(id)
         return graph.has("completed", id) \
           and when.is_complete(history, window)
       case invalid:
@@ -1063,7 +1064,8 @@ def window_args(*args):
   """
 
   match args:
-    case []: return today
+    case []:
+      return None
     case [s]:
       try:
         return parseDuration(str)
