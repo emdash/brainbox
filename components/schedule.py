@@ -21,6 +21,8 @@ import graph
 import itertools
 import json
 import sys
+import traceback
+
 import tabulate
 
 # convenient constants for working with time deltas.
@@ -693,78 +695,29 @@ def fromJSON(decoded):
     case e:
       raise ValueError(f"Illegal date expr: {e}")
 
-@dataclass
-class Event:
-  """A calendar item, which occurs at a particular (possibly repeating) time.
+def completion_graph(when, history, window):
+  """Show the complettion history for the given time window.
 
-  Events are considered *active* w/r/t a given timestamp IFF
-  `when.within()` returns True for this timestamp.
-
-  Therefore, an Event will appear in the `is_active` query if the
-  query is given a timestamp as above. If omitted, `is_active`
-  to the current time.
-
-  An event will appear in the "is_upcoming" query if the query is
-  given a time window (which defaults to the current calendar day)
-  that intersects `when`.
-
-  Calendar events are not Actionable. They will appear in the agenda
-  view as a schedule item, but not in the `next actions` list.
-
-  @id     - the graph node associated with this item
-  @notify - how long before the next occurrence to remind the user.
-
+  @window - the given time interval.
+  @mode - the style of completion to display. One of:
+          * percentage (default)
+          * week
+          * month
   """
-  gloss : str
-  when : DateSet
-
-@dataclass
-class Task(Event):
-  """A an actionable item which must be completed within a particular
-  (possibly repeating) window.
-
-  A Task is considered *active* and *actionable* w/r/t a given
-  timestamp if the `when.within()` matches, similar to Event *and* a
-  completion has not been logged within this same interval.
-  """
-  completions : set[datetime]
-
-  def completion_graph(self, window, mode="bar"):
-    """Show the completion history for the given time interval.
-
-    @window - the given time interval.
-    @mode - the style of completion to display. One of:
-            * percentage (default)
-            * week
-            * month
-    """
-    ret = ''
-    for d in window.days():
-      for i in self.when.intervals(d):
-        if any(map(i.within, self.completed)):
-          ret += '|'
-        else:
-          ret += '.'
-    return ret
-
-@dataclass
-class Habit(Task):
-  """A Task which also tracks progress towards a larger goal.
-
-  Habits behave like Tasks, except that the user is also expected to
-  log progress, and the Habit as a whole is complete when the goal is
-  reached. If the goal is a simple numeric condition, this completion
-  can be automatic, otherwise it is up to the use to explicitly mark
-  the task as DONE.
-  """
-  progress : Dict[Interval, datetime]
+  ret = ''
+  for (_, completed) in when.completions(d, history):
+    if completed:
+      ret += '|'
+    else:
+      ret += 'o'
+  return ret
 
 def reverse(s):
   """Use ansi codes to invert video."""
   return f"\x1b[7m{s}\x1b[m"
 
-def preview(mode, *args):
-  """Dispatch to different preview submodes.
+def preview_dateset(mode, *args):
+  """Parse arguments and dispatch to different preview submodes.
   """
   try:
     ds = fromJSON(json.load(sys.stdin))
@@ -774,26 +727,16 @@ def preview(mode, *args):
     return
 
   match args:
-    case (): window = Interval.fromDate(today)
-    case (start,): window = Interval.fromDate(datetime.fromisoformat(start))
-    case (start, end): window = Interval.fromDate(
-        datetime.fromisoformat(start),
-        datetime.fromisoformat(end)
-    )
-    case invalid: raise ValueError("Expected one - 3 arguments")
+    case ():           window = Interval.fromDate(today)
+    case (start,):     window = Interval.fromDate(datetime.fromisoformat(start))
+    case (start, end): window = Interval.fromDate(datetime.fromisoformat(start), datetime.fromisoformat(end))
+    case invalid:      raise ValueError("Expected one - 3 arguments")
 
   match mode:
-    case "list":
-      preview_list(ds, window)
-    case "month":
-      i = window.start
-      while i < window.end:
-        preview_month(ds, i.month, i.year)
-        i = nextMonth(i.month, i.year)
-    case "week":
-      preview_week(ds, window)
-    case invalid:
-      raise ValueError(f"Invalid mode: {mode}")
+    case "list":  preview_list(ds, window)
+    case "month": preview_month(ds, window)
+    case "week":  preview_week(ds, window)
+    case invalid: raise ValueError(f"Invalid mode: {mode}")
 
 def preview_list(ds, window):
   """Render preview as a simple list.
