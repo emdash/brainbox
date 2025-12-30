@@ -1037,6 +1037,10 @@ function query_declare_canonical_name {
 #
 # this also registers the function in the list of completions
 function query_declare_type {
+    case "${2}" in
+        filter|producer|consumer|formatter|update|binop|selection) : ;;
+        *) error "Invalid query type: ${2}" ;;
+    esac
     GTD_QUERY_TYPE["$1"]="$2"
     command_declare "$1" "${@:3:$# - 2}"
 }
