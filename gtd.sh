@@ -2393,6 +2393,10 @@ function __nav_items {
 
 }
 
+function __nav_capture {
+    echo | xargs -o "$0" capture --oneline
+}
+
 function __nav_bindings {
     fzf_bind_sexec  "focus"     "Select Next" "echo {1} | $0 stdin into next"           "refresh-preview"
     fzf_bind_sexec  "enter"     "Goto Cur"    "$0 __nav_push {1}"                       "reload-sync($0 __nav_items)"
