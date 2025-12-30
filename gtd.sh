@@ -1220,13 +1220,6 @@ function end_filter_chain {
     fi
 }
 
-# disables destructive operations in preview mode
-function forbid_preview {
-    if test -v GTD_PREVIEW_MODE; then
-	error "Disabled in preview mode."
-    fi
-}
-
 ## Query Commands *************************************************************
 
 # XXX: everything below here must be manually kept in sync with
@@ -1321,9 +1314,6 @@ function contexts { adjacent contexts incoming "$@" ; }
 query_declare_type             choose   filter '--multi|--single'
 query_declare_default_producer choose   all
 function choose {
-    # can't preview because this also uses FZF.
-    forbid_preview
-
     case "$1" in
        -m|--multi)  local opt="-m"; shift;;
        -s|--single) local opt=""  ; shift;;
@@ -1704,8 +1694,6 @@ function chafa {
 query_declare_type             goto selection "${BUCKET_OPTS}" bucket
 query_declare_default_producer goto all
 function goto {
-    forbid_preview
-
     case "$1" in
 	--*) local -r opt="$1"; shift;;
 	*)   local -r opt="--noempty";;
@@ -1809,7 +1797,6 @@ function summarize {
 query_declare_type             activate update
 query_declare_default_producer activate from target
 function activate {
-    forbid_preview
     end_filter_chain "$@"
     map task_activate
     database_commit "${SAVED_ARGV}"
@@ -1819,7 +1806,6 @@ function activate {
 query_declare_type             complete update
 query_declare_default_producer complete from target
 function complete {
-    forbid_preview
     end_filter_chain "$@"
     map task_complete
     database_commit "${SAVED_ARGV}"
@@ -1829,7 +1815,6 @@ function complete {
 query_declare_type             defer update
 query_declare_default_producer defer from target
 function defer {
-    forbid_preview
     end_filter_chain "$@"
     map task_defer
     database_commit "${SAVED_ARGV}"
@@ -1839,7 +1824,6 @@ function defer {
 query_declare_type             drop update
 query_declare_default_producer drop from target
 function drop {
-    forbid_preview
     end_filter_chain "$@"
     map task_drop
     database_commit "${SAVED_ARGV}"
@@ -1849,8 +1833,6 @@ function drop {
 query_declare_type             edit update
 query_declare_default_producer edit from last_captured
 function edit {
-    forbid_preview
-
     # xargs -o: reopens stdin / stdout as tty in the child
     # process, allowing the editor to function even though stdin
     # is the query result.
@@ -1862,7 +1844,6 @@ function edit {
 query_declare_type             persist update
 query_declare_default_producer persist from target
 function persist {
-    forbid_preview
     end_filter_chain "$@"
     map task_persist
     database_commit "${SAVED_ARGV}"
@@ -1872,7 +1853,6 @@ function persist {
 query_declare_type             make_context update
 query_declare_default_producer make_context from target
 function make_context {
-    forbid_preview
     end_filter_chain "$@"
     map make_context_node
     database_commit "${SAVED_ARGV}"
@@ -1887,8 +1867,6 @@ function set_ {
         -a) shift; local -r cmd="append";;
         *)  local -r cmd="write";;
     esac
-
-    forbid_preview
     while IFS='' read -r id
     do
 	echo "${@:2}" | graph_datum "$1" "${cmd}" "${id}"
@@ -1898,7 +1876,6 @@ function set_ {
 
 command_declare                delete bucket
 function delete {
-    forbid_preview
     local -r bucket="${1:-trash}"
     from "${bucket}" | graph touches | while read u v edge_set
     do
@@ -2004,7 +1981,6 @@ declare -a capture_args=(
 # - otherwise, stdin is written to the contents file.
 command_declare capture "$(echo "${capture_args[@]}" | paste -sd '|'))"
 function capture {
-    forbid_preview
     while true
     do
 	case "$1" in
@@ -2083,15 +2059,12 @@ function capture {
 # Clobber the database
 command_declare clobber
 function clobber {
-    forbid_preview
     database_clobber;
 }
 
 # move downward from cur
 command_declare down '--union' bucket
 function down {
-    forbid_preview
-
     if test "$1" = "--union"
     then
 	local -r opt="$1"
@@ -2105,7 +2078,6 @@ function down {
 
 # Initialize the database
 function init {
-    forbid_preview
     database_init;
     mkdir -p "${BUCKET_DIR}"
 }
@@ -2124,7 +2096,6 @@ function init {
 # node.
 command_declare link edgeset bucket bucket
 function link {
-    forbid_preview
     local edge_set="$1"
     local from_ids="$(from "${2:-source}")"
     local into_ids="$(from "${3:-target}")"
@@ -2184,8 +2155,6 @@ function unassign {
 # remove edges between sets of nodes in different buckets
 command_declare unlink edgeset bucket bucket
 function unlink {
-    forbid_preview
-
     local -r edge_set="$1"
     local from_ids="$(from "${2:-source}")"
     local into_ids="$(from "${3:-target}")"
@@ -2202,8 +2171,6 @@ function unlink {
 # Move upward from cur
 command_declare up '--union' bucket
 function up {
-    forbid_preview
-
     if test "$1" = "--union"
     then
 	local -r opt="$1"
@@ -2252,8 +2219,6 @@ function __plan_bindings {
 
 command_declare plan
 function plan {
-    forbid_preview
-
     if test -v 1
     then
        export SUBTASK_ID="${1}"
@@ -2326,7 +2291,6 @@ function triage {
     else
         echo inbox > "${DATA_DIR}/query"
     fi
-    forbid_preview
     fzf_menu \
       "Triage Inbox" \
       __triage_bindings \
@@ -2428,8 +2392,6 @@ function nav {
     prefs clobber "nav/path"
     # forward stdin to this temporary file
     prefs write "nav/initial"
-    forbid_preview
-
     end_filter_chain "${@}"
 
     fzf_menu \
@@ -2447,14 +2409,12 @@ function nav {
 # restore the last undone command, if one exists
 command_declare redo
 function redo {
-    forbid_preview
     database_redo
 }
 
 # roll back to the state prior to execution of the last destructive
 command_declare undo
 function undo {
-    forbid_preview
     database_undo
 }
 
