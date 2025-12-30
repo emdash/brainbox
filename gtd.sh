@@ -2301,19 +2301,20 @@ function __triage_items {
 }
 
 function __triage_bindings {
-    fzf_bind_sexec  "delete" "Drop"           "$0 splat {+1} | $0 stdin drop"         "reload-sync($0 __triage_items)"
-    fzf_bind_exec   "enter"  "Edit"           "$0 splat {+1} | $0 stdin edit"         "reload-sync($0 __triage_items)"
-    fzf_bind_exec   "u"      "Undo"           "$0 undo"                               "reload-sync($0 __triage_items)"
-    fzf_bind_exec   "U"      "Redo"           "$0 redo"                               "reload-sync($0 __triage_items)"
-    fzf_bind_sexec  "a"      "Activate"       "$0 splat {+1} | $0 stdin activate"     "reload-sync($0 __triage_items)"
-    fzf_bind_sexec  "P"      "Persist"        "$0 splat {+1} | $0 stdin persist"      "reload-sync($0 __triage_items)"
-    fzf_bind_sexec  "p"      "Plan Project"   "$0 plan {1}"                           "reload-sync($0 __triage_items)"
-    fzf_bind_sexec  "C"      "Make Context"   "$0 splat {+1} | $0 stdin make_context" "reload-sync($0 __triage_items)"
-    fzf_bind_exec   "c"      "Capture"        "echo | xargs -o $0 capture --oneline"  "reload-sync($0 __triage_items)" "last"
-    fzf_bind_exec   "b"      "Bucket"         "$0 __triage_bucket {+1}"               "reload-sync($0 __triage_items)"
-    fzf_bind_exec   "A"      "Assign Context" "$0 __triage_assign {+1}"               "reload-sync($0 __triage_items)"
-    fzf_bind_action "q"      "Quit"           "accept"                                "reload-sync($0 __triage_items)"
-    fzf_bind_action "h"      "Toggle Help"    "toggle-header"                         "reload-sync($0 __triage_items)"
+    local rls="reload-sync($0 __triage_items)"
+    fzf_bind_sexec  "delete" "Drop"           "$0 splat {+1} | $0 stdin drop"         "${rls}"
+    fzf_bind_exec   "enter"  "Edit"           "$0 splat {+1} | $0 stdin edit"         "${rls}"
+    fzf_bind_exec   "u"      "Undo"           "$0 undo"                               "${rls}"
+    fzf_bind_exec   "U"      "Redo"           "$0 redo"                               "${rls}"
+    fzf_bind_sexec  "a"      "Activate"       "$0 splat {+1} | $0 stdin activate"     "${rls}"
+    fzf_bind_sexec  "P"      "Persist"        "$0 splat {+1} | $0 stdin persist"      "${rls}"
+    fzf_bind_exec   "p"      "Plan Project"   "$0 plan {1}"                           "${rls}"
+    fzf_bind_sexec  "C"      "Make Context"   "$0 splat {+1} | $0 stdin make_context" "${rls}"
+    fzf_bind_exec   "c"      "Capture"        "echo | xargs -o $0 capture --oneline"  "${rls}" "last"
+    fzf_bind_exec   "b"      "Bucket"         "$0 __triage_bucket {+1}"               "${rls}"
+    fzf_bind_exec   "A"      "Assign Context" "$0 __triage_assign {+1}"               "${rls}"
+    fzf_bind_action "q"      "Quit"           "accept"                                "${rls}"
+    fzf_bind_action "h"      "Toggle Help"    "toggle-header"                         "${rls}"
     __details_bindings
 }
 
