@@ -2411,7 +2411,7 @@ function __nav_bindings {
     fzf_bind_sexec  "T"         "Add Target"  "echo {1} | $0 stdin into --union target" "reload-sync($0 __nav_items)"
     fzf_bind_sexec  "ctrl-up"   "Swap"        "$0 swap source target"                   "refresh-preview"
     fzf_bind_sexec  "d"         "Link"        "$0 add"                                  "refresh-preview"
-    fzf_bind_sexec  "A"         "Aassign"     "$0 assign"                               "refresh-preview"
+    fzf_bind_sexec  "a"         "Aassign"     "$0 assign"                               "refresh-preview"
     fzf_bind_sexec  "A"         "Unassign"    "$0 unassign"                             "refresh-preview"
     fzf_bind_action "h"         "Hide Help"   "toggle-header"
     fzf_bind_action "q"         "Quit"                                                  "accept"
