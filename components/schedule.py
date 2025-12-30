@@ -1098,7 +1098,7 @@ if __name__ == "__main__":
     case ["schedule"]:             foreach(read_date_set, 'schedule')
     case ["deadline"]:             foreach(read_date_set, 'deadline')
     case ["classify"]:             foreach(classify_node)
-    case ["preview", *args]:       preview(*args)
+    case ["preview", *args]:       preview_dateset(*args)
     case ["agenda", *args]:        agenda(*args)
     case invalid:
       raise ValueError("Invalid Command:", invalid)

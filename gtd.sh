@@ -1552,6 +1552,14 @@ function is_actionable {
             ;;
     esac
 }
+
+# show an agenda view with the given nodes
+query_declare_type             agenda formatter type window
+query_declare_default_producer agenda is_actionable
+function agenda {
+    _schedule agenda "${@}"
+}
+
 ## Binary queries *************************************************************
 
 query_declare_type             union binop query
