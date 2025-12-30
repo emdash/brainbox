@@ -680,7 +680,6 @@ def parseDuration(time):
   else:
     raise ValueError(f"Invalid Duration: {time}")
 
-
 def fromJSON(decoded):
   """Quick-and-dirty DateSet expression DSL evaluator.
 
