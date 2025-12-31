@@ -176,7 +176,7 @@ function fzf_help {
     while IFS='|' read key help _
     do
       echo "${key}|${help}"
-    done | tabulate -f tsv -s '\|' | column -c "${width}" -S 1
+    done | tabulate -f tsv -s '\|'
 }
 
 # Display an interactive menu using FZF.
