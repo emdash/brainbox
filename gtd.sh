@@ -2237,173 +2237,6 @@ function plan {
       -d '|'
 }
 
-# Inbox Triage ****************************************************************
-
-function __triage_bucket {
-    local bucket
-    read bucket < <(
-        buckets | fzf \
-          --style=full \
-          --layout=reverse \
-          --cycle \
-          --header="Choose Bucket" \
-          --bind="enter:accept-or-print-query"
-    )
-    splat "${@}" | into --union "${bucket}"
-}
-
-function __triage_assign {
-    all | is_context choose into source
-    splat "${@}" | into target
-    assign
-}
-
-function __triage_items {
-    apply dispatch \
-      < "${DATA_DIR}/query" \
-      | tee -p "${DATA_DIR}/query_results" \
-      | summarize
-}
-
-function __triage_bindings {
-    local rls="reload-sync($0 __triage_items)"
-    fzf_bind_sexec  "delete" "Drop"           "$0 splat {+1} | $0 stdin drop"         "${rls}"
-    fzf_bind_exec   "enter"  "Edit"           "$0 splat {+1} | $0 stdin edit"         "${rls}"
-    fzf_bind_exec   "u"      "Undo"           "$0 undo"                               "${rls}"
-    fzf_bind_exec   "U"      "Redo"           "$0 redo"                               "${rls}"
-    fzf_bind_sexec  "a"      "Activate"       "$0 splat {+1} | $0 stdin activate"     "${rls}"
-    fzf_bind_sexec  "P"      "Persist"        "$0 splat {+1} | $0 stdin persist"      "${rls}"
-    fzf_bind_exec   "p"      "Plan Project"   "$0 plan {1}"                           "${rls}"
-    fzf_bind_sexec  "C"      "Make Context"   "$0 splat {+1} | $0 stdin make_context" "${rls}"
-    fzf_bind_exec   "c"      "Capture"        "echo | xargs -o $0 capture --oneline"  "${rls}" "last"
-    fzf_bind_exec   "b"      "Bucket"         "$0 __triage_bucket {+1}"               "${rls}"
-    fzf_bind_exec   "A"      "Assign Context" "$0 __triage_assign {+1}"               "${rls}"
-    fzf_bind_action "q"      "Quit"           "accept"                                "${rls}"
-    fzf_bind_action "h"      "Toggle Help"    "toggle-header"                         "${rls}"
-    __details_bindings
-}
-
-command_declare triage query
-function triage {
-    if test -v 1
-    then
-        splat "${@}" > "${DATA_DIR}/query"
-    else
-        echo inbox > "${DATA_DIR}/query"
-    fi
-    fzf_menu \
-      "Triage Inbox" \
-      __triage_bindings \
-      __triage_items \
-      --multi \
-      --with-nth='{2..}' \
-      --preview="$0 task_details {1}"
-}
-
-# Project Graph Navigator *****************************************************
-
-function __nav_top {
-    prefs read "nav/path" | tail -n 1
-}
-
-function __nav_push {
-    prefs write -a "nav/path" "${1}"
-}
-
-function __nav_pop {
-    local temp
-    read temp < <(mktemp -p "${DATA_DIR}")
-    prefs read  'nav/path' | head -n -1 > "${temp}"
-    prefs write 'nav/path' < "${temp}"
-    rm "${temp}"
-}
-
-function __nav_path {
-    prefs read 'nav/path' \
-      | summarize -d '|' \
-      | cut -d '|' -f 3 \
-      | paste -sd '/'
-}
-
-function __nav_preview {
-    local top mode
-    read mode < <(prefs read 'nav/mode' neighbors)
-
-    echo "Mode: ${mode} "
-
-    if read top < <(__nav_top)
-    then
-        echo -n "Path: " ; __nav_path
-    else
-        echo "Path: [Root]"
-        top="${1}"
-    fi
-
-    task_details "${top}"
-}
-
-function __nav_items {
-    local top mode
-    read mode   < <(prefs read 'nav/mode' neighbors)
-    if read top < <(__nav_top)
-    then
-      # XXX: validate before blindly executing ${mode}
-      echo "${top}" \
-          | "${mode}" \
-          | filter test "${top}" !=
-    else
-        prefs read 'nav/initial'
-    fi | tee -p "${DATA_DIR}/query_results" | summarize -d '|'
-
-}
-
-function __nav_capture {
-    echo | xargs -o "$0" capture --oneline
-}
-
-function __nav_bindings {
-    fzf_bind_sexec  "focus"     "Select Next" "echo {1} | $0 stdin into next"           "refresh-preview"
-    fzf_bind_sexec  "enter"     "Goto Cur"    "$0 __nav_push {1}"                       "reload-sync($0 __nav_items)"
-    fzf_bind_exec   "e"         "Edit"        "echo {1} | $0 stdin edit"                "reload-sync($0 __nav_items)"
-    fzf_bind_exec   "c"         "Capture"     "$0 __nav_capture"                        "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "backspace" "Move Back"   "$0 __nav_pop"                            "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "u"         "Undo"        "gtd undo"                                "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "U"         "Redo"        "gtd redo"                                "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "f"         "Family"      "$0 prefs write 'nav/mode' family"        "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "n"         "Neighbors"   "$0 prefs write 'nav/mode' neighbors"     "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "p"         "Parents"     "$0 prefs write 'nav/mode' parents"       "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "C"         "Children"    "$0 prefs write 'nav/mode' children"      "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "s"         "Set Source"  "echo {1} | $0 stdin into source"         "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "S"         "Add Source"  "echo {1} | $0 stdin into --union source" "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "t"         "Set Target"  "echo {1} | $0 stdin into target"         "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "T"         "Add Target"  "echo {1} | $0 stdin into --union target" "reload-sync($0 __nav_items)"
-    fzf_bind_sexec  "ctrl-up"   "Swap"        "$0 swap source target"                   "refresh-preview"
-    fzf_bind_sexec  "d"         "Link"        "$0 add"                                  "refresh-preview"
-    fzf_bind_sexec  "a"         "Aassign"     "$0 assign"                               "refresh-preview"
-    fzf_bind_sexec  "A"         "Unassign"    "$0 unassign"                             "refresh-preview"
-    fzf_bind_action "h"         "Hide Help"   "toggle-header"
-    fzf_bind_action "q"         "Quit"                                                  "accept"
-    __details_bindings
-}
-
-query_declare_type             nav formatter
-query_declare_default_producer nav all
-function nav {
-    prefs clobber "nav/path"
-    # forward stdin to this temporary file
-    prefs write "nav/initial"
-    end_filter_chain "${@}"
-
-    fzf_menu \
-        "Graph Navigator" \
-        __nav_bindings \
-        __nav_items \
-        -d '|' \
-        --with-nth='{2} {3}' \
-        --accept-nth='{1}' \
-        --preview="$0 __nav_preview {1}"
-}
-
 ## State management ***********************************************************
 
 # restore the last undone command, if one exists
@@ -2426,6 +2259,210 @@ function history {
     database_history | cat ;
 }
 
+# Interactive Mode ************************************************************
+
+## Combining multiple specialized modes into a single gui with submenus.
+
+function __interactive_top {
+    prefs read "interactive/path" | tail -n 1
+}
+
+function __interactive_push {
+    prefs write -a "interactive/path" "${1}"
+}
+
+function __interactive_pop {
+    local temp
+    read temp < <(mktemp -p "${DATA_DIR}")
+    prefs read  'interactive/path' | head -n -1 > "${temp}"
+    prefs write 'interactive/path' < "${temp}"
+    rm "${temp}"
+}
+
+function __interactive_path {
+    prefs read 'interactive/path' | map task_gloss | paste -sd '/'
+}
+
+function __interactive_preview {
+    local top mode
+    read mode < <(prefs read 'interactive/mode' neighbors)
+
+    echo "Mode: ${mode} "
+
+    if read top < <(__interactive_top)
+    then
+        echo -n "Path: " ; __interactive_path
+    else
+        echo "Path: [Root]"
+        top="${1}"
+    fi
+
+    task_details "${top}"
+}
+
+function __interactive_items {
+    local top mode
+    read mode   < <(prefs read 'interactive/mode' neighbors)
+    if read top < <(__interactive_top)
+    then
+      # XXX: validate before blindly executing ${mode}
+      echo "${top}" \
+          | "${mode}" \
+          | filter test "${top}" !=
+    else
+        prefs read 'interactive/query' | apply
+    fi | tee -p "${DATA_DIR}/query_results" | summarize -d '|'
+}
+
+function __interactive_capture {
+    echo | xargs -o "$0" capture --oneline
+}
+
+function __interactive_bucket {
+    local bucket
+    read bucket < <(
+        buckets | fzf \
+          --style=full \
+          --layout=reverse \
+          --cycle \
+          --header="Choose Bucket" \
+          --bind="enter:accept-or-print-query"
+    )
+    splat "${@}" | into --union "${bucket}"
+}
+
+function __interactive_node_submenu {
+    local rls="reload-sync($0 __interactive_items)"
+    local selected="$0 splat {+1} |"
+    fzf_bind_exec  "e"         "Edit"         "${selected} $0 stdin edit"         "${rls}"
+    fzf_bind_exec  "c"         "Capture"      "$0 __interactive_capture"          "${rls}"
+    fzf_bind_sexec "x"         "Aassign"      "$0 assign"                         "refresh-preview"
+    fzf_bind_sexec "X"         "Unassign"     "$0 unassign"                       "refresh-preview"
+    fzf_bind_sexec "a"         "Activate"     "${selected} $0 stdin activate"     "${rls}"
+    fzf_bind_sexec "C"         "Make Context" "${selected} $0 stdin make_context" "${rls}"
+    fzf_bind_sexec "P"         "Persist"      "${selected} $0 stdin persist"      "${rls}"
+    fzf_bind_sexec "delete"    "Drop"         "${selected} $0 stdin drop"         "${rls}"
+}
+
+function __interactive_nav_submenu {
+    local rls="reload-sync($0 __interactive_items)"
+    local setpref="$0 prefs write"
+    fzf_bind_sexec  "f"         "Family"    "${setpref} 'interactive/mode' family"    "${rls}"
+    fzf_bind_sexec  "n"         "Neighbors" "${setpref} 'interactive/mode' neighbors" "${rls}"
+    fzf_bind_sexec  "p"         "Parents"   "${setpref} 'interactive/mode' parents"   "${rls}"
+    fzf_bind_sexec  "C"         "Children"  "${setpref} 'interactive/mode' children"  "${rls}"
+}
+
+function __interactive_view_submenu {
+    prefs_bind_toggle "c" "Contents" "details/show_contents"
+    prefs_bind_toggle "b" "Buckets"  "details/show_buckets"
+    prefs_bind_toggle "s" "Subtasks" "details/show_subtasks"
+    prefs_bind_toggle "C" "Contexts" "details/show_contexts"
+    prefs_bind_toggle "d" "Depends"  "details/show_deps"
+    prefs_bind_toggle "D" "Blocks"   "details/show_rdeps"
+    prefs_bind_toggle "g" "Graph"    "details/show_graph"
+    prefs_bind_cycle \
+        "G" \
+        "Graph Source" \
+        "details/graph_nodes" "selected" "query"
+
+    prefs_bind_cycle \
+      "B" \
+      "Bucket Mode" \
+      "graph/bucket_mode" \
+      "cluster" \
+      "label" \
+      "hidden"
+
+    prefs_bind_cycle \
+        "r" \
+        "Rankdir" \
+        "graph/rankdir" \
+        "TB" "LR" "RL" "BT"
+
+    prefs_bind_cycle \
+       "S" \
+       "Subtasks Mode" \
+       "graph/subtasks_mode" \
+       "cluster" \
+       "label" \
+       "hidden"
+}
+
+function __interactive_graph_submenu {
+    local rls="reload-sync($0 __interactive_items)"
+    fzf_bind_sexec "s"       "Set Source" "${selected} $0 stdin into source" "refresh-preview"
+    fzf_bind_sexec "t"       "Set Target" "${selected} $0 stdin into target" "refresh-preview"
+    fzf_bind_sexec "S"       "Swap"       "$0 swap source target"            "refresh-preview"
+    fzf_bind_sexec "d"       "Add Dep"    "$0 add"                           "refresh-preview"
+    fzf_bind_sexec "D"       "Remove Dep" "$0 add"                           "refresh-preview"
+    fzf_bind_exec  "b"       "Bucket"     "$0 __interactive_bucket {+1}"     "${rls}"
+}
+
+function __interactive_bindings {
+    local rls="reload-sync($0 __interactive_items)"
+    fzf_bind_sexec "u"         "Undo"         "$0 undo"                           "${rls}"
+    fzf_bind_sexec "U"         "Redo"         "$0 redo"                           "${rls}"
+    fzf_bind_sexec  "backspace" "Move Back" "$0 __interactive_pop"                    "${rls}"
+    fzf_bind_sexec  "enter"     "Goto Cur"  "$0 __interactive_push {1}"               "${rls}"
+    case "$(prefs read 'interactive/menu' node)" in
+        node)   __interactive_node_submenu;;
+        nav)    __interactive_nav_submenu;;
+        graph)  __interactive_graph_submenu;;
+        view)   __interactive_view_submenu;;
+    esac
+    fzf_bind_action "F5" "Refresh"     "reload-sync($0 __interactive_items)"
+    fzf_bind_action "?"  "Toggle Help" "toggle-header"
+    fzf_bind_action "q"  "Quit"        "clear-screen" "accept"
+}
+
+# run interactive mainloop
+function __interactive {
+    prefs write "interactive/menu" "${1}"
+
+    # build the tab bar according to current mode.
+    local tabs
+    case "${1}" in
+        node)  tabs="[_ Node] [2 Nav] [3 Graph] [4 View]";;
+        nav)   tabs="[1 Node] [_ Nav] [3 Graph] [4 View]";;
+        graph) tabs="[1 Node] [2 Nav] [_ Graph] [4 View]";;
+        view)  tabs="[1 Node] [2 Nav] [3 Graph] [_ View]";;
+        *) debug "wtf" $1;;
+    esac
+
+    fzf_menu \
+        "${tabs}" \
+        __interactive_bindings \
+        __interactive_items \
+        --multi \
+        --track \
+        -d '|' \
+        --with-nth='{2} {3}' \
+        --accept-nth='{1}' \
+        --preview="$0 __interactive_preview {1}" \
+        --bind="1:become($0 __interactive node)" \
+        --bind="2:become($0 __interactive nav)" \
+        --bind="3:become($0 __interactive graph)" \
+        --bind="4:become($0 __interactive view)" \
+        --bind="5:reload-sync($0 __interactive items)"
+}
+
+query_declare_type             interactive formatter     "node|nav|links|graph"
+query_declare_default_producer interactive all is_active
+function interactive {
+    prefs clobber "interactive/path"
+
+    # save initial query results to prevent stdin from blocking.
+    prefs write "interactive/query_results"
+    end_filter_chain "${@}"
+
+    # save the first part of the query so we can re-run it.
+    local query
+    query_split_consumer "${canonical[@]}"
+    splat "${query[@]}" | prefs write "interactive/query"
+
+    __interactive node
+}
 
 # Syntax-directed completion **************************************************
 
