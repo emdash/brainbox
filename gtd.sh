@@ -819,7 +819,10 @@ function task_details {
       echo "Subtasks"
       if graph_datum subtasks exists "${1}"
       then
-        graph_datum subtasks read "${1}" \
+        # don't show ourselves as the first subtask.
+        echo "${1}" \
+          | subtasks \
+          | head -n 1 \
           | tee -pa "${nodes_file}" \
           | summarize -d '|' \
           | cut -d '|' -f '2,3'
