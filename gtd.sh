@@ -2436,6 +2436,9 @@ function __interactive_bindings {
         graph)  __interactive_graph_submenu;;
         view)   __interactive_view_submenu;;
     esac
+
+    fzf_bind_sexec  "shift-delete" "Clear Buckets" "$0 buckets clear" "refresh-preview"
+
     fzf_bind_action "F5" "Refresh"     "reload-sync($0 __interactive_items)"
     fzf_bind_action "?"  "Toggle Help" "toggle-header"
     fzf_bind_action "q"  "Quit"        "clear-screen" "accept"
