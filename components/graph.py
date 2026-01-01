@@ -96,7 +96,7 @@ def nodes():
   for node in os.listdir(os.path.join(os.getenv("STATE_DIR"), "nodes")):
     yield node
 
-def get_subtasks(node):
+def read_subtasks(node):
   """Get the list of subtasks for the given node.
 
   If the node has no subtasks, and empty list is returned.
@@ -126,7 +126,7 @@ def subtask_groups(node):
   ret = []
   cur_group = []
 
-  for subtask in get_subtasks(node):
+  for subtask in read_subtasks(node):
     if subtask == '':
       if cur_group:
         ret.insert(0, cur_group)
@@ -155,6 +155,13 @@ def project_subgraph(node, groups):
           prev = next
       case _:
         raise ValueError("Empty group")
+
+def get_subtasks(node):
+  """Get all the subtasks of a project.
+
+  This will skip blank lines that separate subtask groups.
+  """
+  return filter(bool, read_subtasks(node))
 
 def dependencies():
   """A generator which yields all dependency edges.
@@ -565,5 +572,5 @@ if __name__ == "__main__":
     "is_nonterminal":is_nonterminal,
     "dot":           dot,
     "touches":       touches,
-    "contained":     contained,
+    "contained":     contained
   }[sys.argv[1]](*sys.argv[2:])
