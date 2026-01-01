@@ -120,48 +120,83 @@ def read_edges(edge_set):
     match e.split(':'):
       case (u, v): yield (u, v)
 
-def project_subgraph(node, subtasks):
+def subtask_groups(node):
+  """Group input into clusters of serial tasks according to file format.
+  """
+  ret = []
+  cur_group = []
+
+  for subtask in get_subtasks(node):
+    if subtask == '':
+      if cur_group:
+        ret.insert(0, cur_group)
+        cur_group = []
+    else:
+      cur_group.insert(0, subtask)
+
+  if cur_group:
+    ret.insert(0, cur_group)
+
+  return ret
+
+def project_subgraph(node, groups):
   """Compute subgraph for a given project node.
 
-  This is establishes a linear chain of tasks from the last to the
-  first.
+  Groups are parallel w/r/t each other. Each group is a linear chain
+  of tasks.
   """
-  subtasks.reverse()
-  match subtasks:
-    case ["[no contents]"]: pass
-    case [first, *rest] as subtasks:
-      yield (node, first)
-      for (prev, next) in pairwise(subtasks):
-        yield (prev, next)
+
+  for group in groups:
+    match group:
+      case [prev, *rest] as subtasks:
+        yield (node, prev)
+        for next in rest:
+          yield (prev, next)
+          prev = next
+      case _:
+        raise ValueError("Empty group")
 
 def dependencies():
   """A generator which yields all dependency edges.
 
   We have to special-case "Project" nodes to get the correct
   graph.
+
+  Confusion arises from the tension between "outline format" and the
+  naive interpretation of a tree as a DAG. Outline format implies:
+
+   1. Reverse ordering, with the first subtask considered a leaf.
+   2. Implicit chaining, with a happens-before between each successive sibling.
+   3. Project-level dependencies implicitly project from the first child.
+
+  In addition, we want to allow arbitrary parallelism within the
+  project, where appropriate.
   """
 
   # Find all the project nodes
   projects = {
-    node: get_subtasks(node)
+    node: subtask_groups(node)
     for node in nodes()
     if has("subtasks", node)
   }
 
   # Emit all the project subtask edges.
-  for (node, subtasks) in projects.items():
-    yield from project_subgraph(node, subtasks)
+  for (node, groups) in projects.items():
+    yield from project_subgraph(node, groups)
 
   # Emit all the explicit edges in the graph, special-casing direct
-  # dependencies from project nodes -- these are linked to the subtask
-  # start node, which is a virtual node.
+  # dependencies from project nodes.
   #
-  # While counter-intuitive, this the correct graph shape give our
-  # definition of a "next" action as a node with no active
-  # dependencies.
+  # Project-level dependencies implicitly block all the leaves of a
+  # project. Direct dependencies between a project's subtasks may also
+  # exist.
+  #
+  # The leaves of a project are just the last task in each subtask
+  # group.
   for (u, v) in read_edges("dependencies"):
     if u in projects and projects[u]:
-      yield (f"{u}@start", v)
+      for subtask in [g[-1] for g in projects[u]]:
+        yield (subtask, v)
     else:
       yield (u, v)
 
