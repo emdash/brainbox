@@ -822,7 +822,7 @@ function task_details {
         # don't show ourselves as the first subtask.
         echo "${1}" \
           | subtasks \
-          | head -n 1 \
+          | tail -n +2 \
           | tee -pa "${nodes_file}" \
           | summarize -d '|' \
           | cut -d '|' -f '2,3'
