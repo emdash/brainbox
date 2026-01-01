@@ -1811,7 +1811,7 @@ query_declare_default_producer activate from target
 function activate {
     end_filter_chain "$@"
     map task_activate
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # Complete each task id
@@ -1820,7 +1820,7 @@ query_declare_default_producer complete from target
 function complete {
     end_filter_chain "$@"
     map task_complete
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # Defer each task id
@@ -1829,7 +1829,7 @@ query_declare_default_producer defer from target
 function defer {
     end_filter_chain "$@"
     map task_defer
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # drop each task in the input set
@@ -1838,7 +1838,7 @@ query_declare_default_producer drop from target
 function drop {
     end_filter_chain "$@"
     map task_drop
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # edit the contents of node in the input set in turn.
@@ -1849,7 +1849,7 @@ function edit {
     # process, allowing the editor to function even though stdin
     # is the query result.
     map graph_datum "${1:-contents}" path | xargs -o "${EDITOR}"
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # persist each task
@@ -1858,7 +1858,7 @@ query_declare_default_producer persist from target
 function persist {
     end_filter_chain "$@"
     map task_persist
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # make each node a context node
@@ -1867,7 +1867,7 @@ query_declare_default_producer make_context from target
 function make_context {
     end_filter_chain "$@"
     map make_context_node
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # set the given datum on the input set to the given args or stdin.
@@ -1883,7 +1883,7 @@ function set_ {
     do
 	echo "${@:2}" | graph_datum "$1" "${cmd}" "${id}"
     done
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 command_declare                delete bucket
@@ -1899,7 +1899,7 @@ function delete {
         graph_node_delete "${node}"
     done
 
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
     dispatch null into "${bucket}"
 }
 
@@ -2044,7 +2044,7 @@ function capture {
 	echo "$*" | graph_datum contents write "${node}"
     fi
 
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 
     echo "${node}" | into this
 
@@ -2119,7 +2119,7 @@ function link {
 	done
     done
 
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # shortcut for:
@@ -2177,7 +2177,7 @@ function unlink {
 	done
     done
 
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # Move upward from cur
@@ -2476,14 +2476,17 @@ query_declare_type             interactive formatter     "node|nav|links|graph"
 query_declare_default_producer interactive all is_active
 function interactive {
     prefs clobber "interactive/path"
-
     # save initial query results to prevent stdin from blocking.
     prefs write "interactive/query_results"
+
     end_filter_chain "${@}"
 
-    # save the first part of the query so we can re-run it.
     local query
-    query_split_consumer "${canonical[@]}"
+    local consumer
+    query_split_consumer "${SAVED_ARGV[@]}"
+    debug "${query[@]}"
+
+    # save the first part of the query so we can re-run it.
     splat "${query[@]}" | prefs write "interactive/query"
 
     __interactive node
@@ -2662,7 +2665,7 @@ function __suggest_matches {
 # Main entry point ************************************************************
 
 # save args for undo log
-SAVED_ARGV="$@"
+declare -ar SAVED_ARGV=("$@")
 
 # I painted myself into a bit of a corner here, with the postfix
 # syntax.
