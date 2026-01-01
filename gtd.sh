@@ -2188,7 +2188,10 @@ function __plan_modify {
     read path < <(graph_datum subtasks path "${SUBTASK_ID}")
     case "${1}" in
         add) all | choose >> "${path}";;
-        capture) echo | xargs -o "$0" capture --oneline;;
+        capture)
+            echo | xargs -o "$0" capture --oneline
+            last_captured >> "${path}"
+            ;;
         edit) echo "${2}" | edit;;
         *) "${GTD_DIR}/components/subtasks.py" "${path}" "${@}";;
     esac
