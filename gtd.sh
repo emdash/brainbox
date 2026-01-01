@@ -1447,7 +1447,7 @@ query_declare_type             projects filter
 query_declare_default_producer projects from cur
 function projects { reachable dependencies incoming "$@" ; }
 
-# insert subtasks of each incoming parent task id
+# all dependencies of each incoming parent task id
 query_declare_type             blockers filter
 query_declare_default_producer blockers from cur
 function blockers { reachable dependencies outgoing "$@" ; }
@@ -1456,13 +1456,22 @@ function blockers { reachable dependencies outgoing "$@" ; }
 query_declare_type             subtasks filter
 query_declare_default_producer subtasks from cur
 function subtasks {
-    while read id
+    while IFS='' read id
     do
+        echo "${id}"
         if graph_datum subtasks exists "${id}"
         then
-            graph_datum subtasks read "${id}"
+            # skip blank lines which separate serial task chains.
+            graph_datum subtasks read "${id}" \
+            | while read line
+              do
+                  if test -n "${line}"
+                  then
+                      echo "${line}"
+                  fi
+              done
         fi
-    done | "${@}"
+    done | query_filter_chain "${@}"
 }
 
 # Schedule queries ************************************************************
