@@ -2201,7 +2201,15 @@ function __plan_modify {
 }
 
 function __plan_items {
-    graph_datum subtasks read "${SUBTASK_ID}" | summarize -d '|'
+    graph_datum subtasks read "${SUBTASK_ID}" | while read id
+    do
+        if test -n "${id}"
+        then
+            task_summary -d '|' "${id}"
+        else
+            echo "|--||"
+        fi
+    done
 }
 
 function __plan_preview {
