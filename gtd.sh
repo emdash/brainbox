@@ -31,6 +31,8 @@ export BUCKET_DIR="${DATA_DIR}/buckets"
 # self-explanatory.
 EDGE_DIRS=("dependencies" "contexts")
 
+declare -r ff="$(echo -e '\f')"
+
 # Helpers *********************************************************************
 
 # print to stderr
@@ -115,7 +117,7 @@ function fzf_bind_action {
     local help="${2}"
     shift 2
     local actions="$(splat "${@}" | paste -sd '+')"
-    echo "${key}|${help}|${actions}"
+    echo -e "${key}\f${help}\f${actions}"
 }
 
 # Helper to create execution bindings.
@@ -154,7 +156,7 @@ function fzf_bind_sexec {
 # Bindings are passed one-per-line on stdin, each of which should be
 # the output of an `fzf_bind`-family function.
 function fzf_bind {
-    while IFS='|' read key _ action
+    while IFS="${ff}" read key _ action
     do
         echo "${key}:${action}"
     done | paste -sd ','
@@ -173,9 +175,13 @@ function fzf_help {
     fi
     local -r width="$(( ("${columns}" / 2 ) ))"
     echo "${1}"
-    while IFS='|' read key help _
+    echo
+    while IFS="${ff}" read key help _
     do
-      echo "${key}|${help}"
+        if test "${help}" != "--"
+        then
+            echo "${key}|${help}"
+        fi
     done | tabulate -f tsv -s '\|'
 }
 
@@ -2237,7 +2243,7 @@ function __plan_bindings {
     fzf_bind_exec   "c"          "Capture"     "${plm} capture"         "${rls}" "last"
     fzf_bind_action "q"          "Quit"        "accept"                 "${rls}"
     fzf_bind_action "h"          "Toggle Help" "toggle-header"          "${rls}"
-    fzf_bind_sexec  "focus"      ""            "echo {1} | $0 into cur"
+    fzf_bind_sexec  "focus"      "--"          "echo {1} | $0 into cur"
     __details_bindings
 }
 
