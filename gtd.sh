@@ -2221,6 +2221,7 @@ function __plan_bindings {
     local plm="$0 __plan_modify"
     fzf_bind_sexec  "shift-up"   "Move Up"     "${plm} up     {n}"      "${rls}" "up"
     fzf_bind_sexec  "shift-down" "Move Down"   "${plm} down   {n}"      "${rls}" "down"
+    fzf_bind_sexec  "space"      "Split Group" "${plm} split  {n}"      "${rls}" "down"
     fzf_bind_sexec  "delete"     "Delete"      "${plm} delete {n}"      "${rls}"
     fzf_bind_exec   "enter"      "Edit"        "${plm} edit   {1}"      "${rls}"
     fzf_bind_exec   "a"          "Add"         "${plm} add"             "${rls}"
@@ -2405,6 +2406,7 @@ function __interactive_view_submenu {
 
 function __interactive_graph_submenu {
     local rls="reload-sync($0 __interactive_items)"
+    local selected="$0 splat {+1} |"
     fzf_bind_sexec "s"       "Set Source" "${selected} $0 stdin into source" "refresh-preview"
     fzf_bind_sexec "t"       "Set Target" "${selected} $0 stdin into target" "refresh-preview"
     fzf_bind_sexec "S"       "Swap"       "$0 swap source target"            "refresh-preview"
