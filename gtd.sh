@@ -2335,6 +2335,7 @@ function __plan_modify {
         capture)
             echo | xargs -o "$0" capture --oneline
             last_captured >> "${path}"
+            last_captured | activate
             database_commit "capture from project planner"
             ;;
         edit)
