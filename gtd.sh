@@ -2239,7 +2239,8 @@ function __plan_items {
 }
 
 function __plan_preview {
-    task_details "${SUBTASK_ID}"
+    task_summary "${SUBTASK_ID}"
+    echo "${SUBTASK_ID}" | subtasks | chafa
 }
 
 function __plan_bindings {
@@ -2254,7 +2255,6 @@ function __plan_bindings {
     fzf_bind_exec   "c"          "Capture"     "${plm} capture"         "${rls}" "last"
     fzf_bind_action "q"          "Quit"        "accept"                 "${rls}"
     fzf_bind_action "h"          "Toggle Help" "toggle-header"          "${rls}"
-    __details_bindings
 }
 
 command_declare plan
@@ -2268,6 +2268,15 @@ function plan {
         export SUBTASK_ID
     fi
 
+    # save current settings
+    read bm < <(prefs read 'graph/bucket_mode'   'hidden')
+    read sm < <(prefs read 'graph/subtasks_mode' 'hidden')
+
+    # turn off subtasks and buckets
+    prefs write 'graph/bucket_mode' 'hidden'
+    prefs write 'graph/subtasks_mode' 'hidden'
+
+    # run mainloop
     fzf_menu \
       "Edit Project Subtasks" \
       __plan_bindings \
@@ -2275,6 +2284,10 @@ function plan {
       --preview="$0 __plan_preview" \
       --with-nth='{2} {3}' \
       -d '|'
+
+    # restore settings
+    prefs write 'graph/bucket_mode' "${bm}"
+    prefs write 'graph/subtasks_mode' "${sm}"
 }
 
 ## State management ***********************************************************
