@@ -2385,11 +2385,8 @@ function __interactive_edit {
 function __interactive_node_submenu {
     local -r rls="reload-sync($0 __interactive_items)"
     local -r selected="$0 splat {+1} |"
-    local -r save="execute-silent($0 __interactive_save_state)"
-
-    fzf_bind_action "e"      "Edit"    "${save}" "become($0 __interactive_edit {1})" "${rls}"
-    fzf_bind_action "c"      "Capture" "${save}" "become($0 __interactive_capture)"  "${rls}"
-
+    fzf_bind_action "e"      "Edit"         "become($0 __interactive_edit {1})" "${rls}"
+    fzf_bind_action "c"      "Capture"      "become($0 __interactive_capture)"  "${rls}"
     fzf_bind_sexec  "x"      "Aassign"      "$0 assign"                         "refresh-preview"
     fzf_bind_sexec  "X"      "Unassign"     "$0 unassign"                       "refresh-preview"
     fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
@@ -2446,28 +2443,19 @@ function __interactive_view_submenu {
 function __interactive_graph_submenu {
     local -r rls="reload-sync($0 __interactive_items)"
     local -r selected="$0 splat {+1} |"
-    local -r save="execute-silent($0 __interactive_save_state)"
-
-    fzf_bind_sexec  "s" "Set Source" "${selected} $0 stdin into source" "refresh-preview"
-    fzf_bind_sexec  "t" "Set Target" "${selected} $0 stdin into target" "refresh-preview"
-    fzf_bind_sexec  "S" "Swap"       "$0 swap source target"            "refresh-preview"
-    fzf_bind_sexec  "d" "Add Dep"    "$0 add"                           "refresh-preview"
-    fzf_bind_sexec  "D" "Remove Dep" "$0 add"                           "refresh-preview"
-    fzf_bind_action \
-      "b" \
-      "Bucket" \
-      "${save}" \
-      "become($0 __interactive_bucket {+1})" \
-      "${rls}"
+    fzf_bind_sexec  "s" "Set Source" "${selected} $0 stdin into source"     "refresh-preview"
+    fzf_bind_sexec  "t" "Set Target" "${selected} $0 stdin into target"     "refresh-preview"
+    fzf_bind_sexec  "S" "Swap"       "$0 swap source target"                "refresh-preview"
+    fzf_bind_sexec  "d" "Add Dep"    "$0 add"                               "refresh-preview"
+    fzf_bind_sexec  "D" "Remove Dep" "$0 add"                               "refresh-preview"
+    fzf_bind_action "b" "Bucket"     "become($0 __interactive_bucket {+1})" "${rls}"
 }
 
-function __interactive_save_state {
-    curl -s "localhost:${FZF_PORT}" | prefs write 'interactive/state'
-}
-
+# define global keybindings for interactive mode.
 function __interactive_bindings {
     local -r rls="reload-sync($0 __interactive_items)"
 
+    # use mode given in $1 or load from
     if test -v 1
     then
         local -r menu="$1"
@@ -2477,18 +2465,20 @@ function __interactive_bindings {
         local -r menu
     fi
 
-    fzf_bind_sexec "1" "--" "$0 __interactive_mode node"
-    fzf_bind_sexec "2" "--" "$0 __interactive_mode nav"
-    fzf_bind_sexec "3" "--" "$0 __interactive_mode graph"
-    fzf_bind_sexec "4" "--" "$0 __interactive_mode view"
+    # global bindings that appear at the top
+    fzf_bind_sexec  "u"          "Undo"            "$0 undo"                   "${rls}"
+    fzf_bind_sexec  "U"          "Redo"            "$0 redo"                   "${rls}"
+    fzf_bind_sexec  "backspace"  "Move Back"       "$0 __interactive_pop"      "${rls}"
+    fzf_bind_sexec  "enter"      "Goto Cur"        "$0 __interactive_push {1}" "${rls}"
+    fzf_bind_action "alt-space"  "Clear Selection" "clear-multi"
+    fzf_bind_action "space"      "Select"          "toggle-select"
+    fzf_bind_action "ctrl-space" "Select All"      "select-all"
 
-    fzf_bind_sexec "u"         "Undo"         "$0 undo"                           "${rls}"
-    fzf_bind_sexec "U"         "Redo"         "$0 redo"                           "${rls}"
-    fzf_bind_sexec "backspace" "Move Back" "$0 __interactive_pop"                "${rls}"
-    fzf_bind_sexec "enter"     "Goto Cur"  "$0 __interactive_push {1}"           "${rls}"
-    fzf_bind_action "alt-space" "Clear Selection" "clear-multi"
-    fzf_bind_action "space" "Select" "toggle-select"
-    fzf_bind_action "ctrl-space" "Select All" "select-all"
+    # menu system bindings
+    fzf_bind_sexec  "1"          "--"              "$0 __interactive_mode node"
+    fzf_bind_sexec  "2"          "--"              "$0 __interactive_mode nav"
+    fzf_bind_sexec  "3"          "--"              "$0 __interactive_mode graph"
+    fzf_bind_sexec  "4"          "--"              "$0 __interactive_mode view"
     case "${menu}" in
         node)   __interactive_node_submenu;;
         nav)    __interactive_nav_submenu;;
@@ -2502,16 +2492,36 @@ function __interactive_bindings {
         ;;
     esac
 
-    fzf_bind_sexec  "shift-delete" "Clear Buckets" "$0 buckets clear" "refresh-preview"
-
+    # global bindings that appear at the end.
+    fzf_bind_sexec  "shift-delete"     "Clear Buckets" "$0 buckets clear" "refresh-preview"
     fzf_bind_action "F5" "Refresh"     "reload-sync($0 __interactive_items)"
     fzf_bind_action "?"  "Toggle Help" "toggle-header"
     fzf_bind_action "q"  "Quit"        "clear-screen" "accept"
 }
 
-# search through key bindings in the current mode.
+# render the menu bar according to the menu we're in.
+function __interactive_header {
+    local tabs
+    case "${1}" in
+        node)  tabs="[_ Node] [2 Nav] [3 Graph] [4 View]";;
+        nav)   tabs="[1 Node] [_ Nav] [3 Graph] [4 View]";;
+        graph) tabs="[1 Node] [2 Nav] [_ Graph] [4 View]";;
+        view)  tabs="[1 Node] [2 Nav] [3 Graph] [_ View]";;
+        *) debug "wtf" $1;;
+    esac
+
+    __interactive_bindings | fzf_help "${tabs}"
+}
+
+# FZF key press dispatch handler.
 #
-# if a key matches, send the action back to FZF via the http server.
+# Because we can't change the binding on the fly, I instead bind all
+# keys to this function, passing in the FZF key name as the first
+# argument.
+#
+# This function searches through the current bindings until it finds a
+# key that matches, then sends the action to be performed back to FZF
+# using the socket.
 function __interactive_dispatch {
     local -r pressed="${1}"
     local -a binding
@@ -2532,23 +2542,17 @@ function __interactive_dispatch {
     done
 }
 
-# render the menu bar according to the menu we're in.
-function __interactive_header {
-    local tabs
-    case "${1}" in
-        node)  tabs="[_ Node] [2 Nav] [3 Graph] [4 View]";;
-        nav)   tabs="[1 Node] [_ Nav] [3 Graph] [4 View]";;
-        graph) tabs="[1 Node] [2 Nav] [_ Graph] [4 View]";;
-        view)  tabs="[1 Node] [2 Nav] [3 Graph] [_ View]";;
-        *) debug "wtf" $1;;
-    esac
-
-    __interactive_bindings | fzf_help "${tabs}"
-}
-
-# bind key that all menus to the dispatch trampoline func only by
-# doing this as the initial binding string can the keys be rebound
-# later.
+# Bind any key that is potentially bound in a menu.
+#
+# FZF doesn't allow us to change the keybiding at runtime, only
+# unbind/rebind it.
+#
+# This is used as the initial binding string so can the keys be
+# rebound later when switching menus/modes.
+#
+# All keys / events are bound to a trampoline function that actually
+# looks up the key-press. This means that all keys are effectively
+# bound as execute-silent.
 function __interactive_bind_dispatch {
     local -a binding
     local -A keys
@@ -2560,12 +2564,14 @@ function __interactive_bind_dispatch {
         if test -z "${keys["${key}"]}"
         then
             keys["${key}"]="bound"
-            echo "${key}:execute-silent($0 __interactive_dispatch ${key})"
+            # save current state before any user action is taken.
+            echo -n "${key}:execute-silent($0 __interactive_save_state)"
+            echo    "+execute-silent($0 __interactive_dispatch ${key})"
         fi
     done | paste -sd ','
 }
 
-# unbind all the keys that might be bound
+# unbind all the keys that might be bound for any menu.
 function __interactive_unbind {
     local -a binding
 
@@ -2611,12 +2617,22 @@ function __interactive_mode {
     fzf_send "transform-header($0 __interactive_header ${mode})"
 }
 
+# Save the current FZF state to disk
+#
+# this is needed for restoring state after executing a full-screen
+# command.
+function __interactive_save_state {
+    curl -s "localhost:${FZF_PORT}" | prefs write 'interactive/state'
+}
+
+# Restore current FZF state from disk after executing a fullscreen command.
+#
+# This is mainly needed because of how the menu system is implemented.
 function __interactive_restore_state {
     # build an associative array that will tell us which items are selected
     local -a selected
     local -A is_selected
     local i id
-
     readarray -t selected < <(
         prefs read 'interactive/state' \
             | jq -r '.selected[].text' \
@@ -2648,6 +2664,9 @@ function __interactive_restore_state {
 }
 
 # run interactive mainloop
+#
+# this is a separate function so that we can re-enter the main loop
+# after performing a `become(...)` action.
 function __interactive {
     if test -v 1
     then
@@ -2672,6 +2691,8 @@ function __interactive {
        --preview="$0 __interactive_preview {1}"
 }
 
+# an interactive TUI which provides easy access to basic
+# features.
 query_declare_type             interactive formatter     "node|nav|links|graph"
 query_declare_default_producer interactive all is_active
 function interactive {
