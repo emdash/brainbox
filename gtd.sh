@@ -200,6 +200,8 @@ function fzf_menu {
        --style=full \
        --layout=reverse \
        --no-input \
+       --no-sort \
+       --track \
        --cycle \
        --header="$("${bindings_fn}" | fzf_help "${header}")" \
        --bind="$("${bindings_fn}" | fzf_bind)" \
