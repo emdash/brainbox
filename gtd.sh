@@ -2352,21 +2352,25 @@ function __plan_items {
 
 function __plan_preview {
     task_summary "${SUBTASK_ID}"
-    echo "${SUBTASK_ID}" | subtasks | chafa
+    echo "${SUBTASK_ID}" | reachable dependencies outgoing | chafa
 }
 
 function __plan_bindings {
     local rls="reload-sync($0 __plan_items)"
     local plm="$0 __plan_modify"
-    fzf_bind_sexec  "shift-up"   "Move Up"     "${plm} up     {n}"      "${rls}" "up"
-    fzf_bind_sexec  "shift-down" "Move Down"   "${plm} down   {n}"      "${rls}" "down"
-    fzf_bind_sexec  "space"      "Split Group" "${plm} split  {n}"      "${rls}" "down"
-    fzf_bind_sexec  "delete"     "Delete"      "${plm} delete {n}"      "${rls}"
-    fzf_bind_exec   "enter"      "Edit"        "${plm} edit   {1}"      "${rls}"
-    fzf_bind_exec   "a"          "Add"         "${plm} add"             "${rls}"
-    fzf_bind_exec   "c"          "Capture"     "${plm} capture"         "${rls}" "last"
-    fzf_bind_action "q"          "Quit"        "accept"                 "${rls}"
-    fzf_bind_action "h"          "Toggle Help" "toggle-header"          "${rls}"
+    local -r selected="$0 splat {+1} |"
+    fzf_bind_sexec  "u"          "Undo"            "$0 undo"       "${rls}"
+    fzf_bind_sexec  "U"          "Redo"            "$0 redo"       "${rls}"
+    fzf_bind_sexec  "shift-up"   "Move Up"     "${plm} up     {n}" "${rls}" "up"
+    fzf_bind_sexec  "shift-down" "Move Down"   "${plm} down   {n}" "${rls}" "down"
+    fzf_bind_sexec  "space"      "Split Group" "${plm} split  {n}" "${rls}" "down"
+    fzf_bind_sexec  "delete"     "Delete"      "${plm} delete {n}" "${rls}"
+    fzf_bind_exec   "e"          "Edit"        "${plm} edit   {1}" "${rls}"
+    fzf_bind_exec   "enter"      "Plan Subprj" "$0 plan {1}"       "${rls}"
+    fzf_bind_exec   "a"          "Add"         "${plm} add"        "${rls}"
+    fzf_bind_exec   "c"          "Capture"     "${plm} capture"    "${rls}" "last"
+    fzf_bind_action "q"          "Quit"        "accept"        "${rls}"
+    fzf_bind_action "h"          "Toggle Help" "toggle-header" "${rls}"
 }
 
 command_declare plan
