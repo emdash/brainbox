@@ -2328,13 +2328,21 @@ function query_builder {
 function __plan_modify {
     read path < <(graph_datum subtasks path "${SUBTASK_ID}")
     case "${1}" in
-        add) all | choose >> "${path}";;
+        add)
+            all | choose >> "${path}"
+            database_commit "added from project planner"
+            ;;
         capture)
             echo | xargs -o "$0" capture --oneline
             last_captured >> "${path}"
+            database_commit "capture from project planner"
             ;;
-        edit) echo "${2}" | edit;;
-        *) "${GTD_DIR}/components/subtasks.py" "${path}" "${@}";;
+        edit)
+            echo "${2}" | edit;;
+        *)
+            "${GTD_DIR}/components/subtasks.py" "${path}" "${@}"
+            database_commit "project planner: ${*}"
+            ;;
     esac
 }
 
