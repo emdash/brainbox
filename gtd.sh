@@ -1351,7 +1351,6 @@ function choose {
       --accept-nth='{1}' \
       --preview="$0 task_details {1}" \
       --bind="load:enable-search+show-input" \
-      --bind="focus:execute-silent($0 splat {+1} | $0 stdin into cur)" \
     | query_filter_chain "$@"
 }
 
