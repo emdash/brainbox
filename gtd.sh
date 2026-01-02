@@ -1427,6 +1427,11 @@ query_declare_type             is_orphan filter
 query_declare_default_producer is_orphan all
 function is_orphan { graph is_orphan | query_filter_chain "$@" ; }
 
+# Show next actions which are also isolated
+query_declare_type             single_tasks filter
+query_declare_default_producer single_tasks all
+function single_tasks { is_orphan | is_next "${@}"; }
+
 # Keep only tasks in state PERSIST
 query_declare_type             is_persistent filter
 query_declare_default_producer is_persistent all
