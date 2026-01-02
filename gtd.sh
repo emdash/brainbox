@@ -1422,7 +1422,7 @@ query_declare_type             is_next filter
 query_declare_default_producer is_next all
 function is_next { graph is_next | is_actionable "$@" ; }
 
-# Keep only tasks not associated with any other tasks
+# Keep all isolated graph nodes regadless of state.
 query_declare_type             is_orphan filter
 query_declare_default_producer is_orphan all
 function is_orphan { graph is_orphan | query_filter_chain "$@" ; }
