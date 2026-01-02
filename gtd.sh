@@ -1452,7 +1452,7 @@ function is_leaf { graph is_leaf | query_filter_chain "$@" ; }
 # Keep only tasks not assigned to any context
 query_declare_type             is_unassigned filter
 query_declare_default_producer is_unassigned all
-function is_unassigned { graph is_unassigned | query_filter_chain "$@" ; }
+function is_unassigned { is_actionable | graph is_unassigned | query_filter_chain "$@" ; }
 
 # Keep only waiting tasks
 query_declare_type             is_waiting filter
