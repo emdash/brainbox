@@ -2253,7 +2253,6 @@ function __plan_bindings {
     fzf_bind_exec   "c"          "Capture"     "${plm} capture"         "${rls}" "last"
     fzf_bind_action "q"          "Quit"        "accept"                 "${rls}"
     fzf_bind_action "h"          "Toggle Help" "toggle-header"          "${rls}"
-    fzf_bind_sexec  "focus"      "--"          "echo {1} | $0 into cur"
     __details_bindings
 }
 
