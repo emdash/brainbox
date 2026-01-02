@@ -101,7 +101,12 @@ function splat {
 function apply {
     declare -a args
     readarray -t args
-    "${@}" "${args[@]}"
+    if test -v 1
+    then
+        "${@}" "${args[@]}"
+    else
+        "${args[@]}"
+    fi
 }
 
 # Menu System *****************************************************************
@@ -2233,6 +2238,44 @@ function history {
     database_history | cat ;
 }
 
+# Interactive query editir ****************************************************
+
+function __query_builder_preview {
+    local -a query
+    splat "${@}" | chafa
+}
+
+function __query_builder_items {
+    local -a query
+    read -a query < <(echo "${@}")
+    dispatch "${query[@]}" | summarize -d '|'
+}
+
+function __query_builder_bindings {
+    fzf_bind_action "start"  "--"   "toggle-input" "reload-sync($0 __query_builder_items {q})"
+    fzf_bind_action "load"   "--"   "refresh-preview" "unbind(load)"
+    fzf_bind_action "change" "--"   "reload-sync($0 __query_builder_items {q})"
+    fzf_bind_sexec  "focus"  "--"   "echo {1} | $0 stdin into cur"
+    fzf_bind_action "enter"  "Accept" "accept-non-empty"
+    __graph_bindings
+}
+
+function query_builder {
+    # run mainloop
+    fzf_menu \
+      "Query Builder" \
+      __query_builder_bindings \
+      __query_builder_items \
+      --layout="reverse" \
+      --disabled \
+      --query "${*:-all}" \
+      --preview="$0 __query_builder_preview {*1}" \
+      --with-nth='{2} {3}' \
+      --print-query \
+      -d '|' \
+    | head -n 1
+}
+
 # Project-Subtasks Editor *****************************************************
 
 function __plan_modify {
@@ -2363,7 +2406,7 @@ function __interactive_items {
           | "${mode}" \
           | filter test "${top}" !=
     else
-        prefs read 'interactive/query' | apply
+        prefs read 'interactive/query' | apply dispatch
     fi | tee -p "${DATA_DIR}/query_results" | summarize -d '|'
 }
 
@@ -2400,6 +2443,16 @@ function __interactive_plan {
     exec "$0" __interactive
 }
 
+# enter query editor
+function __interactive_change_query {
+    local -a query
+
+    readarray -t query < <(prefs read 'interactive/query')
+    read -a query < <(query_builder "${query[@]}")
+    splat "${query[@]}" | prefs write 'interactive/query'
+    exec "$0" __interactive
+}
+
 # define key bindings for node submenu
 function __interactive_node_submenu {
     local -r rls="reload-sync($0 __interactive_items)"
@@ -2407,8 +2460,6 @@ function __interactive_node_submenu {
     fzf_bind_action "c"      "Capture"      "become($0 __interactive_capture)"  "${rls}"
     fzf_bind_action "e"      "Edit"         "become($0 __interactive_edit {1})" "${rls}"
     fzf_bind_action "p"      "Plan Project" "become($0 __interactive_plan {1})" "${rls}"
-    fzf_bind_sexec  "x"      "Aassign"      "$0 assign"                         "refresh-preview"
-    fzf_bind_sexec  "X"      "Unassign"     "$0 unassign"                       "refresh-preview"
     fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
@@ -2418,10 +2469,10 @@ function __interactive_node_submenu {
 function __interactive_nav_submenu {
     local rls="reload-sync($0 __interactive_items)"
     local setpref="$0 prefs write"
-    fzf_bind_sexec  "f"         "Family"    "${setpref} 'interactive/mode' family"    "${rls}"
-    fzf_bind_sexec  "n"         "Neighbors" "${setpref} 'interactive/mode' neighbors" "${rls}"
-    fzf_bind_sexec  "p"         "Parents"   "${setpref} 'interactive/mode' parents"   "${rls}"
-    fzf_bind_sexec  "C"         "Children"  "${setpref} 'interactive/mode' children"  "${rls}"
+    fzf_bind_sexec  "f" "Family"       "${setpref} 'interactive/mode' family"    "${rls}"
+    fzf_bind_sexec  "n" "Neighbors"    "${setpref} 'interactive/mode' neighbors" "${rls}"
+    fzf_bind_sexec  "p" "Parents"      "${setpref} 'interactive/mode' parents"   "${rls}"
+    fzf_bind_sexec  "C" "Children"     "${setpref} 'interactive/mode' children"  "${rls}"
 }
 
 function __interactive_view_submenu {
@@ -2463,12 +2514,14 @@ function __interactive_view_submenu {
 function __interactive_graph_submenu {
     local -r rls="reload-sync($0 __interactive_items)"
     local -r selected="$0 splat {+1} |"
-    fzf_bind_sexec  "s" "Set Source" "${selected} $0 stdin into source"     "refresh-preview"
-    fzf_bind_sexec  "t" "Set Target" "${selected} $0 stdin into target"     "refresh-preview"
-    fzf_bind_sexec  "S" "Swap"       "$0 swap source target"                "refresh-preview"
-    fzf_bind_sexec  "d" "Add Dep"    "$0 add"                               "refresh-preview"
-    fzf_bind_sexec  "D" "Remove Dep" "$0 add"                               "refresh-preview"
-    fzf_bind_action "b" "Bucket"     "become($0 __interactive_bucket {+1})" "${rls}"
+    fzf_bind_sexec  "s" "Set Source"                 "${selected} $0 stdin into source"     "refresh-preview"
+    fzf_bind_sexec  "t" "Set Target"                 "${selected} $0 stdin into target"     "refresh-preview"
+    fzf_bind_sexec  "a" "Assign Source to Target"    "$0 assign"                            "${rls}"
+    fzf_bind_sexec  "A" "Unassign Source and Target" "$0 unassign"                          "${rls}"
+    fzf_bind_sexec  "S" "Swap Source and Target"     "$0 swap source target"                "refresh-preview"
+    fzf_bind_sexec  "d" "Link Source and Target"     "$0 add"                               "${rls}"
+    fzf_bind_sexec  "D" "Unlink Source and Target"   "$0 add"                               "${rls}"
+    fzf_bind_action "b" "Bucket"                     "become($0 __interactive_bucket {+1})" "${rls}"
 }
 
 # define global keybindings for interactive mode.
@@ -2486,6 +2539,7 @@ function __interactive_bindings {
     fi
 
     # global bindings that appear at the top
+    fzf_bind_action "Q"          "Change Query"    "become($0 __interactive_change_query)" "${rls}"
     fzf_bind_sexec  "u"          "Undo"            "$0 undo"                   "${rls}"
     fzf_bind_sexec  "U"          "Redo"            "$0 redo"                   "${rls}"
     fzf_bind_sexec  "backspace"  "Move Back"       "$0 __interactive_pop"      "${rls}"
