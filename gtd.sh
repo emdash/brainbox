@@ -206,6 +206,16 @@ function fzf_menu {
        "${@}"
 }
 
+# send a command back to FZF via the http socket
+function fzf_send {
+    if test "$#" != 0
+    then
+        curl -s "localhost:${FZF_PORT}" -d "$*"
+    else
+        curl -s "localhost:${FZF_PORT}" -d @-
+    fi
+}
+
 # Database Management *********************************************************
 
 # Initialize a GTD database relative to the current working directory.
