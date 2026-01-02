@@ -2389,7 +2389,7 @@ function plan {
     read sm < <(prefs read 'graph/subtasks_mode' 'hidden')
 
     # turn off subtasks and buckets
-    prefs write 'graph/bucket_mode' 'hidden'
+    prefs write 'graph/bucket_mode' 'cluster'
     prefs write 'graph/subtasks_mode' 'hidden'
 
     # run mainloop
