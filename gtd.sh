@@ -2238,7 +2238,7 @@ function history {
     database_history | cat ;
 }
 
-# Interactive query editir ****************************************************
+# Interactive query editor ****************************************************
 
 function __query_builder_preview {
     local -a query
@@ -2782,9 +2782,8 @@ function __interactive {
        --preview="$0 __interactive_preview {1}"
 }
 
-# an interactive TUI which provides easy access to basic
-# features.
-query_declare_type             interactive formatter     "node|nav|links|graph"
+# an interactive TUI which ties everything together.
+query_declare_type             interactive formatter     "node|nav|graph|view"
 query_declare_default_producer interactive all is_active
 function interactive {
     prefs clobber "interactive/path"
