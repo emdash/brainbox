@@ -207,7 +207,7 @@ def dependencies():
     else:
       yield (u, v)
 
-def edge_list(edge_set, no_subtasks=None):
+def edge_list(edge_set, subtasks=True):
   """Get the set of edges for the given edge set.
 
   Client code should call this function to so that project subtasks
@@ -215,7 +215,7 @@ def edge_list(edge_set, no_subtasks=None):
   """
   try:
     match edge_set:
-      case "dependencies" if no_subtasks is None:
+      case "dependencies" if subtasks:
         return set(dependencies())
       case _: return set(read_edges(edge_set))
   except OSError as e:
