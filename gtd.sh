@@ -2538,8 +2538,17 @@ function __interactive_bindings {
         local -r menu
     fi
 
+    # special-case for search mode
+    if test "${menu}" == "search"
+    then
+        fzf_bind_action "backspace" "--" "backward-delete-char"
+        fzf_bind_sexec  "enter"     "--" "$0 __interactive_mode node"
+        return 0
+    fi
+
     # global bindings that appear at the top
     fzf_bind_action "Q"          "Change Query"    "become($0 __interactive_change_query)" "${rls}"
+    fzf_bind_sexec  "ctrl-s"     "Search"          "$0 __interactive_mode search"
     fzf_bind_sexec  "u"          "Undo"            "$0 undo"                   "${rls}"
     fzf_bind_sexec  "U"          "Redo"            "$0 redo"                   "${rls}"
     fzf_bind_sexec  "backspace"  "Move Back"       "$0 __interactive_pop"      "${rls}"
@@ -2581,10 +2590,11 @@ function __interactive_header {
         nav)   tabs="[1 Node] [_ Nav] [3 Graph] [4 View]";;
         graph) tabs="[1 Node] [2 Nav] [_ Graph] [4 View]";;
         view)  tabs="[1 Node] [2 Nav] [3 Graph] [_ View]";;
+        search) tabs="Search Mode";;
         *) debug "wtf" $1;;
     esac
 
-    __interactive_bindings | fzf_help "${tabs}"
+    __interactive_bindings "${1}" | fzf_help "${tabs}"
 }
 
 # FZF key press dispatch handler.
@@ -2687,6 +2697,13 @@ function __interactive_mode {
     # rebind just the keys for this menu.
     __interactive_rebind | fzf_send
 
+    if test "${mode}" == "search"
+    then
+        fzf_send "hide-header+show-input+enable-search"
+    else
+        fzf_send "clear-query+hide-input+show-header"
+    fi
+
     # update the header to show the current key bindings.
     fzf_send "transform-header($0 __interactive_header ${mode})"
 }
@@ -2747,6 +2764,7 @@ function __interactive {
     fi
 
     __interactive_items | fzf \
+       --input-label="Search" \
        --style=full \
        --layout=reverse \
        --no-input \
