@@ -2211,6 +2211,28 @@ function up {
     from "$1" parents goto "${opt}" "$1"
 }
 
+## State management ***********************************************************
+
+# restore the last undone command, if one exists
+command_declare redo
+function redo {
+    database_redo
+}
+
+# roll back to the state prior to execution of the last destructive
+command_declare undo
+function undo {
+    database_undo
+}
+
+# show the current database undo
+command_declare history
+function history {
+    # cat here to prevent pager from being invoked, which is annoying
+    # within emacs. but maybe I should remove this.
+    database_history | cat ;
+}
+
 # Project-Subtasks Editor *****************************************************
 
 function __plan_modify {
@@ -2288,28 +2310,6 @@ function plan {
     # restore settings
     prefs write 'graph/bucket_mode' "${bm}"
     prefs write 'graph/subtasks_mode' "${sm}"
-}
-
-## State management ***********************************************************
-
-# restore the last undone command, if one exists
-command_declare redo
-function redo {
-    database_redo
-}
-
-# roll back to the state prior to execution of the last destructive
-command_declare undo
-function undo {
-    database_undo
-}
-
-# show the current database undo
-command_declare history
-function history {
-    # cat here to prevent pager from being invoked, which is annoying
-    # within emacs. but maybe I should remove this.
-    database_history | cat ;
 }
 
 # Interactive Mode ************************************************************
