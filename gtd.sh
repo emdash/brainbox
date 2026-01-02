@@ -2238,6 +2238,48 @@ function history {
     database_history | cat ;
 }
 
+# Interactive Schedule Previewer **********************************************
+
+function __schedule_builder_preview {
+    local style start end
+    read style    < <(prefs read 'schedule_builder/style'    week)
+    read start    < <(prefs read 'schedule_builder/start'    "$(date -Iminutes)")
+    read duration < <(prefs read 'schedule_builder/duration' '1w')
+
+    prefs read 'schedule_builder/schedule' | _schedule preview "${style}" "${start}"
+}
+
+function __schedule_builder_items {
+    if echo "${1}" | _schedule validate &>/dev/null
+    then
+        prefs write 'schedule_builder/schedule' "${1}"
+    fi
+
+    prefs read 'schedule_builder/schedule' | _schedule preview list | tail -n +5
+}
+
+function __schedule_builder_bindings {
+    fzf_bind_action "start"  "--" "show-input+reload-sync($0 __schedule_builder_items {q})"
+    fzf_bind_action "change" "--" "reload-sync($0 __schedule_builder_items {q})"
+    fzf_bind_sexec  "alt-w" "Week View"  "$0 prefs write 'schedule_builder/style' week"  "refresh-preview"
+    fzf_bind_sexec  "alt-m" "Month View" "$0 prefs write 'schedule_builder/style' month" "refresh-preview"
+    fzf_bind_action "enter" "Accept" "accept"
+}
+
+function schedule_builder {
+    # run mainloop
+    fzf_menu \
+      "Schedule Builder" \
+      __schedule_builder_bindings \
+      __schedule_builder_items \
+      --layout="reverse" \
+      --disabled \
+      --query '["weekly", 1, 3, 5]' \
+      --preview="$0 __schedule_builder_preview {q}" \
+      --print-query \
+    | head -n 1
+}
+
 # Interactive query editor ****************************************************
 
 function __query_builder_preview {

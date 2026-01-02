@@ -1120,6 +1120,7 @@ if __name__ == "__main__":
     case ["deadline"]:             foreach(read_date_set, 'deadline')
     case ["classify"]:             foreach(classify_node)
     case ["preview", *args]:       preview_dateset(*args)
+    case ["validate"]:             fromJSON(json.load(sys.stdin))
     case ["agenda", *args]:        agenda(*args)
     case invalid:
       raise ValueError("Invalid Command:", invalid)
