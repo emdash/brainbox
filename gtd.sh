@@ -2263,7 +2263,7 @@ function plan {
     then
        export SUBTASK_ID="${1}"
     else
-        declare SUBTASK_IDf
+        declare SUBTASK_ID
         read SUBTASK_ID < <(dispatch "${@}" choose --single)
         export SUBTASK_ID
     fi
