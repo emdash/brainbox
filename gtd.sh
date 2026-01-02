@@ -2664,9 +2664,8 @@ function __interactive_restore_state {
 
     # set the cursor to the last known position
     {
-        echo -n "pos("
-        prefs read 'interactive/state' | jq -r .position
-        echo ")"
+        read pos < <(prefs read 'interactive/state' | jq -r .position)
+        echo "pos($(( "${pos}" + 1 )))"
     } | fzf_send
 }
 
