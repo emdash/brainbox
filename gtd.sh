@@ -2503,10 +2503,14 @@ function interactive {
     local query
     local consumer
     query_split_consumer "${SAVED_ARGV[@]}"
-    debug "${query[@]}"
 
     # save the first part of the query so we can re-run it.
-    splat "${query[@]}" | prefs write "interactive/query"
+    if test -z "${query[*]}"
+    then
+        splat all is_active | prefs write "interactive/query"
+    else
+        splat "${query[@]}" | prefs write "interactive/query"
+    fi
 
     __interactive node
 }
