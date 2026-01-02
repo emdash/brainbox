@@ -2381,12 +2381,19 @@ function __interactive_edit {
     exec "$0" __interactive
 }
 
+# edit project subtasks
+function __interactive_plan {
+    plan "${1}"
+    exec "$0" __interactive
+}
+
 # define key bindings for node submenu
 function __interactive_node_submenu {
     local -r rls="reload-sync($0 __interactive_items)"
     local -r selected="$0 splat {+1} |"
-    fzf_bind_action "e"      "Edit"         "become($0 __interactive_edit {1})" "${rls}"
     fzf_bind_action "c"      "Capture"      "become($0 __interactive_capture)"  "${rls}"
+    fzf_bind_action "e"      "Edit"         "become($0 __interactive_edit {1})" "${rls}"
+    fzf_bind_action "p"      "Plan Project" "become($0 __interactive_plan {1})" "${rls}"
     fzf_bind_sexec  "x"      "Aassign"      "$0 assign"                         "refresh-preview"
     fzf_bind_sexec  "X"      "Unassign"     "$0 unassign"                       "refresh-preview"
     fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
