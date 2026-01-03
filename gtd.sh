@@ -2601,7 +2601,7 @@ function __interactive_bindings {
     if test "${menu}" == "search"
     then
         fzf_bind_action "backspace" "--" "backward-delete-char"
-        fzf_bind_sexec  "enter"     "--" "$0 __interactive_mode node"
+        fzf_bind_sexec  "enter"     "--" "$0 __interactive_mode exit-search"
         return 0
     fi
 
@@ -2742,7 +2742,14 @@ function __interactive_mode {
     # if we're given a mode, use that. otherwise load from saved state.
     if test -v 1
     then
-        local -r mode="${1}"
+        local mode="${1}"
+        case "${mode}" in
+            search)
+                prefs read 'interactive/menu' | prefs write 'interactive/prev_menu';;
+            exit-search)
+                read mode < <(prefs read 'interactive/prev_menu');;
+        esac
+        local -r mode
     else
         local -r mode="$(prefs read 'interactive/menu' node)"
     fi
