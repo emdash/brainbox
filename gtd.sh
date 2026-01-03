@@ -2498,7 +2498,7 @@ function __interactive_edit {
 
 # edit project subtasks
 function __interactive_plan {
-    plan "${1}"
+    plan "${1}" || true
     exec "$0" __interactive
 }
 
