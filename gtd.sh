@@ -2528,6 +2528,7 @@ function __interactive_node_submenu {
 function __interactive_nav_submenu {
     local rls="reload-sync($0 __interactive_items)"
     local setpref="$0 prefs write"
+    fzf_bind_action "c"      "Capture"      "become($0 __interactive_capture)"  "${rls}"
     fzf_bind_sexec  "f" "Family"       "${setpref} 'interactive/mode' family"    "${rls}"
     fzf_bind_sexec  "n" "Neighbors"    "${setpref} 'interactive/mode' neighbors" "${rls}"
     fzf_bind_sexec  "p" "Parents"      "${setpref} 'interactive/mode' parents"   "${rls}"
@@ -2573,6 +2574,7 @@ function __interactive_view_submenu {
 function __interactive_graph_submenu {
     local -r rls="reload-sync($0 __interactive_items)"
     local -r selected="$0 splat {+1} |"
+    fzf_bind_action "c" "Capture"                    "become($0 __interactive_capture)"     "${rls}"
     fzf_bind_sexec  "s" "Set Source"                 "${selected} $0 stdin into source"     "refresh-preview"
     fzf_bind_sexec  "t" "Set Target"                 "${selected} $0 stdin into target"     "refresh-preview"
     fzf_bind_sexec  "a" "Assign Source to Target"    "$0 assign"                            "${rls}"
