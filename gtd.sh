@@ -1939,9 +1939,8 @@ function swap {
 	2) local a="$1"     b="$2";;
 	*) local a="source" b="target";;
     esac
-    mv "${BUCKET_DIR}/${a}" "${DATA_DIR}/temp"
-    mv "${BUCKET_DIR}/${b}" "${BUCKET_DIR}/${a}"
-    mv "${DATA_DIR}/temp"   "${BUCKET_DIR}/${b}"
+
+    mv -T --exchange "${BUCKET_DIR}/${a}" "${BUCKET_DIR}/${b}"
 }
 
 # add subtasks to target
