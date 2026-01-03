@@ -2507,8 +2507,10 @@ function __interactive_change_query {
     local -a query
 
     readarray -t query < <(prefs read 'interactive/query')
-    read -a query < <(query_builder "${query[@]}")
-    splat "${query[@]}" | prefs write 'interactive/query'
+    if read -a query < <(query_builder "${query[@]}")
+    then
+        splat "${query[@]}" | prefs write 'interactive/query'
+    fi
     exec "$0" __interactive
 }
 
