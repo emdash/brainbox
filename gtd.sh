@@ -2605,12 +2605,13 @@ function __interactive_bindings {
     then
         fzf_bind_action "backspace" "--" "backward-delete-char"
         fzf_bind_sexec  "enter"     "--" "$0 __interactive_mode exit-search"
+        fzf_bind_sexec  "esc"       "--" "$0 __interactive_mode exit-search"
         return 0
     fi
 
     # global bindings that appear at the top
     fzf_bind_action "Q"          "Change Query"    "become($0 __interactive_change_query)" "${rls}"
-    fzf_bind_sexec  "ctrl-s"     "Search"          "$0 __interactive_mode search"
+    fzf_bind_sexec  "ctrl-s,/"   "Search"          "$0 __interactive_mode search"
     fzf_bind_sexec  "u"          "Undo"            "$0 undo"                   "${rls}"
     fzf_bind_sexec  "U"          "Redo"            "$0 redo"                   "${rls}"
     fzf_bind_sexec  "backspace"  "Move Back"       "$0 __interactive_pop"      "${rls}"
@@ -2639,9 +2640,10 @@ function __interactive_bindings {
 
     # global bindings that appear at the end.
     fzf_bind_sexec  "shift-delete"     "Clear Buckets" "$0 buckets clear" "refresh-preview"
-    fzf_bind_action "F5" "Refresh"     "reload-sync($0 __interactive_items)"
-    fzf_bind_action "?"  "Toggle Help" "toggle-header"
-    fzf_bind_action "q"  "Quit"        "clear-screen" "accept"
+    fzf_bind_action "F5"    "Refresh"     "reload-sync($0 __interactive_items)"
+    fzf_bind_action "?"     "Toggle Help" "toggle-header"
+    fzf_bind_action "q"     "Quit"        "accept"
+    fzf_bind_action "esc"   "--"          "accept"
 }
 
 # render the menu bar according to the menu we're in.
