@@ -2577,7 +2577,7 @@ function __interactive_graph_submenu {
     fzf_bind_sexec  "t" "Set Target"                 "${selected} $0 stdin into target"     "refresh-preview"
     fzf_bind_sexec  "a" "Assign Source to Target"    "$0 assign"                            "${rls}"
     fzf_bind_sexec  "A" "Unassign Source and Target" "$0 unassign"                          "${rls}"
-    fzf_bind_sexec  "S" "Swap Source and Target"     "$0 swap source target"                "refresh-preview"
+    fzf_bind_sexec  "S" "Swap Source and Target"     "$0 swap"                              "refresh-preview"
     fzf_bind_sexec  "d" "Link Source and Target"     "$0 add"                               "${rls}"
     fzf_bind_sexec  "D" "Unlink Source and Target"   "$0 remove"                            "${rls}"
     fzf_bind_action "b" "Bucket"                     "become($0 __interactive_bucket {+1})" "${rls}"
