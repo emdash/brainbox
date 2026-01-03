@@ -77,6 +77,13 @@ match sys.argv[2:]:
 
 with open(sys.argv[1], "w") as output:
   blank = False
+
+  # don't allow separators at the beginning or end of the file
+  if lines[0] == '':
+    del lines[0]
+  if lines[-1] == '':
+    del lines[-1]
+
   # print output, merging consecutive blank lines into a single line.
   for line in lines:
     if line == '':
