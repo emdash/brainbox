@@ -78,6 +78,28 @@ def test_intervals():
     assert i1.intersects(i)
   assert not i1.intersects(i4)
 
+  lopen = LeftOpen(today)
+  ropen = RightOpen(today)
+  fin   = Closed(today - 2 * hour, today - hour)
+  fin2  = Closed(today - 1 * hour, today + hour)
+
+  assert lopen.intersects(ropen)
+  assert ropen.intersects(lopen)
+  assert Open().contains(fin)
+  assert Open().contains(lopen)
+  assert Open().contains(ropen)
+  assert lopen.contains(fin)
+  assert not ropen.contains(fin)
+
+  assert Open().intersects(fin)
+  assert Open().intersects(fin2)
+
+  assert lopen.intersects(fin2)
+  assert ropen.intersects(fin2)
+
+  assert lopen.intersection(fin2) == Closed(fin2.start, today)
+  assert ropen.intersection(fin2) == Closed(today, fin2.end)
+
 def test_display_month():
   pass
 
@@ -111,117 +133,105 @@ def test_interval_sequence():
 
 def test_interval_merge_consecutive():
   assert list(Interval.mergeConsecutive([
-    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15, 00))
+    Closed(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15, 00))
   ])) == [
-    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15, 00))
+    Closed(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15, 00))
   ]
 
   assert list(Interval.mergeConsecutive([
-    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15)),
-    Interval(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 16)),
-    Interval(datetime(2025, 11, 10, 16, 00), datetime(2025, 11, 10, 19, 39))
-  ])) == [Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 19,  39))]
+    Closed(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 15)),
+    Closed(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 16)),
+    Closed(datetime(2025, 11, 10, 16, 00), datetime(2025, 11, 10, 19, 39))
+  ])) == [Closed(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 19,  39))]
 
   assert list(Interval.mergeConsecutive([
-    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 14, 45)),
-    Interval(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 16, 1)),
-    Interval(datetime(2025, 11, 10, 16, 00), datetime(2025, 11, 10, 19, 39))
+    Closed(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 14, 45)),
+    Closed(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 16, 1)),
+    Closed(datetime(2025, 11, 10, 16, 00), datetime(2025, 11, 10, 19, 39))
   ])) == [
-    Interval(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 14,  45)),
-    Interval(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 19,  39)),
+    Closed(datetime(2025, 11, 10, 14, 30), datetime(2025, 11, 10, 14,  45)),
+    Closed(datetime(2025, 11, 10, 15, 00), datetime(2025, 11, 10, 19,  39)),
   ]
 
 def test_interval_within():
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
   ).within(datetime(2025, 10, 11, 12, 30)) == True
 
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
   ).within(datetime(2025, 10, 12, 0, 0)) == True
 
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
   ).within(datetime(2025, 10, 12, 23, 59, 59, 999999)) == False
 
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
   ).within(datetime(2025, 10, 10, 23, 59, 59, 999999)) == False
 
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
   ).within(datetime(2025, 10, 9, 9, 30)) == False
 
 
 def test_interval_intersects():
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
-  ).intersects(Interval(
+  ).intersects(Closed(
     datetime(2025, 10, 11, 12, 30),
     datetime(2025, 10, 11, 13, 00)
   )) == True
 
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
-  ).intersects(Interval(
+  ).intersects(Closed(
     datetime(2025, 10, 10, 23, 30),
     datetime(2025, 10, 10, 23, 59, 59, 999999)
   )) == False
 
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
-  ).intersects(Interval(
+  ).intersects(Closed(
     datetime(2025, 10, 10, 23, 30),
     datetime(2025, 10, 11)
   )) == True
 
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
-  ).intersects(Interval(
+  ).intersects(Closed(
     datetime(2025, 10, 12),
     datetime(2025, 10, 13)
   )) == True
 
-def test_interval_span():
-  assert Interval(
-    datetime(2025, 10, 11, 16, 00),
-    datetime(2025, 10, 11, 16, 30)
-  ).span(Interval(
-    datetime(2025, 10, 11, 16, 45),
-    datetime(2025, 10, 11, 17, 20)
-  )) == Interval(
-    datetime(2025, 10, 11, 16, 00),
-    datetime(2025, 10, 11, 17, 20)
-  )
-
 def test_interval_intersection():
-  assert Interval(
+  assert Closed(
     datetime(2025, 10, 11, 16, 00),
     datetime(2025, 10, 11, 16, 45)
-  ).intersection(Interval(
+  ).intersection(Closed(
     datetime(2025, 10, 11, 16, 30),
     datetime(2025, 10, 11, 17, 20)
-  )) == Interval(
+  )) == Closed(
     datetime(2025, 10, 11, 16, 30),
     datetime(2025, 10, 11, 16, 45)
   )
 
 def test_interval_ordinals():
-  assert list(Interval(
+  assert list(Closed(
     datetime(2025, 10, 11, 16, 30),
     datetime(2025, 10, 11, 17, 30)
   ).ordinals()) == [739535]
 
-  assert list(Interval(
+  assert list(Closed(
     datetime(2025, 10, 11, 16, 30),
     datetime(2025, 10, 12, 17, 30)
   ).ordinals()) == [739535, 739536]
@@ -229,27 +239,27 @@ def test_interval_ordinals():
 def test_explicit():
   # no overlap
   assert list(Explicit([
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 16, 00),
       datetime(2025, 10, 11, 16, 30)
-    ), Interval(
+    ), Closed(
       datetime(2025, 10, 11, 16, 45),
       datetime(2025, 10, 11, 17, 20)
-    ), Interval(
+    ), Closed(
       datetime(2025, 10, 11, 17, 35),
       datetime(2025, 10, 11, 17, 47)
     )
-  ]).intervals(Interval(
+  ]).intervals(Closed(
       datetime(2025, 10, 10, 16, 00),
       datetime(2025, 10, 13, 16, 30),
   ))) == [
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 16, 00),
       datetime(2025, 10, 11, 16, 30)
-    ), Interval(
+    ), Closed(
       datetime(2025, 10, 11, 16, 45),
       datetime(2025, 10, 11, 17, 20)
-    ), Interval(
+    ), Closed(
       datetime(2025, 10, 11, 17, 35),
       datetime(2025, 10, 11, 17, 47)
     )
@@ -257,24 +267,24 @@ def test_explicit():
 
   # no overlap
   assert list(Explicit([
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 16, 00),
       datetime(2025, 10, 11, 16, 30)
-    ), Interval(
+    ), Closed(
       datetime(2025, 10, 11, 16, 45),
       datetime(2025, 10, 11, 17, 20)
-    ), Interval(
+    ), Closed(
       datetime(2025, 10, 11, 17, 15),
       datetime(2025, 10, 11, 17, 47)
     )
-  ]).intervals(Interval(
+  ]).intervals(Closed(
       datetime(2025, 10, 10, 16, 00),
       datetime(2025, 10, 13, 16, 30),
   ))) == [
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 16, 00),
       datetime(2025, 10, 11, 16, 30)
-    ), Interval(
+    ), Closed(
       datetime(2025, 10, 11, 16, 45),
       datetime(2025, 10, 11, 17, 47)
     )
@@ -287,12 +297,12 @@ def test_periodic():
   ).intervals(
     Interval.fromDate(datetime(2025, 10, 11))
   )) == [
-    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)),
-    Interval(start=datetime(2025, 10, 11, 4, 0), end=datetime(2025, 10, 11, 4, 15)),
-    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)),
-    Interval(start=datetime(2025, 10, 11, 12, 0), end=datetime(2025, 10, 11, 12, 15)),
-    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)),
-    Interval(start=datetime(2025, 10, 11, 20, 0), end=datetime(2025, 10, 11, 20, 15))
+    Closed(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)),
+    Closed(start=datetime(2025, 10, 11, 4, 0), end=datetime(2025, 10, 11, 4, 15)),
+    Closed(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)),
+    Closed(start=datetime(2025, 10, 11, 12, 0), end=datetime(2025, 10, 11, 12, 15)),
+    Closed(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)),
+    Closed(start=datetime(2025, 10, 11, 20, 0), end=datetime(2025, 10, 11, 20, 15))
   ]
 
   assert list(Periodic(
@@ -302,13 +312,13 @@ def test_periodic():
   ).intervals(
     Interval.fromDate(datetime(2025, 10, 11))
   )) == [
-    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 10)),
-    Interval(start=datetime(2025, 10, 11, 3, 50), end=datetime(2025, 10, 11, 4, 10)),
-    Interval(start=datetime(2025, 10, 11, 7, 50), end=datetime(2025, 10, 11, 8, 10)),
-    Interval(start=datetime(2025, 10, 11, 11, 50), end=datetime(2025, 10, 11, 12, 10)),
-    Interval(start=datetime(2025, 10, 11, 15, 50), end=datetime(2025, 10, 11, 16, 10)),
-    Interval(start=datetime(2025, 10, 11, 19, 50), end=datetime(2025, 10, 11, 20, 10)),
-    Interval(start=datetime(2025, 10, 11, 23, 50), end=datetime(2025, 10, 12, 0, 0))
+    Closed(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 10)),
+    Closed(start=datetime(2025, 10, 11, 3, 50), end=datetime(2025, 10, 11, 4, 10)),
+    Closed(start=datetime(2025, 10, 11, 7, 50), end=datetime(2025, 10, 11, 8, 10)),
+    Closed(start=datetime(2025, 10, 11, 11, 50), end=datetime(2025, 10, 11, 12, 10)),
+    Closed(start=datetime(2025, 10, 11, 15, 50), end=datetime(2025, 10, 11, 16, 10)),
+    Closed(start=datetime(2025, 10, 11, 19, 50), end=datetime(2025, 10, 11, 20, 10)),
+    Closed(start=datetime(2025, 10, 11, 23, 50), end=datetime(2025, 10, 12, 0, 0))
   ]
 
 def test_at_time():
@@ -318,7 +328,7 @@ def test_at_time():
   ).intervals(Interval.fromDate(
     datetime(2025, 10, 11)
   ))) == [
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 8),
       datetime(2025, 10, 11, 10, 30)
     )
@@ -331,11 +341,11 @@ def test_at_time():
     datetime(2025, 10, 11),
     datetime(2025, 10, 12)
   ))) == [
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 8),
       datetime(2025, 10, 11, 10, 30)
     ),
-    Interval(
+    Closed(
       datetime(2025, 10, 12, 8),
       datetime(2025, 10, 12, 10, 30)
     )
@@ -516,7 +526,7 @@ def test_shift():
   )).intervals(Interval.fromDate(
     datetime(2025, 10, 11)
   ))) == [
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 10,  0),
       datetime(2025, 10, 11, 12, 30)
     )
@@ -528,7 +538,7 @@ def test_shift():
   )).intervals(Interval.fromDate(
     datetime(2025, 10, 11)
   ))) == [
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 6,  0),
       datetime(2025, 10, 11, 8, 30)
     )
@@ -541,11 +551,11 @@ def test_not():
   )).intervals(Interval.fromDate(
     datetime(2025, 10, 11)
   ))) == [
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 0 , 0),
       datetime(2025, 10, 11, 8,  0)
     ),
-    Interval(
+    Closed(
       datetime(2025, 10, 11, 10 , 30),
       datetime(2025, 10, 12, 0, 0)
     )
@@ -557,11 +567,11 @@ def test_not():
     datetime(2025, 10, 5),
     datetime(2025, 10, 12)
   ))) == [
-    Interval(
+    Closed(
       datetime(2025, 10,  5,  0, 0),
       datetime(2025, 10,  8,  0, 0)
     ),
-    Interval(
+    Closed(
       datetime(2025, 10,  8, 23, 59),
       datetime(2025, 10, 13,  0, 0)
     )
@@ -576,22 +586,22 @@ def test_union():
       Interval.fromDate(datetime(2025, 11, 10))
     )
   ) == [
-    Interval(datetime(2025, 11, 10, 0,  0), datetime(2025, 11, 10, 0,  30)),
-    Interval(datetime(2025, 11, 10, 2,  0), datetime(2025, 11, 10, 2,  30)),
-    Interval(datetime(2025, 11, 10, 3,  0), datetime(2025, 11, 10, 3,  15)),
-    Interval(datetime(2025, 11, 10, 4,  0), datetime(2025, 11, 10, 4,  30)),
-    Interval(datetime(2025, 11, 10, 6,  0), datetime(2025, 11, 10, 6,  30)),
-    Interval(datetime(2025, 11, 10, 8,  0), datetime(2025, 11, 10, 8,  30)),
-    Interval(datetime(2025, 11, 10, 9,  0), datetime(2025, 11, 10, 9,  15)),
-    Interval(datetime(2025, 11, 10, 10, 0), datetime(2025, 11, 10, 10, 30)),
-    Interval(datetime(2025, 11, 10, 12, 0), datetime(2025, 11, 10, 12, 30)),
-    Interval(datetime(2025, 11, 10, 14, 0), datetime(2025, 11, 10, 14, 30)),
-    Interval(datetime(2025, 11, 10, 15, 0), datetime(2025, 11, 10, 15, 15)),
-    Interval(datetime(2025, 11, 10, 16, 0), datetime(2025, 11, 10, 16, 30)),
-    Interval(datetime(2025, 11, 10, 18, 0), datetime(2025, 11, 10, 18, 30)),
-    Interval(datetime(2025, 11, 10, 20, 0), datetime(2025, 11, 10, 20, 30)),
-    Interval(datetime(2025, 11, 10, 21, 0), datetime(2025, 11, 10, 21, 15)),
-    Interval(datetime(2025, 11, 10, 22, 0), datetime(2025, 11, 10, 22, 30)),
+    Closed(datetime(2025, 11, 10, 0,  0), datetime(2025, 11, 10, 0,  30)),
+    Closed(datetime(2025, 11, 10, 2,  0), datetime(2025, 11, 10, 2,  30)),
+    Closed(datetime(2025, 11, 10, 3,  0), datetime(2025, 11, 10, 3,  15)),
+    Closed(datetime(2025, 11, 10, 4,  0), datetime(2025, 11, 10, 4,  30)),
+    Closed(datetime(2025, 11, 10, 6,  0), datetime(2025, 11, 10, 6,  30)),
+    Closed(datetime(2025, 11, 10, 8,  0), datetime(2025, 11, 10, 8,  30)),
+    Closed(datetime(2025, 11, 10, 9,  0), datetime(2025, 11, 10, 9,  15)),
+    Closed(datetime(2025, 11, 10, 10, 0), datetime(2025, 11, 10, 10, 30)),
+    Closed(datetime(2025, 11, 10, 12, 0), datetime(2025, 11, 10, 12, 30)),
+    Closed(datetime(2025, 11, 10, 14, 0), datetime(2025, 11, 10, 14, 30)),
+    Closed(datetime(2025, 11, 10, 15, 0), datetime(2025, 11, 10, 15, 15)),
+    Closed(datetime(2025, 11, 10, 16, 0), datetime(2025, 11, 10, 16, 30)),
+    Closed(datetime(2025, 11, 10, 18, 0), datetime(2025, 11, 10, 18, 30)),
+    Closed(datetime(2025, 11, 10, 20, 0), datetime(2025, 11, 10, 20, 30)),
+    Closed(datetime(2025, 11, 10, 21, 0), datetime(2025, 11, 10, 21, 15)),
+    Closed(datetime(2025, 11, 10, 22, 0), datetime(2025, 11, 10, 22, 30)),
   ]
 
 def test_intersection():
@@ -606,9 +616,9 @@ def test_intersection():
       )
     )
   ) == [
-    Interval(datetime(2025, 10, 7,  8, 0), datetime(2025, 10, 7,  9, 0)),
-    Interval(datetime(2025, 10, 9,  8, 0), datetime(2025, 10, 9,  9, 0)),
-    Interval(datetime(2025, 10, 11, 8, 0), datetime(2025, 10, 11, 9, 0))
+    Closed(datetime(2025, 10, 7,  8, 0), datetime(2025, 10, 7,  9, 0)),
+    Closed(datetime(2025, 10, 9,  8, 0), datetime(2025, 10, 9,  9, 0)),
+    Closed(datetime(2025, 10, 11, 8, 0), datetime(2025, 10, 11, 9, 0))
   ]
 
   assert list(
@@ -617,9 +627,9 @@ def test_intersection():
       Explicit([Interval.fromDate(datetime(2025, 10, 11))])
     ]).intervals()
   ) == [
-    Interval(datetime(2025, 10, 11,  0, 0), datetime(2025, 10, 11,  0, 15)),
-    Interval(datetime(2025, 10, 11,  8, 0), datetime(2025, 10, 11,  8, 15)),
-    Interval(datetime(2025, 10, 11,  16, 0), datetime(2025, 10, 11, 16, 15)),
+    Closed(datetime(2025, 10, 11,  0, 0), datetime(2025, 10, 11,  0, 15)),
+    Closed(datetime(2025, 10, 11,  8, 0), datetime(2025, 10, 11,  8, 15)),
+    Closed(datetime(2025, 10, 11,  16, 0), datetime(2025, 10, 11, 16, 15)),
   ]
 
 def test_fromJSON():
@@ -681,67 +691,26 @@ def test_fromJSON():
   assert fromJSON(
     ["range", "2025-10-01", "2025-10-31"]
   ) == Explicit(
-    [Interval(datetime(2025, 10, 1), datetime(2025, 10, 31))]
+    [Closed(datetime(2025, 10, 1), datetime(2025, 10, 31))]
   )
 
-def test_interval_is_finite():
-  assert Explicit([Interval.fromDate(today)]).is_finite() == True
-  assert Periodic(4 * hour, 15 * minute).is_finite() == False
-  assert Monthly({23, 24, 25}).is_finite() == False
-  assert Weekly({2, 3}).is_finite() == False
-  assert NthWeekday(2, 3).is_finite() == False
+def test_interval_span():
+  dt = datetime(2025, 10, 11)
+  assert Explicit([Interval.fromDate(dt)]).span() == Closed(dt, dt + day)
+  assert Periodic(4 * hour, 15 * minute).span() == Open()
+  assert Monthly({23, 24, 25}).span() == Open()
+  assert Weekly({2, 3}).span() == Open()
+  assert NthWeekday(2, 3).span() == Open()
 
   assert Union([
     Periodic(4 * hour, 15 * minute),
     Monthly({23, 24, 25}),
-  ]).is_finite() == False
+  ]).span() == Open()
 
   assert Intersection([
     Periodic(4 * hour, 15 * minute),
     Monthly({23, 24, 25}),
-  ]).is_finite() == False
-
-  assert Intersection([
-    Periodic(4 * hour, 15 * minute),
-    Monthly({23, 24, 25}),
-    Explicit([
-      Interval.fromDate(datetime(2025, 10, 1), datetime(2025, 10, 31))
-    ])
-  ]).is_finite() == True
-
-def test_interval_span():
-  try:
-    Explicit([Interval.fromDate(today)]).span()
-  except ValueError:
-    pass
-
-  try:
-    Periodic(4 * hour, 15 * minute).span()
-  except ValueError:
-    pass
-
-  try:
-    Monthly({23, 24, 25}).span()
-  except ValueError:
-    pass
-
-  try:
-    Weekly({2, 3}).span()
-  except ValueError:
-    pass
-
-  try:
-    NthWeekday(2, 3).span()
-  except ValueError:
-    pass
-
-  try:
-    Union([
-      Periodic(4 * hour, 15 * minute),
-      Monthly({23, 24, 25}),
-    ]).span()
-  except ValueError:
-    pass
+  ]).span() == Open()
 
   assert Intersection([
     Periodic(4 * hour, 15 * minute),
@@ -750,6 +719,17 @@ def test_interval_span():
       Interval.fromDate(datetime(2025, 10, 1), datetime(2025, 10, 31))
     ])
   ]).span() == Interval.fromDate(datetime(2025, 10, 1), datetime(2025, 10, 31))
+
+  Closed(
+    datetime(2025, 10, 11, 16, 00),
+    datetime(2025, 10, 11, 16, 30)
+  ).span(Closed(
+    datetime(2025, 10, 11, 16, 45),
+    datetime(2025, 10, 11, 17, 20)
+  )) == Closed(
+    datetime(2025, 10, 11, 16, 00),
+    datetime(2025, 10, 11, 17, 20)
+  )
 
 def test_completions():
   assert not any(
@@ -769,9 +749,9 @@ def test_completions():
       }
     )
   } == {
-    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
-    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
-    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): False
+    Closed(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
+    Closed(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
+    Closed(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): False
   }
 
   assert {
@@ -783,9 +763,9 @@ def test_completions():
       }
     )
   } == {
-    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): False,
-    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): True,
-    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): False
+    Closed(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): False,
+    Closed(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): True,
+    Closed(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): False
   }
 
   assert {
@@ -797,9 +777,9 @@ def test_completions():
       }
     )
   } == {
-    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): False,
-    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
-    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
+    Closed(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): False,
+    Closed(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
+    Closed(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
   }
 
   assert {
@@ -812,9 +792,9 @@ def test_completions():
       }
     )
   } == {
-    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
-    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
-    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
+    Closed(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
+    Closed(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
+    Closed(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
   }
 
   assert {
@@ -828,9 +808,9 @@ def test_completions():
       datetime(2025, 10, 11, 16, 15)
     })
   } == {
-    Interval(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
-    Interval(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
-    Interval(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
+    Closed(start=datetime(2025, 10, 11, 0, 0), end=datetime(2025, 10, 11, 0, 15)): True,
+    Closed(start=datetime(2025, 10, 11, 8, 0), end=datetime(2025, 10, 11, 8, 15)): False,
+    Closed(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
   }
 
 

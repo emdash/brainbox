@@ -16,7 +16,7 @@ always exactly 1/86,400 of a solar day.
 
 from datetime import date, datetime, time, timedelta
 from dataclasses import dataclass
-
+from functools import reduce
 import graph
 import itertools
 import json
@@ -121,45 +121,59 @@ class Interval:
   containment and intersection, and subdividing in various ways.
   """
 
-  start : datetime
-  end : datetime
+  def within(self, dt: datetime):
+    """True if the given timestamp falls within self."""
+    raise NotImplemented
 
-  @property
-  def duration(self):
-    """A time delta from the start of the interval.
+  def contains(self, i: Interval):
+    """True if the given interval is completely contained within self."""
+    raise NotImplemented
 
-    This is assumed to be positive.
-    """
-    return self.end - self.start
+  def intersects(self, i: Interval):
+    """True if the given interval touches or is partially contained within self."""
+    match self.intersection(i):
+      case Empty(): return False
+      case _:       return True
+
+  def span(self, i: Interval):
+    """The smallest interval containing both self and i."""
+    raise NotImplemented
 
   @classmethod
   def fromStartDuration(self, start, duration):
     "Create an interval from a timestamp and duration."
-    return Interval(start, start + duration)
+    return Closed(start, start + duration)
 
   @classmethod
   def fromDate(self, dt, end=None):
     """Construct an interval that spans a date or date range."""
     match end:
-      case None: return Interval(startOfDay(dt), startOfDay(dt  + 1 * day))
-      case end:  return Interval(startOfDay(dt), startOfDay(end + 1 * day))
+      case None: return Closed(startOfDay(dt), startOfDay(dt  + 1 * day))
+      case end:  return Closed(startOfDay(dt), startOfDay(end + 1 * day))
 
   @classmethod
   def mergeConsecutive(self, intervals):
     """Yields intervals, merging runs of intersecting intervals."""
-    next = None
-    for i in intervals:
+
+    def yne():
       match next:
-        case None:
-          next = i
-        case next:
-          if next.intersects(i):
-            next = next.span(i)
-          else:
-            yield next
-            next = i
-    if next:
-       yield next
+        case Empty():  pass
+        case nonempty: yield next
+
+    its = iter(intervals)
+
+    try:
+      next = its.__next__()
+    except StopIteration:
+      return
+
+    for i in its:
+      if next.intersects(i):
+        next = next.span(i)
+      else:
+        yield from yne()
+        next = i
+    yield from yne()
 
   def sequence(self, duration, period=None, phase=None):
     """Yield evenly-spaced intervals intersecting the window."""
@@ -188,6 +202,138 @@ class Interval:
       yield firstOfMonth(self.year, self.month)
       i = nextMonth(i.year, i.month)
 
+  def ordinals(self, start=None):
+    """An iterator over the julian ordinals which this interval intersects.
+
+    For any closed interval, this will always yield at least one
+    value. For right-open intervals, counts forward from start
+    timestamp. For left-open intervals, counts backward. For open
+    intervals, raises an error.
+    """
+    raise NotImplemented
+
+@dataclass(order=True, frozen=True)
+class Empty(Interval):
+  @property
+  def duration(self):        return timedelta()
+  def within(self, _):       return False
+  def contains(self, _):     return False
+  def span(self, i):         return i
+  def intersection(self, _): return self
+  def ordinals(self, _):     return ()
+  def __add__(self, _):      return self
+  def __radd__(self, _):     return self
+  def sequence(self, _):     return ()
+  def sequenceMonths(self):  return ()
+
+@dataclass(order=True, frozen=True)
+class Open(Interval):
+  @property
+  def within(self, _):       return True
+  def contains(self, _):     return True
+  def span(self, _):         return self
+  def intersection(self, i): return i
+  def ordinals(self, _):     raise ValueError("Infinite interval")
+  def is_finite(self):       return False
+  def __add__(self, _):      return self
+  def __radd__(self, _):     return self
+  def sequence(self, _):     raise ValueError("infinite interval")
+  def sequenceMonths(self, _): raise ValueError("infinite interval")
+
+@dataclass(order=True, frozen=True)
+class LeftOpen(Interval):
+  end: datetime
+
+  def within(self, dt):
+    return dt <= self.end
+
+  def contains(self, i):
+    match i:
+      case Empty():     return False
+      case Open():      return True
+      case LeftOpen():  return self.end >= i.end
+      case RightOpen(): return False
+      case Closed():    return i.end <= self.end
+
+  def intersection(self, i):
+    match i:
+      case Empty():     return i
+      case Open():      return self
+      case LeftOpen():  return LeftOpen(min(i.end, self.end))
+      case RightOpen(): return Closed(i.start, self.end)
+      case Closed():    return Closed(i.start, min(i.end, self.end))
+
+  def span(self, i):
+    match i:
+      case Empty(): return self
+      case Open():  return i
+      case LeftOpen(): return LeftOpen(max(i.end, self.end))
+      case RightOpen() | Closed():
+        return LeftOpen(max(i.end, self.end))
+
+  def ordinals(self, i):
+    i = end.toordinal()
+    while True:
+      yield i
+      i -= 1
+
+@dataclass(order=True, frozen=True)
+class RightOpen(Interval):
+  start: datetime
+
+  def within(self, dt):
+    return self.start <= dt
+
+  def contains(self, i):
+    match i:
+      case Empty():     return False
+      case Open():      return True
+      case LeftOpen():  return False
+      case RightOpen(): return self.start <= i.start
+      case Closed():    return i.start >= self.start
+    raise ValueError("wtf", i)
+
+  def intersection(self, i):
+    match i:
+      case Empty():     return i
+      case Open():      return self
+      case RightOpen(): return RightOpen(max(i.end, self.end))
+      case LeftOpen():  return Closed(self.start, i.end)
+      case Closed():    return Closed(max(i.start, self.start), i.end)
+    raise ValueError("wtf", i)
+
+  def span(self, i):
+    match i:
+      case Empty(): return self
+      case Open():  return i
+      case RightOpen(): return RightOpen(min(i.end, self.end))
+      case LeftOpen() | Closed():
+        return Closed(min(i.start, self.start), i.end)
+    raise ValueError("wtf", i)
+
+  def ordinals(self, i):
+    i = start.toordinal()
+    while True:
+      yield i
+      i += 1
+
+@dataclass(order=True, frozen=True)
+class Closed(Interval):
+  start : datetime
+  end : datetime
+
+  def __post_init__(self):
+    assert isinstance(self.start, datetime)
+    assert isinstance(self.end, datetime)
+
+  @property
+  def duration(self):
+    """A time delta from the start of the interval.
+
+    This is assumed to be positive.
+    """
+    return self.end - self.start
+
   def within(self, timestamp):
     """True if timestamp occurs on or before start, and strictly before end.
 
@@ -197,49 +343,58 @@ class Interval:
     # XXX: we're clobbering the timezone here, because datetime
     # complains about naive vs tz-aware dates. It's a rabbit hole I
     # don't want to go down just yet.
-    return self.start <= timestamp.replace(tzinfo=None) <= self.end
+    if timestamp is not None:
+      return self.start <= timestamp.replace(tzinfo=None) <= self.end
 
-  def contains(self, interval):
-    return self.within(interval.start) and self.within(interval.end)
+  def contains(self, i):
+    match i:
+      case Empty(): return False
+      case Open(): return False
+      case LeftOpen(): return False
+      case RightOpen(): return False
+      case Closed(): return self.within(i.start) and self.within(i.end)
+    raise ValueError("wtf", i)
 
-  def intersects(self, interval):
-    return self.within(interval.start) \
-      or self.within(interval.end)     \
-      or interval.within(self.start)   \
-      or interval.within(self.end)
-
-  def span(self, interval):
+  def span(self, i):
     """Return the smallest interval containg self and interval."""
-    return Interval(
-      min(self.start, interval.start),
-      max(self.end, interval.end)
-    )
+    match i:
+      case Empty():     return self
+      case Open():      return i
+      case LeftOpen():  return LeftOpen(max(self.end, i.end))
+      case RightOpen(): return RightOpen(min(self.start, i.start))
+      case Closed():    return Closed(min(self.start, i.start), max(self.end, i.end))
+    raise ValueError("wtf", i)
 
-  def intersection(self, interval):
+  def intersection(self, i):
     """Return the portion of two overlapping intervals which intersects.
 
     This will throw `ValueError` if the two intervals are not overlapping.
     """
-    if self.intersects(interval):
-      return Interval(
-        max(self.start, interval.start),
-        min(self.end, interval.end)
-      )
-    else:
-      raise ValueError("Intervals do not Overlap")
+    match i:
+      case Empty():     return i
+      case Open():      return self
+      case LeftOpen():
+        if self.within(i.end):
+          return Closed(self.start, min(self.end, i.end))
+        else:
+          return Empty()
+      case RightOpen():
+        if self.within(i.start):
+          return Closed(max(self.start, i.start), self.end)
+        else:
+          return Empty()
+      case Closed():
+        if self.within(i.start) \
+          or self.within(i.end)   \
+          or i.within(self.start) \
+          or i.within(self.end):
+          return Closed(max(self.start, i.start), min(self.end, i.end))
+        else:
+          return Empty()
+    raise ValueError("wtf")
 
   def ordinals(self):
-    """An iterator over the julian ordinals which this interval intersects.
-
-    This will always yield at least one value.
-    """
-    return range(self.start.toordinal(), self.end.toordinal() + 1)
-
-  def days(self):
-    return map(
-      lambda d: Interval.fromDate(datetime.fromordinal(d)),
-      self.ordinals()
-    )
+      return range(self.start.toordinal(), self.end.toordinal() + 1)
 
 @dataclass
 class DateSet:
@@ -261,10 +416,6 @@ class DateSet:
     except StopIteration:
       return False
     return True
-
-  def is_finite(self):
-    """True if this date set is finite."""
-    raise NotImplemented
 
   def span(self):
     """Returns the smallest interval which contains the entire set."""
@@ -347,15 +498,10 @@ class Explicit(DateSet):
     self.given = list(Interval.mergeConsecutive(sorted(self.given)))
 
   def is_finite(self):
-    return True
+    return all(i.is_finite() for i in self.given)
 
   def span(self):
-    def _spanRec(list):
-      match list:
-        case []: raise ValueError("Empty")
-        case [x]: return x
-        case [first, *rest]: return first.span(span_rec(rest))
-    return _spanRec(self.given)
+    return reduce(lambda i, j: i.span(j), self.given, Empty())
 
   def intersects(self, window):
     return any(i.intersects(window) for i in self.intervals(window))
@@ -376,9 +522,7 @@ class Explicit(DateSet):
     if window is None:
       return iter(self.given)
     else:
-      for i in Interval.mergeConsecutive(self.given):
-        if window.contains(i):
-          yield i
+      return filter(window.contains, Interval.mergeConsecutive(self.given))
 
 @dataclass
 class Implicit(DateSet):
@@ -408,14 +552,12 @@ class Implicit(DateSet):
   resolution to 5-, 10-, or 15- minutes.
   """
 
-  def is_finite(self):
-    return False
-
   def span(self):
-    raise ValueError(f"{self} is not finite")
+    return Open()
 
   def contains(self, interval):
     """True if the window is completely contained within this set."""
+    # XXX: dubious.
     return self.within(interval.start) and self.within(interval.end)
 
   def find_interval(self, dt, window=None):
@@ -432,7 +574,7 @@ class Implicit(DateSet):
         return findStart(dt + minute)
 
     if self.within(dt):
-      return Interval(findStart(dt), findEnd(dt))
+      return Closed(findStart(dt), findEnd(dt))
     else:
       return None
 
@@ -455,6 +597,14 @@ class Not(Implicit):
 
   subset : DateSet
 
+  def span(self):
+    match self.subset.span():
+      case Empty(): return Open()
+      case Open(): return Empty()
+      case LeftOpen(dt): return RightOpen(dt)
+      case RightOpen(dt): return LeftOpen(dt)
+      case Closed(dt): return Open()
+
   # override here to get expected behaivor for the common ase.
   def contains(self, interval):
     return self.within(interval.start) or self.within(interval.end)
@@ -472,16 +622,7 @@ class Union(Implicit):
   subsets: set[DateSet]
 
   def span(self):
-    if self.is_finite():
-      spans = [s.span() for s in self.subsets]
-      starts = [s.start for s in spans]
-      ends = [s.end for s in spans]
-      return Interval(min(starts), max(ends))
-    else:
-      raise ValueError("Cannot take the span of a possiby-infinite set.")
-
-  def is_finite(self):
-    return all(s.is_finite() for s in self.subsets)
+    return reduce(lambda acc, t: acc.span(t.span()), self.subsets, Empty())
 
   def contains(self, interval):
     return any(s.contains(interval) for s in self.subsets)
@@ -499,16 +640,16 @@ class Intersection(Implicit):
   subsets: set[DateSet]
 
   def span(self):
-    if self.is_finite():
-      spans = [s.span() for s in self.subsets if s.is_finite()]
-      starts = [s.start for s in spans]
-      ends = [s.end for s in spans]
-      return Interval(min(starts), max(ends))
-    else:
-      raise ValueError("Cannot take the span of a possiby-infinite set.")
-
-  def is_finite(self):
-    return any(s.is_finite() for s in self.subsets)
+    ret = Open()
+    for s in self.subsets:
+      match s.span():
+        case Empty() as i:
+          return i
+        case Open():
+          pass
+        case i:
+          ret = ret.intersection(i)
+    return ret
 
   def contains(self, interval):
     return all(s.contains(interval) for s in self.subsets)
@@ -656,6 +797,9 @@ class Shift(Implicit):
   offset : timedelta
   subset : DateSet
 
+  def span(self):
+    return self.subset.span() + offset
+
   def is_finite(self):
     return self.subset.is_finite()
 
@@ -703,7 +847,15 @@ def fromJSON(decoded):
     case ["dates", *dates]:
       return Explicit([Interval.fromDate(fromJSON(d)) for d in dates])
     case ["range", start, end]:
-      return Explicit([Interval(fromJSON(start), fromJSON(end))])
+      return Explicit([Closed(fromJSON(start), fromJSON(end))])
+    case ["before", end]|["until", end]:
+      return Explicit([LeftOpen(fromJSON(end))])
+    case ["after", start]:
+      return Explicit([RightOpen(fromJSON(start))])
+    case ["never"]:
+      raise ValueError("Are you sure?")
+    case ["always"]:
+      return Explicit([Open()])
     case ["weekly", *days]:
       return Weekly({d for d in days})
     case ["monthly", *days]:
@@ -785,7 +937,7 @@ def preview_dateset(mode, *args):
 
   try:
     match ds.span():
-      case Interval(start, end):
+      case Closed(start, end):
         print("Start:", start)
         print("End:  ", end)
   except ValueError:
@@ -903,7 +1055,7 @@ def agenda(
   start = datetime(dt.year, dt.month, dt.day) + start_of_day
   end = datetime(dt.year, dt.month, dt.day) + end_of_day
   time_map = {}
-  for cur in Interval(start, end).sequence(interval):
+  for cur in Closed(start, end).sequence(interval):
     timestr = f"{cur.start.hour:02d}:{cur.start.minute:02d}"
     for (id, (_, when)) in scheduled.items():
       if when.intersects(cur):
