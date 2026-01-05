@@ -2418,34 +2418,10 @@ function plan {
 
 ## Combining multiple specialized modes into a single gui with submenus.
 
-# prompt user to choose a context, and assign it to the input set.
-function __interactive_ctxt {
-    # all input must be tasks
-    readarray -t tasks
-    for id in "${tasks[@]}"
-    do
-      read ts < <(task_state read "${id}")
-      case "${ts}" in
-          TODO|NEW) : ;;
-          *) break  ;;
-      esac
-    done
-    if test "$?" == 0
-    then
-        all | is_context | choose -m | into source
-        splat "${tasks[@]}" | into target
-        assign
-    else
-        echo "selection must be tasks (enter to continue)"
-        echo -n | xargs -o "read"
-    fi
-    exec "$0" __interactive
-}
-
 # prompt user to choose a context, add it to a project, then edit the project.
-function __interactive_atp {
+function __interactive_triage {
     local proj ts _
-    local -a tasks
+    local -a tasks aofs
 
     readarray -t tasks
     for id in "${tasks[@]}"
@@ -2456,15 +2432,33 @@ function __interactive_atp {
           *) break  ;;
       esac
     done
+
     if test "$?" == 0
     then
-        read proj < <(all | is_project | choose)
-        splat "${tasks[@]}" | graph_datum subtasks append "${proj}"
-        plan "${proj}"
+        splat "${tasks[@]}" | into target
+
+        # choose a context
+        if all | is_context | choose -m | into source
+        then
+            assign
+        fi
+
+        # choose an existing project to add to
+        if read proj < <(all | is_project | choose)
+        then
+            splat "${tasks[@]}" | graph_datum subtasks append "${proj}"
+            plan "${proj}"
+        fi
+
+        # choose an area of focus
+        if all | is_persistent | choose -m | into source
+        then
+            add
+        fi
     else
         echo "selection must be tasks (enter to continue)"
         echo -n | xargs -o "read"
-    fi
+    fi || true
     exec "$0" __interactive
 }
 
@@ -2572,9 +2566,8 @@ function __interactive_node_submenu {
     fzf_bind_action "e"      "Edit"         "become($0 __interactive_edit {1})" "${rls}"
     fzf_bind_action "p"      "Plan Project" "become($0 __interactive_plan {1})" "${rls}"
     fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
-    fzf_bind_action "A"      "Add to Proj"  "become(${selected} $0 __interactive_atp)" "${rls}"
+    fzf_bind_action "t"      "Triage"       "become(${selected} $0 __interactive_triage)" "${rls}"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
-    fzf_bind_action "alt-c"  "Set Context"  "become(${selected} $0 __interactive_ctxt)" "${rls}"
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
     fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
 }
