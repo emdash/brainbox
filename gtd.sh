@@ -2451,8 +2451,8 @@ function __interactive_triage {
             assign
         fi
 
-        # choose an existing project to add to
-        if read proj < <(all | is_project | choose)
+        # choose an existing node to add to as a subtask
+        if read proj < <(all | graph filter_state NEW TODO | choose)
         then
             splat "${tasks[@]}" | graph_datum subtasks append "${proj}"
             plan "${proj}"
