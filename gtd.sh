@@ -33,6 +33,14 @@ EDGE_DIRS=("dependencies" "contexts")
 
 declare -r ff="$(echo -e '\f')"
 
+function info {
+    echo $DATA_DIR
+    echo $STATE_DIR
+    echo $NODE_DIR
+    echo $HIST_DIR
+    echo $BUCKET_DIR
+}
+
 # Helpers *********************************************************************
 
 # print to stderr
