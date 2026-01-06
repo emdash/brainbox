@@ -2538,7 +2538,13 @@ function __interactive_bucket {
           --header="Choose Bucket" \
           --bind="enter:accept-or-print-query"
     )
-    splat "${@}" | into --union "${bucket}"
+    if test -v 1
+    then
+        case "${1}" in
+            --clear) null into "${bucket}";;
+            *) splat "${@}" | into --union "${bucket}"
+        esac
+    fi
     exec "$0" __interactive
 }
 
@@ -2639,6 +2645,7 @@ function __interactive_graph_submenu {
     fzf_bind_sexec  "D" "Unlink Source and Target"   "$0 remove"                            "${rls}"
     fzf_bind_action "p" "Plan Project"               "become($0 __interactive_plan {1})"    "${rls}"
     fzf_bind_action "b" "Bucket"                     "become($0 __interactive_bucket {+1})" "${rls}"
+    fzf_bind_action "B" "Clear Bucket"               "become($0 __interactive_bucket --clear)" "${rls}"
 }
 
 # define global keybindings for interactive mode.
