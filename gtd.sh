@@ -2648,6 +2648,14 @@ function __interactive_graph_submenu {
     fzf_bind_action "B" "Clear Bucket"               "become($0 __interactive_bucket --clear)" "${rls}"
 }
 
+function __interactive_search_bindings {
+    fzf_bind_action "backspace"     "--" "backward-delete-char"
+    fzf_bind_sexec  "enter"         "--" "$0 __interactive_mode exit-search"
+    fzf_bind_sexec  "esc"           "--" "$0 __interactive_mode exit-search"
+    fzf_bind_action "alt-backspace" "--" "backward-delete-word"
+    fzf_bind_action "ctrl-k"        "--" "kill-line"
+}
+
 # define global keybindings for interactive mode.
 function __interactive_bindings {
     local -r rls="reload-sync($0 __interactive_items)"
@@ -2665,9 +2673,7 @@ function __interactive_bindings {
     # special-case for search mode
     if test "${menu}" == "search"
     then
-        fzf_bind_action "backspace" "--" "backward-delete-char"
-        fzf_bind_sexec  "enter"     "--" "$0 __interactive_mode exit-search"
-        fzf_bind_sexec  "esc"       "--" "$0 __interactive_mode exit-search"
+        __interactive_search_bindings
         return 0
     fi
 
@@ -2697,6 +2703,7 @@ function __interactive_bindings {
             __interactive_nav_submenu
             __interactive_graph_submenu
             __interactive_view_submenu
+            __interactive_search_bindings
         ;;
     esac
 
