@@ -685,6 +685,7 @@ function graph_datum {
 	mkdir)  mkdir -p       "${path}";;
 	cp)     cp "$@"        "${path}";;
 	mv)     mv "$@"        "${path}";;
+        rm)     rm             "${path}";;
 
 	*) error "invalid subcommand: ${command}";;
     esac
