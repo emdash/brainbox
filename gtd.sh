@@ -2346,6 +2346,50 @@ function query_builder {
     | head -n 1
 }
 
+# Agenda **********************************************************************
+
+function __agenda_preview {
+    prefs read 'agenda/items' | _schedule agenda "${@}"
+}
+
+function __agenda_items {
+    local d
+    read d < <(date -I)
+    prefs read 'agenda/items' | summarize -d '|'
+}
+
+function __agenda_bindings {
+    fzf_bind_sexec  "u"        "Undo"       "$0 undo"                             "refresh-preview"
+    fzf_bind_sexec  "U"        "Redo"       "$0 redo"                             "refresh-preview"
+    fzf_bind_sexec  "enter"    "Complete"   "$0 splat {+1} | $0 stdin complete"   "refresh-preview"
+    fzf_bind_exec   "r"        "Reschedule" "$0 splat {+1} | $0 stdin schedule"   "refresh-preview"
+    fzf_bind_sexec  "X"        "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "refresh-preview"
+    fzf_bind_action "q"        "Quit"       "abort"
+}
+
+function __agenda {
+    fzf_menu \
+      "Agenda" \
+      __agenda_bindings \
+      __agenda_items \
+      --multi \
+      --layout="reverse" \
+      --disabled \
+      --query "${*:-all}" \
+      --preview="$0 __agenda_preview {+1}" \
+      --with-nth='{2} {3}' \
+      --print-query \
+      -d '|' \
+    | head -n 1
+}
+
+# show an agenda view with the given nodes
+command_declare agenda
+function agenda {
+    all | is_next union is_scheduled | prefs write 'agenda/items' | sort
+    __agenda || true
+}
+
 # Project-Subtasks Editor *****************************************************
 
 function __plan_modify {

@@ -1025,51 +1025,76 @@ def preview_week(
   print(tabulate.tabulate(dates, headers = headers, tablefmt='simple_outline'))
 
 def agenda(
-    date=None,
-    interval=15 * minute,
-    start_of_day=8 * hour,
-    end_of_day=22 * hour
+    # date=None,
+    # interval=15 * minute,
+    # start_of_day=8 * hour,
+    # end_of_day=22 * hour
+    *selection
 ):
   """Print agenda view for a single day.
 
   This will show scheduled and unscheduled activity for the given
   input set.
   """
-  dt = today if date is None else datetime.fromisoformat(date)
-  todo = set()
+  selected = set(selection)
+
+  def show_gloss(id):
+    """Render task gloss, highlighting selected nodes."""
+    gloss = graph.task_gloss(id)
+    if id in selected:
+      return reverse(gloss)
+    else:
+      return gloss
+
+  dt = datetime.today()
+  interval = 15 * minute
+  start_of_day=8 * hour
+  end_of_day=22 * hour
+  todo = []
   scheduled = {}
   habits = {}
   for id in graph.read_ids():
     match classify_node(id):
-      case "unscheduled": todo.add(id)
+      case "unscheduled": todo.append(id)
       case "event":
-        scheduled[id] = (graph.task_gloss(id), read_date_set('schedule', id))
+        scheduled[id] = (show_gloss(id), read_date_set('schedule', id))
       case "habit":
         habits[id] = (
-          graph.task_gloss(id),
+          show_gloss(id),
           read_date_set('schedule', id),
           read_completion_history(id)
         )
 
   # build a mapping from time blocks to events.
-  start = datetime(dt.year, dt.month, dt.day) + start_of_day
-  end = datetime(dt.year, dt.month, dt.day) + end_of_day
-  time_map = {}
-  for cur in Closed(start, end).sequence(interval):
-    timestr = f"{cur.start.hour:02d}:{cur.start.minute:02d}"
-    for (id, (_, when)) in scheduled.items():
-      if when.intersects(cur):
-        graph.dict_append(time_map, timestr, id)
-  width = int(os.getenv("COLUMNS", "80"))
-  schedule = []
+  # start = datetime(dt.year, dt.month, dt.day) + start_of_day
+  # end = datetime(dt.year, dt.month, dt.day) + end_of_day
+  # time_map = {}
+  # for cur in Closed(start, end).sequence(interval):
+  #   timestr = f"{cur.start.hour:02d}:{cur.start.minute:02d}"
+  #   for (id, (_, when)) in scheduled.items():
+  #     if when.intersects(cur):
+  #       graph.dict_append(time_map, timestr, id)
+  # width = int(os.getenv("COLUMNS", "80"))
+  # schedule = []
+  horizon = Interval.fromDate(dt)
+  intervals = []
+  for (id, (gloss, when)) in scheduled.items():
+    intervals.extend((gloss, i) for i in when.intervals(horizon))
+
+  print("Agenda")
+  intervals.sort(key=lambda x: x[1].start)
+  for (gloss, interval) in intervals:
+    timestr = f"{interval.start.hour:02d}:{interval.start.minute:02d}"
+    print(timestr, gloss)
+  print()
 
   # format the time map into an agenda view
-  print("Agenda")
-  for hour, items in time_map.items():
-    if items:
-      schedule.append((hour, "\n".join(map(graph.task_gloss, items))))
-  print(tabulate.tabulate(schedule))
-  print()
+  # print("Agenda")
+  # for hour, items in time_map.items():
+  #   if items:
+  #     schedule.append((hour, "\n".join(map(graph.task_gloss, items))))
+  # print(tabulate.tabulate(schedule))
+  # print()
 
   # build habit graphs
   print("Habits")
@@ -1083,7 +1108,7 @@ def agenda(
   # print the unscheduled tasks
   print("Unscheduled Tasks")
   print(tabulate.tabulate(
-    ((graph.task_state(id), graph.task_gloss(id)) for id in todo),
+    ((graph.task_state(id), show_gloss(id)) for id in todo),
     headers=["State", "Task"],
     tablefmt="simple"
   ))
