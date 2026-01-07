@@ -1648,7 +1648,26 @@ function preview_schedule {
 query_declare_type             schedule update dateset
 query_declare_default_producer schedule all
 function schedule {
-    echo "${@}" | graph_datum schedule write
+    local -a ids
+    readarray -t ids
+
+    # if we were given an explicit schedule, use that. Otherwise run
+    # the schedule builder UI.
+    if test -v 1
+    then
+        local -r sch = "${1}"
+    else
+        local sch
+        read sch < <(splat "${ids[@]}" | schedule_builder)
+    fi
+
+    # write the schedule to the state.
+    for id in "${ids[@]}"
+    do
+        echo "${sch}" | graph_datum schedule write "${id}"
+    done
+
+    database_commit "${SAVED_ARGV}"
 }
 
 # remove any scheduling from the given node
@@ -2426,6 +2445,28 @@ function plan {
 
 ## Combining multiple specialized modes into a single gui with submenus.
 
+function __interactive_schedule {
+    local schedule ts _
+    local -a tasks
+
+    readarray -t tasks
+    for id in "${tasks[@]}"
+    do
+      read ts < <(task_state read "${id}")
+      case "${ts}" in
+          TODO|NEW) : ;;
+          *) break  ;;
+      esac
+    done
+
+    if test "$?" == "0"
+    then
+        splat "${tasks[@]}" | schedule
+    fi
+
+    exec "$0" __interactive
+}
+
 # prompt user to choose a context, add it to a project, then edit the project.
 function __interactive_triage {
     local proj ts _
@@ -2581,6 +2622,7 @@ function __interactive_node_submenu {
     fzf_bind_action "p"      "Plan Project" "become($0 __interactive_plan {1})" "${rls}"
     fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
     fzf_bind_action "t"      "Triage"       "become(${selected} $0 __interactive_triage)" "${rls}"
+    fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
     fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
