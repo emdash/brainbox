@@ -1671,15 +1671,11 @@ function schedule {
 }
 
 # remove any scheduling from the given node
-query_declare_type             schedule update
-query_declare_default_producer schedule all
-function unschedule { filter graph_datum schedule rm ; }
-
-# show an agenda view with the given nodes
-query_declare_type             agenda formatter type window
-query_declare_default_producer agenda is_actionable
-function agenda {
-    _schedule agenda "${@}"
+query_declare_type             unschedule update
+query_declare_default_producer unschedule from cur
+function unschedule {
+    filter graph_datum schedule rm ;
+    database_commit "${SAVED_ARGV}"
 }
 
 ## Binary queries *************************************************************
