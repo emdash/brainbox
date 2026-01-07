@@ -2667,16 +2667,19 @@ function __interactive_node_submenu {
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
     fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
+    fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
 }
 
 function __interactive_nav_submenu {
     local rls="reload-sync($0 __interactive_items)"
     local setpref="$0 prefs write"
-    fzf_bind_action "c"      "Capture"      "become($0 __interactive_capture)"  "${rls}"
-    fzf_bind_sexec  "f" "Family"       "${setpref} 'interactive/mode' family"    "${rls}"
-    fzf_bind_sexec  "n" "Neighbors"    "${setpref} 'interactive/mode' neighbors" "${rls}"
-    fzf_bind_sexec  "p" "Parents"      "${setpref} 'interactive/mode' parents"   "${rls}"
-    fzf_bind_sexec  "C" "Children"     "${setpref} 'interactive/mode' children"  "${rls}"
+    fzf_bind_sexec  "backspace" "Back"      "$0 __interactive_pop"                    "${rls}"
+    fzf_bind_sexec  "enter"     "Goto"      "$0 __interactive_push {1}"               "${rls}"
+    fzf_bind_action "c"         "Capture"   "become($0 __interactive_capture)"        "${rls}"
+    fzf_bind_sexec  "f"         "Family"    "${setpref} 'interactive/mode' family"    "${rls}"
+    fzf_bind_sexec  "n"         "Neighbors" "${setpref} 'interactive/mode' neighbors" "${rls}"
+    fzf_bind_sexec  "p"         "Parents"   "${setpref} 'interactive/mode' parents"   "${rls}"
+    fzf_bind_sexec  "C"         "Children"  "${setpref} 'interactive/mode' children"  "${rls}"
 }
 
 function __interactive_view_submenu {
@@ -2765,8 +2768,6 @@ function __interactive_bindings {
     fzf_bind_sexec  "ctrl-s,/"   "Search"          "$0 __interactive_mode search"
     fzf_bind_sexec  "u"          "Undo"            "$0 undo"                   "${rls}"
     fzf_bind_sexec  "U"          "Redo"            "$0 redo"                   "${rls}"
-    fzf_bind_sexec  "backspace"  "Move Back"       "$0 __interactive_pop"      "${rls}"
-    fzf_bind_sexec  "enter"      "Goto Cur"        "$0 __interactive_push {1}" "${rls}"
     fzf_bind_action "alt-space"  "Clear Selection" "clear-multi"
     fzf_bind_action "space"      "Select"          "toggle-select"
     fzf_bind_action "ctrl-space" "Select All"      "select-all"
