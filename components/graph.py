@@ -326,8 +326,11 @@ def is_actionable():
 
 def is_next():
   """True if a task has no active dependencies."""
-  filter_nodes_with_edges("dependencies", lambda n, e: not any(
-    task_state(o) in {"NEW", "TODO"}
+  filter_nodes_with_edges(
+    "dependencies",
+    lambda n, e: \
+    task_state(n) in ["NEW", "TODO"] and not \
+    any(task_state(o) in {"NEW", "TODO", "WAIT", "SOMEDAY"}
     for o in node_adjacent(n, e, "outgoing")
   ))
 

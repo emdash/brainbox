@@ -2395,11 +2395,11 @@ function query_builder {
 # Agenda **********************************************************************
 
 function __agenda_preview {
-    prefs read 'agenda/items' | _schedule agenda "${@}"
+    __agenda_items | cut -d '|' -f 1 | _schedule agenda "${@}"
 }
 
 function __agenda_items {
-    all | is_next | sort | summarize -d '|'
+    all | is_next | summarize -d '|'
 }
 
 function __agenda_wait_for {
