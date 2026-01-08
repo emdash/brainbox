@@ -27,6 +27,8 @@ from itertools import pairwise
 
 # Helper Functions #######################################################
 
+BUCKET_DIR = os.getenv("BUCKET_DIR")
+
 def dict_append(d, key, value):
   if not key in d:
     d[key] = []
@@ -73,9 +75,8 @@ def filter_nodes_with_edges(edge_set, predicate):
 
 def bucket_list(bucket):
   "Return the contents of the given bucket"
-  bucket_dir = os.path.join(os.getenv("BUCKET_DIR"), bucket)
   try:
-    buckets = os.listdir(bucket_dir)
+    buckets = os.listdir(os.path.join(BUCKET_DIR, bucket))
     buckets.sort()
     return buckets
   except OSError:
@@ -369,12 +370,16 @@ def datum_read(datum, id):
 
 # re-implementations of gtd.sh functions to avoid shelling out.
 def task_contents(id): return datum_read("contents", id)
+
 def task_gloss(id):
-  match id.split("@"):
-    case [id]:
-      return task_contents(id).split('\n')[0]
-    case [id, "start"]:
-      return task_contents(id).split('\n')[0] + "@start"
+  if has("contents", id):
+    return task_contents(id).split('\n')[0]
+  else:
+    if id in os.listdir(BUCKET_DIR):
+      return id
+    else:
+      return "[no contents]"
+
 def task_state(id):    return datum_read("state", id)
 
 def filter_state(*keep):
@@ -489,9 +494,7 @@ def dot(*selection):
   nodes = set([])
   node_labels = {}
 
-  buckets = {
-    b for b in os.listdir(os.getenv("BUCKET_DIR"))
-  }
+  buckets = set(os.listdir(BUCKET_DIR))
 
   projects = set()
 
