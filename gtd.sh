@@ -839,6 +839,9 @@ function task_details {
     touch "${nodes_file}"
 
     task_summary "${1}"
+    case "$(task_state read "${1}")" in
+        WAIT) echo -n "Waiting For:" ; graph_datum reason read "${1}";;
+    esac
     echo
 
     if prefs_bool_test "details/show_contents" 1
@@ -1016,6 +1019,14 @@ function task_complete {
 # mark the given task as someday
 function task_defer {
     echo "SOMEDAY" | task_state write "$1"
+}
+
+# mark the given task as externally blocked
+function task_wait {
+    local reason="${1}"
+    local id="${2}"
+    echo "WAIT" | task_state write "${id}"
+    echo "${reason}" | graph_datum reason write "${id}"
 }
 
 # mark the given node as persistent
@@ -1393,7 +1404,6 @@ function choose {
 
 function __choose_preview {
     splat "${@}" > "${DATA_DIR}/selection"
-    debug wtf
     task_details "${1}"
 }
 
@@ -1949,6 +1959,14 @@ function make_context {
     database_commit "${SAVED_ARGV[*]}"
 }
 
+# mark a node as waiting for the given reason
+query_declare_type             wait_for update "reason:string"
+query_declare_default_producer wait_for from target
+function wait_for {
+    map task_wait "${1}"
+    database_commit "${SAVED_ARGV[*]}"
+}
+
 # set the given datum on the input set to the given args or stdin.
 query_declare_type             set_ formatter datum
 query_declare_default_producer set_ from target
@@ -2381,19 +2399,23 @@ function __agenda_preview {
 }
 
 function __agenda_items {
-    local d
-    read d < <(date -I)
-    prefs read 'agenda/items' | summarize -d '|'
+    all | is_next | sort | summarize -d '|'
+}
+
+function __agenda_wait_for {
+    read -ep "Waiting For> " reason
+    splat "${@}" | wait_for "${reason}"
 }
 
 function __agenda_bindings {
     local -r rls="reload-sync($0 __agenda_items)"
     fzf_bind_exec   "c"     "Capture"    "$0 capture"                          "${rls}"
-    fzf_bind_sexec  "u"     "Undo"       "$0 undo"                             "refresh-preview"
-    fzf_bind_sexec  "U"     "Redo"       "$0 redo"                             "refresh-preview"
-    fzf_bind_sexec  "enter" "Complete"   "$0 splat {+1} | $0 stdin complete"   "refresh-preview"
-    fzf_bind_exec   "r"     "Reschedule" "$0 splat {+1} | $0 stdin schedule"   "refresh-preview"
-    fzf_bind_sexec  "X"     "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "refresh-preview"
+    fzf_bind_sexec  "u"     "Undo"       "$0 undo"                             "${rls}"
+    fzf_bind_sexec  "U"     "Redo"       "$0 redo"                             "${rls}"
+    fzf_bind_sexec  "enter" "Complete"   "$0 splat {+1} | $0 stdin complete"   "${rls}"
+    fzf_bind_exec   "r"     "Reschedule" "$0 splat {+1} | $0 stdin schedule"   "${rls}"
+    fzf_bind_exec   "w"     "Wait For"   "$0 __agenda_wait_for {+1}"           "${rls}"
+    fzf_bind_sexec  "X"     "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "${rls}"
     fzf_bind_action "q"     "Quit"       "abort"
 }
 
@@ -2416,7 +2438,6 @@ function __agenda {
 # show an agenda view with the given nodes
 command_declare agenda
 function agenda {
-    all | is_next union is_scheduled | prefs write 'agenda/items' | sort
     __agenda || true
 }
 
@@ -2516,6 +2537,11 @@ function plan {
 # Interactive Mode ************************************************************
 
 ## Combining multiple specialized modes into a single gui with submenus.
+
+function __interactive_wf {
+    __agenda_wait_for "${@}" || true
+    exec "$0" __interactive
+}
 
 function __interactive_schedule {
     local schedule ts _
@@ -2700,6 +2726,7 @@ function __interactive_node_submenu {
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
     fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
     fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
+    fzf_bind_action "w"      "Wait For"     "become($0 __interactive_wf {+1})"  "${rls}"
     fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
 }
 
