@@ -451,7 +451,7 @@ def dot_state_colors(state):
   elif state == "CONTEXT": return ("#aaFFdd",  "black"  )
   else:                    return ("grey95",   "grey50" )
 
-def dot_node(id, node_labels={}):
+def dot_node(id, node_labels={}, shape="box"):
   """Return a formatted node in dot syntax.
 
   Node attributes are set according to the task state.
@@ -460,7 +460,7 @@ def dot_node(id, node_labels={}):
   formatted_attrs = dot_attrs(
     ("label"  ,   task_gloss(id)),
     ("style",     "filled"),
-    ("shape",     "box"),
+    ("shape",     shape),
     ("color",     fill),
     ("penwidth",  "2"),
     ("fillcolor", fill),
@@ -479,7 +479,7 @@ def dot_edge(u, v, style, color):
 
 def dot_edges(edges, nodes, color):
   """Format the given edge sets to stdout"""
-  for e in edge_list(edges):
+  for e in edges:
     match e:
       case (u, v):
         if edge_contained(u, v, nodes):
@@ -544,22 +544,42 @@ def dot(*selection):
           if not node in projects:
             nodes.add(node)
           dict_append(node_labels, node, bucket)
-    case "hidden": pass
-    case invalid:  raise ValueError(f"Invalid mode: {invalid}")
+    case "node":
+      for bucket in buckets:
+        contents = bucket_list(bucket)
+        print(dot_node(bucket, shape="house"))
+        for c in contents:
+          nodes.add(c)
+          print(dot_edge(bucket, c, "dashed", "grey"))
+    case "hidden":
+      pass
+    case invalid:
+      raise ValueError(f"Invalid mode: {invalid}")
 
   # draw selection as a cluster, regardless of bucket style
   nodes |= selected
   dot_subgraph("Selection", selection)
 
+  # show implicit edges from source and target
+  source = bucket_list("source")
+  target = bucket_list("target")
+  for u in source:
+    nodes.add(u)
+    for v in target:
+      nodes.add(v)
+      print(dot_edge(u, v, "dashed", "grey"))
 
   for node in sorted(nodes):
-    print(dot_node(node, node_labels))
+    if node in projects:
+      print(dot_node(node, node_labels=node_labels, shape="folder"))
+    else:
+      print(dot_node(node, node_labels))
 
   if show_deps:
-    dot_edges("dependencies", nodes, "red")
+    dot_edges(edge_list("dependencies"), nodes, "red")
 
   if show_contexts:
-    dot_edges("contexts", nodes, "green")
+    dot_edges(edge_list("contexts"), nodes, "green")
 
   print("}")
 

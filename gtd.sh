@@ -770,6 +770,7 @@ function __graph_bindings {
       "graph/bucket_mode" \
       "cluster" \
       "label" \
+      "node" \
       "hidden"
 
     prefs_bind_cycle \
@@ -2717,6 +2718,7 @@ function __interactive_view_submenu {
       "graph/bucket_mode" \
       "cluster" \
       "label" \
+      "node" \
       "hidden"
 
     prefs_bind_cycle \
