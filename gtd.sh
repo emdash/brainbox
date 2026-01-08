@@ -1763,7 +1763,7 @@ function chafa {
     local -r width="${FZF_PREVIEW_COLUMNS:-"${COLUMNS:-80}"}"
     local -r height="${FZF_PREVIEW_LINES:-"${LINES:-24}"}"
     end_filter_chain "$@"
-    svg | env chafa -s "${width}x$(("${height}" - 10))"
+    svg | env chafa -s "$(("${width}" - 2))x$(("${height}" - 10))"
 }
 
 # select nodes from input set to be placed into the given bucket
