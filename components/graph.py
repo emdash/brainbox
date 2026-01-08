@@ -149,9 +149,9 @@ def project_subgraph(node, groups):
   for group in groups:
     match group:
       case [prev, *rest] as subtasks:
-        yield (node, prev)
+        yield (node, prev, "implicit")
         for next in rest:
-          yield (prev, next)
+          yield (prev, next, "implicit")
           prev = next
       case _:
         raise ValueError("Empty group")
@@ -203,7 +203,7 @@ def dependencies():
   for (u, v) in read_edges("dependencies"):
     if u in projects and projects[u]:
       for subtask in [g[-1] for g in projects[u]]:
-        yield (subtask, v)
+        yield (subtask, v, "implicit")
     else:
       yield (u, v)
 
@@ -238,13 +238,13 @@ def node_adjacent(node, edges, direction):
   """
   match direction:
     case "outgoing":
-      for (u, v) in edges:
+      for (u, v, *_) in edges:
         if node == u: yield v
     case "incoming":
-      for (u, v) in edges:
+      for (u, v, *_) in edges:
         if node == v: yield u
     case "all":
-      for (u, v) in edges:
+      for (u, v, *_) in edges:
         if   node == u: yield v
         elif node == v: yield u
 
@@ -386,7 +386,7 @@ def touches(*edge_sets):
     edge_sets = ('contexts', 'dependencies')
   nodes = set(read_ids())
   for edge_set in edge_sets:
-    for (u, v) in read_edges(edge_set):
+    for (u, v, *_) in read_edges(edge_set):
       if edge_touches(u, v, nodes):
         print(f"{u} {v} {edge_set}")
 
@@ -396,7 +396,7 @@ def contained(*edge_sets):
     edge_sets = ('contexts', 'dependencies')
   nodes = set(read_ids())
   for edge_set in edge_sets:
-    for (u, v) in read_edges(edge_set):
+    for (u, v, *_) in read_edges(edge_set):
       if edge_contained(u, v, nodes):
         print(f"{u} {v} {edge_set}")
 
@@ -464,21 +464,28 @@ def dot_node(id, node_labels={}):
   )
   return f"{dot_quote(id)} {formatted_attrs};"
 
-def dot_edge(u, v, style):
+def dot_edge(u, v, style, color):
   """Return a formatted edge in dot syntax.
 
   Context edges are dashed, dependency edges are solid.
   """
-  return f"{dot_quote(u)} -> {dot_quote(v)} [style={dot_quote(style)}];"
+  return f"{dot_quote(u)} -> {dot_quote(v)}" \
+         f"[style={dot_quote(style)}, color={dot_quote(color)}];"
 
-def dot_edges(edges, nodes, style):
+def dot_edges(edges, nodes, color):
   """Format the given edge sets to stdout"""
-  for (u, v) in edge_list(edges):
-    if edge_contained(u, v, nodes):
-      print(dot_edge(u, v, style))
+  for e in edge_list(edges):
+    match e:
+      case (u, v):
+        if edge_contained(u, v, nodes):
+          print(dot_edge(u, v, "solid", color))
+      case (u, v, "implicit"):
+        if edge_contained(u, v, nodes):
+          print(dot_edge(u, v, "dashed", color))
 
-def dot():
+def dot(*selection):
   """Read nodes from stdin, write dot syntax to stdout."""
+  selected = set(selection)
   nodes = set([])
   node_labels = {}
 
@@ -541,10 +548,10 @@ def dot():
     print(dot_node(node, node_labels))
 
   if show_deps:
-    dot_edges("dependencies", nodes, "solid")
+    dot_edges("dependencies", nodes, "red")
 
   if show_contexts:
-    dot_edges("contexts", nodes, "dashed")
+    dot_edges("contexts", nodes, "green")
 
   print("}")
 
