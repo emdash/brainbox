@@ -922,8 +922,28 @@ function task_details {
         esac
     fi
 
-    cat "${DATA_DIR}/contents.txt" \
-        "${DATA_DIR}/contexts.txt" \
+    cat "${DATA_DIR}/contents.txt"
+
+    if prefs_bool_test "details/show_schedule" 1
+    then
+        if graph_datum schedule exists "${id}"
+        then
+            echo -n "Schedule"
+            local style
+            read style < <(prefs read "details/schedule_style" week)
+            case "${style}" in
+                literal)
+                    echo -n ": "
+                    graph_datum schedule read "${id}";;
+                *)
+                    echo
+                    graph_datum schedule read "${id}" | _schedule preview "${style}";;
+            esac
+            echo
+        fi
+    fi
+
+    cat "${DATA_DIR}/contexts.txt" \
         "${DATA_DIR}/subtasks.txt" \
         "${DATA_DIR}/deps.txt" \
         "${DATA_DIR}/rdeps.txt"
@@ -935,6 +955,7 @@ function __details_bindings {
     prefs_bind_toggle "ctrl-alt-c" "Contents" "details/show_contents"
     prefs_bind_toggle "ctrl-alt-b" "Buckets"  "details/show_buckets"
     prefs_bind_toggle "ctrl-s"     "Subtasks" "details/show_subtasks"
+    prefs_bind_toggle "ctrl-alt-s" "Schedule" "details/show_schedule"
     prefs_bind_toggle "ctrl-c"     "Contexts" "details/show_contexts"
     prefs_bind_toggle "ctrl-b"     "Blocks"   "details/show_rdeps"
     prefs_bind_toggle "ctrl-d"     "Depends"  "details/show_deps"
@@ -2696,12 +2717,22 @@ function __interactive_nav_submenu {
 
 function __interactive_view_submenu {
     prefs_bind_toggle "c" "Contents" "details/show_contents"
+
+    prefs_bind_toggle "alt-s" "Schedule" "details/show_schedule"
+
     prefs_bind_toggle "b" "Buckets"  "details/show_buckets"
     prefs_bind_toggle "s" "Subtasks" "details/show_subtasks"
     prefs_bind_toggle "C" "Contexts" "details/show_contexts"
     prefs_bind_toggle "d" "Depends"  "details/show_deps"
     prefs_bind_toggle "D" "Blocks"   "details/show_rdeps"
     prefs_bind_toggle "g" "Graph"    "details/show_graph"
+
+    prefs_bind_cycle "alt-S" "Schedule Style" "details/schedule_style" \
+        "week" \
+        "month" \
+        "list" \
+        "literal"
+
     prefs_bind_cycle \
         "G" \
         "Graph Source" \
