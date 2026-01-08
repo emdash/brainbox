@@ -2373,12 +2373,14 @@ function __agenda_items {
 }
 
 function __agenda_bindings {
-    fzf_bind_sexec  "u"        "Undo"       "$0 undo"                             "refresh-preview"
-    fzf_bind_sexec  "U"        "Redo"       "$0 redo"                             "refresh-preview"
-    fzf_bind_sexec  "enter"    "Complete"   "$0 splat {+1} | $0 stdin complete"   "refresh-preview"
-    fzf_bind_exec   "r"        "Reschedule" "$0 splat {+1} | $0 stdin schedule"   "refresh-preview"
-    fzf_bind_sexec  "X"        "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "refresh-preview"
-    fzf_bind_action "q"        "Quit"       "abort"
+    local -r rls="reload-sync($0 __agenda_items)"
+    fzf_bind_exec   "c"     "Capture"    "$0 capture"                          "${rls}"
+    fzf_bind_sexec  "u"     "Undo"       "$0 undo"                             "refresh-preview"
+    fzf_bind_sexec  "U"     "Redo"       "$0 redo"                             "refresh-preview"
+    fzf_bind_sexec  "enter" "Complete"   "$0 splat {+1} | $0 stdin complete"   "refresh-preview"
+    fzf_bind_exec   "r"     "Reschedule" "$0 splat {+1} | $0 stdin schedule"   "refresh-preview"
+    fzf_bind_sexec  "X"     "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "refresh-preview"
+    fzf_bind_action "q"     "Quit"       "abort"
 }
 
 function __agenda {
