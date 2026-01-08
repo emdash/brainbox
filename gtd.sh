@@ -2517,7 +2517,7 @@ function __interactive_schedule {
     if test "$?" == "0"
     then
         splat "${tasks[@]}" | schedule
-    fi
+    fi || true
 
     exec "$0" __interactive
 }
