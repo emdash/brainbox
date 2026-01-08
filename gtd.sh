@@ -1394,7 +1394,12 @@ function has {
     filter graph_datum "${datum}" exists | query_filter_chain "$@"
 }
 
-# Keep only active tasks.
+# keep nodes states which track tasks.
+query_declare_type             is_actionable filter
+query_declare_default_producer is_actionable all
+function is_actionable { graph is_actionable | query_filter_chain "$@" ; }
+
+# Keep only active nodes that should not be remove from the graph.
 query_declare_type             is_active filter
 query_declare_default_producer is_active all
 function is_active {
@@ -1404,20 +1409,21 @@ function is_active {
         WAITING \
         PERSIST \
         CONTEXT \
+        SOMEDAY \
     | query_filter_chain "$@"
 }
 
-# Keep only completed tasks
-query_declare_type             is_complete filter
-query_declare_default_producer is_complete all
-function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
-
-# Show DONE / DROPPED items
+# Show nodes that could be safely removed from the graph.
 query_declare_type             inactive filter
 query_declare_default_producer inactive all
 function inactive {
     graph filter_state DONE DROPPED | query_filter_chain "$@"
 }
+
+# Keep only completed tasks.
+query_declare_type             is_complete filter
+query_declare_default_producer is_complete all
+function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
 
 # Keep only context nodes
 query_declare_type             is_context filter
@@ -1437,7 +1443,7 @@ function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
 # Keep only next actions
 query_declare_type             is_next filter
 query_declare_default_producer is_next all
-function is_next { graph is_next | is_actionable "$@" ; }
+function is_next { is_actionable | graph is_next | query_filter_chain "$@" ;}
 
 # Keep all isolated graph nodes regadless of state.
 query_declare_type             is_orphan filter
@@ -1474,7 +1480,9 @@ function is_leaf { graph is_leaf | query_filter_chain "$@" ; }
 # Keep only tasks not assigned to any context
 query_declare_type             is_unassigned filter
 query_declare_default_producer is_unassigned all
-function is_unassigned { is_actionable | graph is_unassigned | query_filter_chain "$@" ; }
+function is_unassigned {
+    is_actionable | graph is_unassigned | query_filter_chain "$@" ;
+}
 
 # Keep only waiting tasks
 query_declare_type             is_waiting filter
@@ -1605,21 +1613,6 @@ function is_complete {
             ;;
         *)
             _schedule is_complete | query_filter_chain "${@}"
-            ;;
-    esac
-}
-
-# keep nodes which are actionable at the given timestamp
-query_declare_type             is_actionable filter "--date:string"
-query_declare_default_producer is_actionable all
-function is_actionable {
-    case "${1}" in
-        -d|--date)
-            shift
-            _schedule is_actionable "${1}" | query_filter_chain "${@}"
-            ;;
-        *)
-            _schedule is_actionable | query_filter_chain "${@}"
             ;;
     esac
 }
