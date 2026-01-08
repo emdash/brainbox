@@ -544,6 +544,11 @@ def dot(*selection):
     case "hidden": pass
     case invalid:  raise ValueError(f"Invalid mode: {invalid}")
 
+  # draw selection as a cluster, regardless of bucket style
+  nodes |= selected
+  dot_subgraph("Selection", selection)
+
+
   for node in sorted(nodes):
     print(dot_node(node, node_labels))
 

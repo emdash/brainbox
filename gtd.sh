@@ -835,6 +835,7 @@ function task_details {
 
     mkdir -p "$(dirname "${nodes_file}")"
     rm -f "${nodes_file}" || true
+    touch "${nodes_file}"
 
     task_summary "${1}"
     echo
@@ -1363,9 +1364,15 @@ function choose {
       ${opt} \
       --with-nth='{2} {3}' \
       --accept-nth='{1}' \
-      --preview="$0 task_details {1}" \
+      --preview="$0 __choose_preview {+1}" \
       --bind="load:enable-search+show-input" \
     | query_filter_chain "$@"
+}
+
+function __choose_preview {
+    splat "${@}" > "${DATA_DIR}/selection"
+    debug wtf
+    task_details "${1}"
 }
 
 function __choose_items {
@@ -1731,8 +1738,14 @@ function get {
 query_declare_type             dot formatter
 query_declare_default_producer dot all
 function dot {
-    end_filter_chain "$@"
-    graph dot
+    local -r path="${DATA_DIR}/selection"
+    local -a selection
+
+    if test -e "${path}"
+    then
+        readarray -t selection < "${path}"
+    fi
+    graph dot "${selection[@]}"
 }
 
 # render graph directly to svg, printed to stdout
@@ -1740,7 +1753,7 @@ query_declare_type             svg formatter
 query_declare_default_producer svg all
 function svg {
     end_filter_chain "$@"
-    graph dot | env dot -Tsvg
+    dot | env dot -Tsvg
 }
 
 # render a project graph straight to the terminal (uses chafa).
@@ -2428,6 +2441,7 @@ function __plan_items {
 
 function __plan_preview {
     task_summary "${SUBTASK_ID}"
+    splat "${@}" > "${DATA_DIR}/selection}"
     echo "${SUBTASK_ID}" | reachable dependencies outgoing | chafa
 }
 
@@ -2473,7 +2487,7 @@ function plan {
       "Edit Project Subtasks" \
       __plan_bindings \
       __plan_items \
-      --preview="$0 __plan_preview" \
+      --preview="$0 __plan_preview {+1}" \
       --with-nth='{2} {3}' \
       -d '|'
 
@@ -2573,9 +2587,10 @@ function __interactive_path {
 }
 
 function __interactive_preview {
-    local top mode
-    read mode < <(prefs read 'interactive/mode' neighbors)
+    local mode
 
+    read mode < <(prefs read 'interactive/mode' neighbors)
+    splat "${@}" > "${DATA_DIR}/selection"
     echo "Mode: ${mode} "
 
     if read top < <(__interactive_top)
@@ -3003,7 +3018,7 @@ function __interactive {
        --with-nth='{2} {3}' \
        --accept-nth='{1}' \
        --listen \
-       --preview="$0 __interactive_preview {1}"
+       --preview="$0 __interactive_preview {+1}"
 }
 
 # an interactive TUI which ties everything together.
