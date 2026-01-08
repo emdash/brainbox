@@ -2683,6 +2683,7 @@ function __interactive_node_submenu {
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
     fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
     fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
+    fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
 }
 
 function __interactive_nav_submenu {
