@@ -1220,7 +1220,7 @@ def window_args(*args):
 
   match args:
     case []:
-      return None
+      return Interval.fromDate(today)
     case [s]:
       try:
         return parseDuration(str)
@@ -1244,7 +1244,7 @@ def filter_window(f, *args):
 def filter_datetime(f, *args):
   match args:
     case [str]:
-      return graph.filter_nodes(f, datetime.fromisoformat(str))
+      return graph.filter_nodes(f, datetime.fromisoformat(str).replace(tzinfo=None))
     case []:
       return graph.filter_nodes(f, now)
     case invalid:
