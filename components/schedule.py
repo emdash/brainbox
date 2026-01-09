@@ -478,12 +478,6 @@ class DateSet:
     """Try to find the smallest interval in DateSet which contains dt."""
     raise NotImplemented
 
-  def is_actionable(self, history, dt):
-    """True if a completion event already exists for the interval containing `dt`."""
-    match self.find_interval(dt):
-      case None:     return False
-      case interval: return not self.is_complete(history, interval)
-
 @dataclass
 class Explicit(DateSet):
   """An explicit list of intervals.
@@ -1290,7 +1284,6 @@ if __name__ == "__main__":
     case ["is_unscheduled"]:       graph.filter_nodes(is_unscheduled)
     case ["is_in_progress", * args]: filter_datetime(is_in_progress, *args)
     case ["is_due", *args]:        filter_window(is_due,      *args)
-    case ["is_actionable", *args]: filter_datetime(is_actionable, *args)
     case ["complete", *args]:      complete(*args)
     case ["completed"]:            foreach(read_completion_history)
     case ["schedule"]:             foreach(read_date_set, 'schedule')
