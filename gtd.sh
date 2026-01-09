@@ -1451,11 +1451,6 @@ function inactive {
     graph filter_state DONE DROPPED | query_filter_chain "$@"
 }
 
-# Keep only completed tasks.
-query_declare_type             is_complete filter
-query_declare_default_producer is_complete all
-function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
-
 # Keep only context nodes
 query_declare_type             is_context filter
 query_declare_default_producer is_context all
@@ -1651,18 +1646,26 @@ function is_due {
 }
 
 # keep nodes which are complete
-query_declare_type             is_complete filter "--window:window"
+query_declare_type             is_complete filter "-w|--window:window"
 query_declare_default_producer is_complete all
 function is_complete {
-    case "${1}" in
-        -w|--window)
-            shift
-            _schedule is_complete "${1}" | query_filter_chain "${@}"
-            ;;
-        *)
-            _schedule is_complete | query_filter_chain "${@}"
-            ;;
-    esac
+    if test -v 1
+    then
+        case "${1}" in
+            -w|--window)
+                local -r window="${2}"
+                shift 2
+                ;;
+        esac
+    fi
+
+    if test -v window
+    then
+        _schedule is_complete "${window}"
+    else
+        _schedule is_complete
+    fi | query_filter_chain "${@}"
+}
 
 # keep nodes which are complete
 query_declare_type             is_incomplete filter "-w|--window:window"

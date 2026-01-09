@@ -1165,29 +1165,18 @@ def is_temporal(id):
   return is_scheduled(id) and read_date_set(id).is_finite()
 
 def is_complete(window, id):
-  """Filter nodes that are completed.
+  """Keep nodes that are completed.
 
-  True if a node is in state DONE, or, for scheduled nodes with
+  True if a node is in state DONE, or scheduled nodes with a completion window.
   """
   if graph.task_state(id) == "DONE":
     return True
+  elif is_scheduled(id) and graph.has("completed", id):
+    when = read_date_set("schedule", id)
+    history = read_completion_history(id)
+    return when.is_complete(history, window)
   else:
-    match classify_node(id):
-      case "event"|"unscheduled":
-        return False
-      case "habit" as kind:
-        when = read_date_set("schedule", id)
-        history = read_completion_history(id)
-        return graph.has("completed", id) \
-          and when.is_complete(history, window)
-      case invalid:
-        raise ValueError(f"Invalid Node Classification: {invalid}")
-def is_actionable(dt, id):
-  """Filter nodes that are actionable.
-
-  Unscheduled tasks are actionable if they are in state NEW or TODO.
-
-  Events are never considered actionable (see in_progress).
+    return False
 
 def is_incomplete(window, id):
   """Keep nodes that have not been completed."""
