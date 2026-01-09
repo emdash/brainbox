@@ -462,6 +462,8 @@ class DateSet:
     for i in self.intervals(window):
       yield (i, any(map(i.within, history)))
 
+
+
   def is_complete(self, history, window=None):
     """True if all intervals within the window have a completion event.
 
@@ -617,6 +619,7 @@ class Union(Implicit):
 
   def within(self, dt):
     return any(s.within(dt) for s in self.subsets)
+
   def span(self):
     return reduce(lambda acc, t: acc.span(t.span()), self.subsets, Empty())
 
