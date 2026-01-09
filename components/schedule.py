@@ -1182,14 +1182,6 @@ def is_complete(window, id):
           and when.is_complete(history, window)
       case invalid:
         raise ValueError(f"Invalid Node Classification: {invalid}")
-
-def in_progress(dt, id):
-  match classify_node(id):
-    case "event":
-      return read_date_set("schedule", id).within(dt)
-    case _:
-      return False
-
 def is_actionable(dt, id):
   """Filter nodes that are actionable.
 
@@ -1197,21 +1189,13 @@ def is_actionable(dt, id):
 
   Events are never considered actionable (see in_progress).
 
-  Tasks and habits are actionable if the current time is within a
-  completion window, as defined by the node's `schedule` datum, *and*
-  no completion has been logged that discharges the task's obligation.
-  """
-  match classify_node(id):
-    case "unscheduled":
-        return graph.task_state(id) in ["NEW", "TODO"]
-    case "event":
-      return False
-    case "habit":
-      when = read_date_set("schedule", id)
-      history = read_completion_history(id)
-      return when.is_actionable(history, dt)
-    case invalid:
-      raise ValueError(f"Invalid Node Classification: {invalid}")
+def in_progress(dt, id):
+  if is_scheduled(id):
+    return read_date_set("schedule", id).within(dt)
+  else:
+    # XXX: this will return true for anything that isn't scheduled,
+    # which is wrong. input must be pre-filtered to tasks.
+    return True
 
 def is_upcoming(window, id):
   """True if an activity will become active within the given window.
@@ -1282,7 +1266,7 @@ if __name__ == "__main__":
     case ["is_complete", *args]:   filter_window(is_complete, *args)
     case ["is_scheduled"]:         graph.filter_nodes(is_scheduled)
     case ["is_unscheduled"]:       graph.filter_nodes(is_unscheduled)
-    case ["is_in_progress", * args]: filter_datetime(is_in_progress, *args)
+    case ["in_progress", *args]:   filter_datetime(in_progress, *args)
     case ["is_due", *args]:        filter_window(is_due,      *args)
     case ["complete", *args]:      complete(*args)
     case ["completed"]:            foreach(read_completion_history)

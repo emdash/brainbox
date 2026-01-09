@@ -1594,6 +1594,23 @@ query_declare_type             is_scheduled filter
 query_declare_default_producer is_scheduled all
 function is_temporal { _schedule is_temporal ; }
 
+# keep nodes which are active w/r/t their schedule.
+query_declare_type             in_progress filter "-d|--date:string"
+query_declare_default_producer in_progress all
+function in_progress {
+    if test -v 1
+    then
+        case "${1}" in
+            -d|--date) local -r date="${2}"; shift 2;;
+        esac
+    fi
+    if ! test -v date
+    then
+        read date < <(date -Iminute)
+    fi
+    _schedule in_progress "${date}" | query_filter_chain "${@}"
+}
+
 # keep nodes with schedule intervals beginning within the given time window.
 query_declare_type             is_upcoming filter window
 query_declare_default_producer is_upcoming all
