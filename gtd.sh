@@ -1936,20 +1936,10 @@ function __into_delete_empty {
 }
 
 # Print a one-line summary for each task id
-query_declare_type             summarize formatter --delimiter:string
+query_declare_type             summarize formatter "-d|--delimiter:string"
 query_declare_default_producer summarize inbox
 function summarize {
-    case "${1}" in
-        -d|--delimiter)
-            local -r sep="${2}"
-            shift 2
-            ;;
-        *)
-            local -r sep=' '
-            ;;
-    esac
-    end_filter_chain "$@"
-    map task_summary -d "${sep}"
+    graph summary "${@}"
 }
 
 ## Updates ********************************************************************

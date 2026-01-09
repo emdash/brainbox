@@ -376,7 +376,8 @@ def datum_read(datum, id):
   return cache[(datum, id)]
 
 # re-implementations of gtd.sh functions to avoid shelling out.
-def task_contents(id): return datum_read("contents", id)
+def task_contents(id):
+  return datum_read("contents", id)
 
 def task_gloss(id):
   if has("contents", id):
@@ -387,7 +388,7 @@ def task_gloss(id):
     else:
       return "[no contents]"
 
-def task_state(id):    return datum_read("state", id)
+def task_state(id):
 
 def filter_state(*keep):
   filter_nodes(lambda node: task_state(node) in set(keep))
@@ -411,6 +412,14 @@ def contained(*edge_sets):
     for (u, v, *_) in read_edges(edge_set):
       if edge_contained(u, v, nodes):
         print(f"{u} {v} {edge_set}")
+
+def summary(*args):
+  match args:
+    case []:                delimiter = ' '
+    case ["-d", delimiter]: pass
+
+  for id in read_ids():
+    print(f"{id}{delimiter}{task_state(id):7s}{delimiter}{task_gloss(id)}")
 
 ## Dotfile Export ########################################################
 
@@ -600,20 +609,22 @@ show_deps     = get_env_bool("GTD_GRAPH_SHOW_DEPS",     "1")
 
 if __name__ == "__main__":
   dispatch = {
-    "adjacent":      adjacent,
-    "from":          bucket_list,
-    "reachable":     reachable,
-    "union":         union,
-    "filter_state":  filter_state,
-    "is_actionable": is_actionable,
-    "is_leaf":       is_leaf,
-    "is_next":       is_next,
-    "is_orphan":     is_orphan,
-    "is_project":    is_project,
-    "is_root":       is_root,
-    "is_unassigned": is_unassigned,
-    "is_nonterminal":is_nonterminal,
-    "dot":           dot,
-    "touches":       touches,
-    "contained":     contained
+    "adjacent":       adjacent,
+    "from":           bucket_list,
+    "reachable":      reachable,
+    "reachable_from": reachable_from,
+    "union":          union,
+    "filter_state":   filter_state,
+    "is_actionable":  is_actionable,
+    "is_leaf":        is_leaf,
+    "is_next":        is_next,
+    "is_orphan":      is_orphan,
+    "is_project":     is_project,
+    "is_root":        is_root,
+    "is_unassigned":  is_unassigned,
+    "is_nonterminal": is_nonterminal,
+    "dot":            dot,
+    "touches":        touches,
+    "contained":      contained,
+    "summary":        summary
   }[sys.argv[1]](*sys.argv[2:])
