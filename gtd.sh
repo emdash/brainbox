@@ -2464,8 +2464,14 @@ function __agenda_preview {
     __agenda_items | cut -d '|' -f 1 | _schedule agenda "${@}"
 }
 
+query_declare_type             agenda_items filter
+query_declare_default_producer agenda_items all
+function agenda_items {
+    is_next | in_progress | is_incomplete | query_filter_chain "${@}"
+}
+
 function __agenda_items {
-    all | is_next | summarize -d '|'
+   all | agenda_items | summarize -d '|'
 }
 
 function __agenda_wait_for {
