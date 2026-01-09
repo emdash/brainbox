@@ -1797,7 +1797,17 @@ function get {
 	shift
     fi
     end_filter_chain "$@"
-    map graph_datum "${datum}" read
+    map __get "${datum}"
+}
+
+function __get {
+    local datum="${1}"
+    local id="${2}"
+    if graph_datum "${datum}" exists "${id}"
+    then
+        echo -n "${id}|"
+        graph_datum "${datum}" read "${id}"
+    fi
 }
 
 # dotfile export for graphviz
