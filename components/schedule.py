@@ -1189,6 +1189,17 @@ def is_actionable(dt, id):
 
   Events are never considered actionable (see in_progress).
 
+def is_incomplete(window, id):
+  """Keep nodes that have not been completed."""
+  if graph.task_state(id) == "DONE":
+    return False
+  elif is_scheduled(id) and graph.has("completed", id):
+    when = read_date_set("schedule", id)
+    history = read_completion_history(id)
+    return not when.is_complete(history, window)
+  else:
+    return True
+
 def in_progress(dt, id):
   if is_scheduled(id):
     return read_date_set("schedule", id).within(dt)
@@ -1264,6 +1275,7 @@ if __name__ == "__main__":
   match sys.argv[1:]:
     case ["is_upcoming", *args]:   filter_window(is_upcoming, *args)
     case ["is_complete", *args]:   filter_window(is_complete, *args)
+    case ["is_incomplete", *args]: filter_window(is_incomplete, *args)
     case ["is_scheduled"]:         graph.filter_nodes(is_scheduled)
     case ["is_unscheduled"]:       graph.filter_nodes(is_unscheduled)
     case ["in_progress", *args]:   filter_datetime(in_progress, *args)

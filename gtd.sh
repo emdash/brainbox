@@ -1663,6 +1663,27 @@ function is_complete {
             _schedule is_complete | query_filter_chain "${@}"
             ;;
     esac
+
+# keep nodes which are complete
+query_declare_type             is_incomplete filter "-w|--window:window"
+query_declare_default_producer is_incomplete all
+function is_incomplete {
+    if test -v 1
+    then
+        case "${1}" in
+            -w|--window)
+                local -r window="${2}"
+                shift 2
+                ;;
+        esac
+    fi
+
+    if test -v window
+    then
+        _schedule is_incomplete "${window}"
+    else
+        _schedule is_incomplete
+    fi | query_filter_chain "${@}"
 }
 
 # preview date patterns according to mode
