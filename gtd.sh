@@ -1587,7 +1587,9 @@ function is_eternal { _schedule is_eternal ; }
 # keep nodes which have a finite schedule.
 query_declare_type             is_scheduled filter
 query_declare_default_producer is_scheduled all
-function is_temporal { _schedule is_temporal ; }
+function is_temporal {
+    _schedule is_temporal ; query_filter_chain "${@}"
+}
 
 # keep nodes which are active w/r/t their schedule.
 query_declare_type             in_progress filter "-d|--date:string"
