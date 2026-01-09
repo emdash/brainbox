@@ -440,7 +440,7 @@ def test_monthly():
 
   # check that giving a month works as expected
   assert list(
-    Monthly({10, 11, 15}, 11).intervals(
+    Monthly({10, 11, 15}, {11}).intervals(
       Interval.fromDate(
         datetime(2025, 10, 1),
         datetime(2025, 12, 31)
