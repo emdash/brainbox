@@ -862,6 +862,8 @@ def fromJSON(decoded):
       return Monthly(set(days))
     case ["nth", n, wd]:
       return NthWeekday(n, wd)
+    case ["shift", offset, ds]:
+      return Shift(fromJSON(offset), fromJSON(ds))
     case ["++", period]:
       return Periodic(fromJSON(period), 1 * day)
     case ["++", period, duration]:
