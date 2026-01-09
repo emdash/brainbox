@@ -743,7 +743,7 @@ class Monthly(Implicit):
   """
 
   days : set[int]
-  month : Option[int] = None
+  months : Option[set[int]] = None
 
   # override here to prevent 1-sample gap at end of day, where the
   # ordinal advances to the next day. the *start* of this interval
@@ -754,9 +754,9 @@ class Monthly(Implicit):
     return self.within(interval.start)
 
   def within(self, dt):
-    match self.month:
+    match self.months:
       case None:  return dt.day in self.days
-      case month: return dt.day in self.days and dt.month == month
+      case month: return (dt.month in self.months) and (dt.day in self.days)
 
 @dataclass
 class NthWeekday(Implicit):
@@ -854,8 +854,12 @@ def fromJSON(decoded):
       return Explicit([Open()])
     case ["weekly", *days]:
       return Weekly({d for d in days})
+    case ["monthly", "all", *months]:
+      return Monthly(set(range(1, 32)), months=set(months))
+    case ["monthly", [*days], [*months]]:
+      return Monthly(set(days), set(months))
     case ["monthly", *days]:
-      return Monthly({d for d in days})
+      return Monthly(set(days))
     case ["nth", n, wd]:
       return NthWeekday(n, wd)
     case ["++", period]:
