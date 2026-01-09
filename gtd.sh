@@ -2935,9 +2935,9 @@ function __interactive_bindings {
     esac
 
     # global bindings that appear at the end.
-    fzf_bind_sexec  "shift-delete"     "Clear Buckets" "$0 buckets clear" "refresh-preview"
+    fzf_bind_sexec  "shift-delete"        "Clear Buckets" "$0 buckets clear" "refresh-preview"
     fzf_bind_action "F5"    "Refresh"     "reload-sync($0 __interactive_items)"
-    fzf_bind_action "?"     "Toggle Help" "toggle-header"
+    fzf_bind_sexec  "?"     "Toggle Help" "$0 __interactive_mode toggle-help"
     fzf_bind_action "q"     "Quit"        "accept"
     fzf_bind_action "esc"   "--"          "accept"
 }
@@ -2954,7 +2954,12 @@ function __interactive_header {
         *) debug "wtf" $1;;
     esac
 
-    __interactive_bindings "${1}" | fzf_help "${tabs}"
+    if prefs_bool_test 'interactive/show_help' 1
+    then
+        __interactive_bindings "${1}" | fzf_help "${tabs}"
+    else
+        echo "${tabs} (Help ?)"
+    fi
 }
 
 # FZF key press dispatch handler.
@@ -3010,7 +3015,7 @@ function __interactive_bind_dispatch {
             keys["${key}"]="bound"
             # save current state before any user action is taken.
             echo -n "${key}:execute-silent($0 __interactive_save_state)"
-            echo    "+execute-silent($0 __interactive_dispatch ${key})"
+            echo    "+execute-silent($0 __interactive_dispatch '${key}')"
         fi
     done | paste -sd ','
 }
@@ -3046,10 +3051,22 @@ function __interactive_mode {
         local mode="${1}"
         case "${mode}" in
             search)
-                prefs read 'interactive/menu' | prefs write 'interactive/prev_menu';;
+                prefs read 'interactive/menu' | prefs write 'interactive/prev_menu'
+                local -r mode
+                ;;
             exit-search)
-                read mode < <(prefs read 'interactive/prev_menu');;
+                read mode < <(prefs read 'interactive/prev_menu')
+                local -r mode
+                ;;
+            toggle-help)
+                prefs_bool_toggle 'interactive/show_help' 1
+                unset mode
+                ;;
         esac
+    fi
+
+    if test -v mode
+    then
         local -r mode
     else
         local -r mode="$(prefs read 'interactive/menu' node)"
