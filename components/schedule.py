@@ -469,7 +469,7 @@ class DateSet:
       - self is finite     -- uses the entire span.
       - self is not finite -- always returns False
     """
-    if window is None and not self.is_finite():
+    if window is None and not self.span().is_finite():
       return False
     else:
       return all(completed for (_, completed) in self.completions(history, window))
@@ -615,6 +615,8 @@ class Union(Implicit):
 
   subsets: set[DateSet]
 
+  def within(self, dt):
+    return any(s.within(dt) for s in self.subsets)
   def span(self):
     return reduce(lambda acc, t: acc.span(t.span()), self.subsets, Empty())
 
@@ -632,6 +634,9 @@ class Intersection(Implicit):
   """
 
   subsets: set[DateSet]
+
+  def within(self, dt):
+    return all(s.within(dt) for s in self.subsets)
 
   def span(self):
     ret = Open()
@@ -792,10 +797,7 @@ class Shift(Implicit):
   subset : DateSet
 
   def span(self):
-    return self.subset.span() + offset
-
-  def is_finite(self):
-    return self.subset.is_finite()
+    return self.subset.span() + self.offset
 
   def within(self, dt):
     return self.subset.within(dt - self.offset)
@@ -1158,11 +1160,11 @@ def is_unscheduled(id):
 
 def is_eternal(id):
   """True if a node has a schedule with no end date."""
-  return is_scheduled(id) and not read_date_set(id).is_finite()
+  return is_scheduled(id) and not read_date_set(id).span().is_finite()
 
 def is_temporal(id):
   """True if a task has a schedule with an end date."""
-  return is_scheduled(id) and read_date_set(id).is_finite()
+  return is_scheduled(id) and read_date_set(id).span().is_finite()
 
 def is_complete(window, id):
   """Keep nodes that are completed.
