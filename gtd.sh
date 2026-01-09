@@ -1734,7 +1734,14 @@ function schedule {
         local -r sch = "${1}"
     else
         local sch
-        read sch < <(splat "${ids[@]}" | schedule_builder)
+        # intialize the schedule if we have one
+        read sch < <(
+          splat "${ids[@]}" \
+            | get schedule \
+            | head -n 1 \
+            | cut -d '|' -f 2
+        ) || true
+        read sch < <(splat "${ids[@]}" | schedule_builder "${sch}")
     fi
 
     # write the schedule to the state.
@@ -2394,6 +2401,12 @@ function __schedule_builder_bindings {
 }
 
 function schedule_builder {
+    if test -n "${1}"
+    then
+        local -r sch="${1}"
+    else
+        local -r sch='["weekly", 1, 3, 5]'
+    fi
     # run mainloop
     fzf_menu \
       "Schedule Builder" \
@@ -2401,7 +2414,7 @@ function schedule_builder {
       __schedule_builder_items \
       --layout="reverse" \
       --disabled \
-      --query '["weekly", 1, 3, 5]' \
+      --query "${sch}" \
       --preview="$0 __schedule_builder_preview {q}" \
       --print-query \
     | head -n 1
