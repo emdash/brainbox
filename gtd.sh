@@ -1731,7 +1731,7 @@ function schedule {
     # the schedule builder UI.
     if test -v 1
     then
-        local -r sch = "${1}"
+        local -r sch="${1}"
     else
         local sch
         # intialize the schedule if we have one
@@ -2450,7 +2450,38 @@ function query_builder {
 
 # Agenda **********************************************************************
 
+function __agenda_set_context_filter {
+    if all \
+        | is_context \
+        | summarize -d '|' \
+        | fzf \
+          --header="Filter by Context (Esc to clear)" \
+          --style="full" \
+          --multi \
+          --reverse  \
+          -d '|' \
+          --with-nth="{3}" \
+          --accept-nth="{1}" \
+          --preview="$0 __agenda_preview" \
+        > "$(prefs path 'filter_contexts')"
+    then
+        :
+    else
+        prefs clobber filter_contexts
+    fi
+}
+
 function __agenda_preview {
+    local path="$(prefs path filter_contexts)"
+    echo -n "Filter: "
+    if test -s "${path}"
+    then
+        map task_gloss < "${path}"
+    else
+        echo "None"
+    fi | paste -sd ' '
+    echo
+
     __agenda_items | cut -d '|' -f 1 | _schedule agenda "${@}"
 }
 
@@ -2461,7 +2492,17 @@ function agenda_items {
 }
 
 function __agenda_items {
-   all | agenda_items | summarize -d '|'
+    local path
+    IFS='' read -r path < <(prefs path 'filter_contexts')
+
+    all | if test -s "${path}"
+    then
+        local ctxts
+        readarray -t ctxts < "${path}"
+        agenda_items | graph reachable_from contexts outgoing "${ctxts[@]}"
+    else
+        agenda_items
+    fi | summarize -d '|'
 }
 
 function __agenda_wait_for {
@@ -2471,6 +2512,12 @@ function __agenda_wait_for {
 
 function __agenda_bindings {
     local -r rls="reload-sync($0 __agenda_items)"
+    fzf_bind_exec \
+        "ctrl-f" \
+        "Filter By Context" \
+        "$0 __agenda_set_context_filter" \
+        "${rls}"
+
     fzf_bind_exec   "c"     "Capture"    "$0 capture"                          "${rls}"
     fzf_bind_sexec  "u"     "Undo"       "$0 undo"                             "${rls}"
     fzf_bind_sexec  "U"     "Redo"       "$0 redo"                             "${rls}"

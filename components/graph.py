@@ -23,6 +23,7 @@ make a significant difference.
 
 import os
 import sys
+from functools import reduce
 from itertools import pairwise
 
 # Helper Functions #######################################################
@@ -344,8 +345,63 @@ def is_unassigned():
     not has_adjacent(n, e, "incoming")
   )
 
+def flipped(edges):
+  for (u, v) in edges:
+    yield (v, u)
+
+def adjacency_list(edges, direction):
+  """Build forward edge adjacency list."""
+
+  match direction:
+    case "outgoing": edges = edge_list(edges)
+    case "incoming": edges = flipped(edge_list(edges))
+    case invalid: raise ValueError(f"{invalid} is not one of incoming or outgoing")
+
+  ret = {id: set() for id in nodes()}
+  for (u, v) in edges:
+    ret[u].add(v)
+  return ret
+
+def reachable_from(edges, direction, *nodes):
+  """Keep nodes reachable via `edges` along `direction` from the given set of nodes."""
+
+  # Recursively-construct reachability map.
+  adj = adjacency_list(edges, direction)
+  mem = {}
+  def rec(n):
+    if n not in mem:
+      ret = {n}
+      for a in adj[n]:
+        ret |= rec(a)
+      mem[n] = ret
+    return mem[n]
+
+  reachable = reduce(set.__ior__, (rec(n) for n in nodes))
+  filter_nodes(lambda n: n in reachable)
+
+  # reachable =
+
+  # for n in nodes:
+
+  # ret = {}
+
+  # def rec(n):
+  #   if n in ret: return
+  #   else:
+  #     for node in adjacent(e
+
+  # edges = edge_list(edges)
+  # seen = set()
+  # return {node: rec(n) for node in nodes}
+
+  #   for subtask in traverse(node, edges, direction, set(), seen):
+  #     if subtask not in seen:
+  #       seen.add(subtask)
+  #       print(subtask)
+
+
 def reachable(edges, direction):
-  """Get the set of nodes reachable via `edges` along `direction`."""
+  """Expand the incoming node set to include nodes reachable from the input set."""
   edges = edge_list(edges)
   seen = set()
   for node in read_ids():
@@ -389,6 +445,7 @@ def task_gloss(id):
       return "[no contents]"
 
 def task_state(id):
+  return datum_read("state", id)
 
 def filter_state(*keep):
   filter_nodes(lambda node: task_state(node) in set(keep))
