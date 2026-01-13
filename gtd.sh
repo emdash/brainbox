@@ -1513,7 +1513,7 @@ function is_unassigned {
 # Keep only waiting tasks
 query_declare_type             is_waiting filter
 query_declare_default_producer is_waiting all
-function is_waiting { graph filter_state WAITING | query_filter_chain "$@" ; }
+function is_waiting { graph filter_state WAIT | query_filter_chain "$@" ; }
 
 # adjacent incoming dependencies of input set
 query_declare_type             parents filter
