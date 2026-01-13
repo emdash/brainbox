@@ -2823,7 +2823,7 @@ function __interactive_bucket {
 
 # edit graph datum from interactive menu
 function __interactive_edit {
-    echo "${1}" | edit
+    echo "${1}" | edit || true
     exec "$0" __interactive
 }
 
