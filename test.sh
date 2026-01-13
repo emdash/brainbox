@@ -743,7 +743,7 @@ function test_is_waiting {
         assert_true test "$(gtd is_waiting)" = ""
     done
 
-    echo "WAITING" | gtd task_state write fake-uuid
+    echo "WAIT" | gtd task_state write fake-uuid
     assert_true test "$(gtd is_waiting)" = "fake-uuid"
 }
 
