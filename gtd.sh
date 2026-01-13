@@ -25,6 +25,7 @@ export STATE_DIR="${DATA_DIR}/state"
 export NODE_DIR="${STATE_DIR}/nodes"
 export HIST_DIR="${DATA_DIR}/hist/"
 export BUCKET_DIR="${DATA_DIR}/buckets"
+export FZF_SOCKET="${DATA_DIR}/fzf.sock"
 
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
@@ -225,9 +226,9 @@ function fzf_menu {
 function fzf_send {
     if test "$#" != 0
     then
-        curl -s "localhost:${FZF_PORT}" -d "$*"
+        curl -s --unix-socket "${FZF_SOCK}" http -d "$*"
     else
-        curl -s "localhost:${FZF_PORT}" -d @-
+        curl -s --unix-socket "${FZF_SOCK}" http -d @-
     fi
 }
 
@@ -3170,7 +3171,7 @@ function __interactive_mode {
 # this is needed for restoring state after executing a full-screen
 # command.
 function __interactive_save_state {
-    curl -s "localhost:${FZF_PORT}" | prefs write 'interactive/state'
+    curl -s --unix-socket "${FZF_SOCK}" http | prefs write 'interactive/state'
 }
 
 # Restore current FZF state from disk after executing a fullscreen command.
@@ -3235,7 +3236,7 @@ function __interactive {
        -d '|' \
        --with-nth='{2} {3}' \
        --accept-nth='{1}' \
-       --listen \
+       --listen="${FZF_SOCKET}" \
        --preview="$0 __interactive_preview {+1}"
 }
 
