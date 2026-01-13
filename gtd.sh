@@ -1742,16 +1742,16 @@ function schedule {
             | head -n 1 \
             | cut -d '|' -f 2
         ) || true
-        read sch < <(splat "${ids[@]}" | schedule_builder "${sch}")
+        if read sch < <(splat "${ids[@]}" | schedule_builder "${sch}")
+        then
+            # write the schedule to the state.
+            for id in "${ids[@]}"
+            do
+                echo "${sch}" | graph_datum schedule write "${id}"
+            done
+            database_commit "${SAVED_ARGV}"
+        fi
     fi
-
-    # write the schedule to the state.
-    for id in "${ids[@]}"
-    do
-        echo "${sch}" | graph_datum schedule write "${id}"
-    done
-
-    database_commit "${SAVED_ARGV}"
 }
 
 # remove any scheduling from the given node
