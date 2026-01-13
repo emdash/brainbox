@@ -2647,6 +2647,11 @@ function plan {
 
 ## Combining multiple specialized modes into a single gui with submenus.
 
+function __interactive_set_context_filter {
+    __agenda_set_context_filter
+    exec $0 __interactive
+}
+
 function __interactive_wf {
     __agenda_wait_for "${@}" || true
     exec "$0" __interactive
@@ -2757,17 +2762,35 @@ function __interactive_preview {
 }
 
 function __interactive_items {
-    local top mode
-    read mode   < <(prefs read 'interactive/mode' neighbors)
+    local top mode filters
+    read mode < <(prefs read 'interactive/mode' neighbors)
+    read filters < <(prefs path 'filter_contexts')
+
+    # check whether the navigation stack is non-empty, and display
+    # from top-of-stack in that case.
     if read top < <(__interactive_top)
     then
-      # XXX: validate before blindly executing ${mode}
-      echo "${top}" \
-          | "${mode}" \
+        # don't filter by context when navigating.
+        # XXX: validate before blindly executing ${mode}
+        echo "${top}" \
+          |  "${mode}" \
           | filter test "${top}" !=
     else
-        prefs read 'interactive/query' | apply dispatch
-    fi | tee -p "${DATA_DIR}/query_results" | summarize -d '|'
+        # if nav stack is empty, re-run the stored query, saving the
+        # query results for the preview window.
+        prefs read 'interactive/query' \
+          | apply dispatch \
+          | tee -p "${DATA_DIR}/query_results" \
+          | if test -s "${filters}"
+        then
+            # filter according to context preferences
+            local -a ctxts
+            readarray -t ctxts < "${filters}"
+            graph reachable_from contexts outgoing "${ctxts[@]}" | summarize -d '|'
+        else
+            summarize -d '|'
+        fi
+    fi
 }
 
 # one-line capture for the interactive menu
@@ -2944,6 +2967,7 @@ function __interactive_bindings {
     fi
 
     # global bindings that appear at the top
+    fzf_bind_action "ctrl-f"     "Filter Contexts" "become($0 __interactive_set_context_filter)" "${rls}"
     fzf_bind_action "Q"          "Change Query"    "become($0 __interactive_change_query)" "${rls}"
     fzf_bind_sexec  "ctrl-s,/"   "Search"          "$0 __interactive_mode search"
     fzf_bind_sexec  "u"          "Undo"            "$0 undo"                   "${rls}"
@@ -2991,11 +3015,23 @@ function __interactive_header {
         *) debug "wtf" $1;;
     esac
 
+    local path="$(prefs path filter_contexts)"
+
     if prefs_bool_test 'interactive/show_help' 1
     then
         __interactive_bindings "${1}" | fzf_help "${tabs}"
+        if test -s "${path}"
+        then
+            echo -n "Filter: "
+            map task_gloss < "${path}" | paste -sd ' '
+        fi
     else
         echo "${tabs} (Help ?)"
+        if test -s "${path}"
+        then
+            echo -n "Filter: "
+            map task_gloss < "${path}" | paste -sd ' '
+        fi
     fi
 }
 
