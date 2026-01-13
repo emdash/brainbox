@@ -1201,12 +1201,15 @@ def is_incomplete(window, id):
     return True
 
 def in_progress(dt, id):
-  if is_scheduled(id):
-    return read_date_set("schedule", id).within(dt)
-  else:
-    # XXX: this will return true for anything that isn't scheduled,
-    # which is wrong. input must be pre-filtered to tasks.
-    return True
+  try:
+    if is_scheduled(id):
+      return read_date_set("schedule", id).within(dt)
+    else:
+      # XXX: this will return true for anything that isn't scheduled,
+      # which is wrong. input must be pre-filtered to tasks.
+      return True
+  except BaseException:
+    debug(f"Invalid Schedule Expr: {id}")
 
 def is_upcoming(window, id):
   """True if an activity will become active within the given window.
