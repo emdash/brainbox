@@ -265,7 +265,7 @@ def test_explicit():
     )
   ]
 
-  # no overlap
+  # partial overlap
   assert list(Explicit([
     Closed(
       datetime(2025, 10, 11, 16, 00),
@@ -289,6 +289,18 @@ def test_explicit():
       datetime(2025, 10, 11, 17, 47)
     )
   ]
+
+  # left open
+  lopen = Explicit([LeftOpen(datetime(2025, 10, 11, 16, 00))])
+  assert     lopen.within(datetime(2025, 10, 10, 16,  1,  0))
+  assert     lopen.within(datetime(2025, 10, 11, 16,  0,  0))
+  assert not lopen.within(datetime(2025, 10, 11, 16,  0,  1))
+
+  # right open
+  ropen = Explicit([RightOpen(datetime(2025, 10, 11, 16, 00))])
+  assert not ropen.within(datetime(2025, 10, 10, 16,  1,  0))
+  assert     ropen.within(datetime(2025, 10, 11, 16,  0,  0))
+  assert     ropen.within(datetime(2025, 10, 11, 16,  0,  1))
 
 def test_periodic():
   assert list(Periodic(
@@ -544,11 +556,59 @@ def test_shift():
     )
   ]
 
-def test_not():
-  assert list(Not(AtTime(
+def test_invert():
+  assert list(Explicit([
+    LeftOpen(datetime(2025, 10, 11, 12))
+  ]).invert().intervals(
+    Interval.fromDate(datetime(2025, 10, 11))
+  )) == [
+    RightOpen(datetime(2025, 10, 11, 12))
+  ]
+
+  assert list(Explicit([
+    RightOpen(datetime(2025, 10, 11, 12))
+  ]).invert().intervals(
+    Interval.fromDate(datetime(2025, 10, 11))
+  )) == [
+    LeftOpen(datetime(2025, 10, 11, 12))
+  ]
+
+  assert list(Explicit([
+    LeftOpen(datetime(2025, 10, 11, 11)),
+    RightOpen(datetime(2025, 10, 11, 13))
+  ]).invert().intervals(
+    Interval.fromDate(datetime(2025, 10, 11))
+  )) == [
+    Closed(
+      datetime(2025, 10, 11, 11),
+      datetime(2025, 10, 11, 13)
+    )
+  ]
+
+  assert list(Explicit([
+    Closed(datetime(2025, 10, 11, 11), datetime(2025, 10, 11, 13))
+  ]).invert().intervals(
+    Interval.fromDate(datetime(2025, 10, 11))
+  )) == [
+    LeftOpen(datetime(2025, 10, 11, 11)),
+    RightOpen(datetime(2025, 10, 11, 13))
+  ]
+
+  assert list(Explicit([
+    Closed(datetime(2025, 10, 11,  9), datetime(2025, 10, 11, 10)),
+    Closed(datetime(2025, 10, 11, 11), datetime(2025, 10, 11, 12)),
+  ]).invert().intervals(
+    Interval.fromDate(datetime(2025, 10, 11))
+  )) == [
+    LeftOpen(datetime(2025, 10, 11, 9)),
+    Closed(datetime(2025, 10, 11, 10), datetime(2025, 10, 11, 11)),
+    RightOpen(datetime(2025, 10, 11, 12))
+  ]
+
+  assert list(AtTime(
     time(8, 0, 0),
     2 * hour + 30 * minute
-  )).intervals(Interval.fromDate(
+  ).invert().intervals(Interval.fromDate(
     datetime(2025, 10, 11)
   ))) == [
     Closed(
@@ -562,17 +622,16 @@ def test_not():
   ]
 
   assert list(
-    Not(Weekly({2})
-  ).intervals(Interval.fromDate(
-    datetime(2025, 10, 5),
-    datetime(2025, 10, 12)
+    Weekly({2}).invert().intervals(Interval.fromDate(
+      datetime(2025, 10, 5),
+      datetime(2025, 10, 12)
   ))) == [
     Closed(
       datetime(2025, 10,  5,  0, 0),
       datetime(2025, 10,  8,  0, 0)
     ),
     Closed(
-      datetime(2025, 10,  8, 23, 59),
+      datetime(2025, 10,  9,  0, 0),
       datetime(2025, 10, 13,  0, 0)
     )
   ]
@@ -671,11 +730,11 @@ def test_fromJSON():
     Explicit([Interval.fromDate(datetime(2025,  1, 20))])
   ])
 
-  assert fromJSON(["~", ["weekly", 5, 6]]) == Not(Weekly({5, 6}))
+  assert fromJSON(["~", ["weekly", 5, 6]])  == Weekly({0, 1, 2, 3, 4})
   assert fromJSON(["++", "3d"])             == Periodic(3 * day, 1 * day)
   assert fromJSON(["++", "3d", "1h"])       == Periodic(3 * day, 1 * hour)
   assert fromJSON(["++", "3d", "1h", "8h"]) == Periodic(3 * day, 1 * hour, 8 * hour)
-  assert fromJSON(["@", "12:00", "15m"]) == AtTime(time(hour=12), 15 * minute)
+  assert fromJSON(["@", "12:00", "15m"])    == AtTime(time(hour=12), 15 * minute)
 
   assert fromJSON(
     ["@", "20:30", ["+", "3h", "15m"]]
