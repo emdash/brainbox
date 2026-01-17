@@ -753,6 +753,37 @@ def test_fromJSON():
     [Closed(datetime(2025, 10, 1), datetime(2025, 10, 31))]
   )
 
+  assert fromJSON(
+    ["monthly", 1, 2, 3]
+  ) == Monthly({1, 2, 3})
+
+  assert fromJSON(
+    ["monthly", 1, "-", 15]
+  ) == Monthly(set(range(1, 16)))
+
+  assert fromJSON(
+    ["monthly", 1, -2, -3]
+  ) == Monthly({1, -2, -3})
+
+  assert fromJSON(
+    ["monthly", "all", 1, 3]
+  ) == Monthly(set(range(1, 32)), {1, 3})
+
+  assert fromJSON(
+    ["monthly", [1, 3, 5], [1, 3]]
+  ) == Monthly({1, 3, 5}, {1, 3})
+
+  assert fromJSON(
+    ["monthly", [1, "-", 15], [1, 3]]
+  ) == Monthly(set(range(1, 16)), {1, 3})
+
+
+  assert fromJSON(
+    ["monthly", [1, -3, -5], [1, 3]]
+  ) == Monthly({1, -3, -5}, {1, 3})
+
+
+
 def test_interval_span():
   dt = datetime(2025, 10, 11)
   assert Explicit([Interval.fromDate(dt)]).span() == Closed(dt, dt + day)
@@ -872,6 +903,41 @@ def test_completions():
     Closed(start=datetime(2025, 10, 11, 16, 0), end=datetime(2025, 10, 11, 16, 15)): True
   }
 
+  assert {
+    interval: completed
+    for (interval, completed)
+    in Weekly([2, 3, 4]).completions({
+      datetime(2025, 10,  8,  0, 15),
+      datetime(2025, 10,  9, 16, 15)
+    }, Closed(datetime(2025, 10, 6), datetime(2025, 10, 11)))
+  } == {
+    Closed(start=datetime(2025, 10,  8, 0, 0), end=datetime(2025, 10, 11, 0, 0)): True,
+  }
+
+  assert {
+    interval: completed
+    for (interval, completed)
+    in Weekly([2, 4]).completions({
+      datetime(2025, 10,  8,  0, 15),
+      datetime(2025, 10,  9, 16, 15)
+    }, Closed(datetime(2025, 10, 6), datetime(2025, 10, 11)))
+  } == {
+    Closed(start=datetime(2025, 10,  8, 0, 0), end=datetime(2025, 10,  9, 0, 0)): True,
+    Closed(start=datetime(2025, 10, 10, 0, 0), end=datetime(2025, 10, 11, 0, 0)): False,
+  }
+
+  assert {
+    interval: completed
+    for (interval, completed)
+    in Weekly([2, 4]).completions({
+      datetime(2025, 10,  8,  0, 15),
+      datetime(2025, 10,  9, 16, 15),
+      datetime(2025, 10, 10, 16, 15)
+    }, Closed(datetime(2025, 10, 6), datetime(2025, 10, 11)))
+  } == {
+    Closed(start=datetime(2025, 10,  8, 0, 0), end=datetime(2025, 10,  9, 0, 0)): True,
+    Closed(start=datetime(2025, 10, 10, 0, 0), end=datetime(2025, 10, 11, 0, 0)): True,
+  }
 
 def main(*args):
   import traceback

@@ -15,7 +15,7 @@ always exactly 1/86,400 of a solar day.
 """
 
 from datetime import date, datetime, time, timedelta
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, InitVar, field
 from functools import reduce
 import graph
 import itertools
@@ -511,7 +511,6 @@ class DateSet:
     """Find the largest interval that contains `dt`."""
     raise NotImplemented
 
-
 @dataclass
 class Explicit(DateSet):
   """An explicit list of intervals.
@@ -808,7 +807,7 @@ class Weekly(Implicit):
         self.find_bounds(dt)
     else:
       if dt.weekday() in self.which:
-        return Interval.fromdate(datetime(dt.year, dt.month, dt.day))
+        return Interval.fromDate(datetime(dt.year, dt.month, dt.day))
       else:
         return Empty()
 
@@ -831,25 +830,37 @@ class Monthly(Implicit):
   This will not repeat on days that are not part of the month (Feb
   29th on non-leap years, or Apr 31st).
 
-  XXX: allow using negative days to count from the last day of the
-  month.
-
   XXX: allow a fallback when a day doesn't exist.
   """
 
-  days : set[int]
-  months : Option[set[int]] = None
+  days_in   : InitVar[set[int]]
+  months_in : InitVar[set[int]]   = None
+  months    : Dict[int, set(int)] = field(init=False)
+
+  def __post_init__(self, days_in, months_in=None):
+    self.months = {}
+    if months_in:
+      for m in months_in:
+        dim = lastOfMonth(m, today.year).day
+        self.months[m] = {dim + d if d < 0 else d for d in days_in}
+    else:
+      for m in range(1, 13):
+        dim = lastOfMonth(m, today.year).day
+        self.months[m] = {dim + d if d < 0 else d for d in days_in}
 
   def intersects(self, window):
-    if self.months:
-      return window.month in self.months and window.day in self.days
+    for m in range(window.start.month, window.end.month + 1):
+      s = window.start.day
+      e = window.end.day if window.end.day <= s else lastOfMonth(month).day
+      return not self.months[m].isdisjoint(set(range(s, e)))
     else:
-      return window.day in self.days
+      return any(
+        bool(self.months[m])
+        for m in range(window.start.month, window.end.month + 1)
+      )
 
   def within(self, dt):
-    match self.months:
-      case None:  return dt.day in self.days
-      case month: return (dt.month in self.months) and (dt.day in self.days)
+    return (dt.month in self.months) and (dt.day in self.months[dt.month])
 
   # override here to prevent 1-sample gap at end of day, where the
   # ordinal advances to the next day. the *start* of this interval
@@ -861,7 +872,7 @@ class Monthly(Implicit):
 
   # XXX: this will try to construct invalid dates in some situations.
   def forDays(self, year, month):
-    for day in sorted(self.days):
+    for day in sorted(self.months[month]):
       yield Interval.fromDate(datetime(year, month, day))
 
   def forMonths(self, year):
@@ -873,15 +884,12 @@ class Monthly(Implicit):
   # january first even if the dates would be contiguous.
   def largestIntervalContaining(self, dt):
     if self.months:
-      return Explicit(*self.forMonths(dt.year)).largestIntervalContaining(dt)
+      return Explicit(list(self.forMonths(dt.year))).largestIntervalContaining(dt)
     else:
-      return Explicit(*self.forDays(dt.year, dt.month)).largestIntervalContaining(dt)
+      return Explicit(list(self.forDays(dt.year, dt.month))).largestIntervalContaining(dt)
 
   def invert(self):
-    return Monthly(
-      self.which  ^ set(range(31)),
-      self.months ^ set(range(12)) if self.months else None
-    )
+    raise NotImplemented
 
 @dataclass
 class NthWeekday(Implicit):
@@ -924,6 +932,9 @@ class Shift(Implicit):
   offset : timedelta
   subset : DateSet
 
+  def intersects(self, window):
+    return self.subset.intersects(window + (-self.offset))
+
   def span(self):
     return self.subset.span() + self.offset
 
@@ -950,6 +961,11 @@ def parseDuration(time):
     return int(time[:-1]) * week
   else:
     raise ValueError(f"Invalid Duration: {time}")
+
+def parseDays(days):
+  match days:
+    case [x, "-", y]: return set(range(x, y + 1))
+    case [*days]:     return set(days)
 
 def fromJSON(decoded):
   """Quick-and-dirty DateSet expression DSL evaluator.
@@ -986,11 +1002,11 @@ def fromJSON(decoded):
     case ["weekly", *days]:
       return Weekly({d for d in days})
     case ["monthly", "all", *months]:
-      return Monthly(set(range(1, 32)), months=set(months))
+      return Monthly(set(range(1, 32)), set(months))
     case ["monthly", [*days], [*months]]:
-      return Monthly(set(days), set(months))
+      return Monthly(parseDays(days), set(months))
     case ["monthly", *days]:
-      return Monthly(set(days))
+      return Monthly(parseDays(days))
     case ["nth", n, wd]:
       return NthWeekday(n, wd)
     case ["shift", offset, ds]:
