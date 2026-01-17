@@ -51,6 +51,12 @@ def debug_iter(prefix, it):
   for x in it:
     yield debug(prefix, x)
 
+def count(dt, td):
+  i = dt
+  while True:
+    yield i
+    i += td
+
 def firstOfMonth(month=today.month, year=today.year):
   """Return the date on which the given month begins."""
   return datetime(year, month, 1)
@@ -66,9 +72,8 @@ def daysOfMonth(month=today.month, year=today.year):
     end = datetime(dt.year + 1, 1, 1)
   else:
     end = datetime(dt.year, dt.month + 1, 1)
-  while dt < end:
-    yield dt.day
-    dt += 1 * day
+
+  return itertools.takewhile(lambda dt: dt < end, count(dt, day))
 
 def startOfDay(dt):
   """Return the start of the day referred to by the given timestamp."""
@@ -162,7 +167,10 @@ class Interval:
         case nonempty: yield next
 
     its = iter(intervals)
-    next = its.__next__()
+    try:
+      next = its.__next__()
+    except StopIteration:
+      return ()
 
     for i in its:
       if next.intersects(i):
@@ -1104,7 +1112,7 @@ def preview_month(ds, dt):
   """
 
   def printDay(dt):
-    if ds.intersects(Interval.fromDate(dt)):
+    if ds.within(dt):
       print(f"{reverse(f"{dt.day:2d}")} ", end='')
     else:
       print(f"{dt.day:2d} ", end='')
@@ -1113,13 +1121,12 @@ def preview_month(ds, dt):
 
   print(f"{dt.year}-{dt.month}")
   days = daysOfMonth(dt.year, dt.month)
-  first = datetime(dt.year, dt.month, days.__next__())
+  first = days.__next__()
   print('Mo Tu We Th Fr Sa Su')
   print('   ' * first.weekday(), end = '')
   printDay(first)
   for day in days:
-    dt = dt.replace(day = day)
-    printDay(dt)
+    printDay(day)
   if not dt.weekday() == 6:
     print()
 
@@ -1135,28 +1142,31 @@ def preview_week(
   You can make the increment as large as one day, or as small as one
   minute, but 1 hour is the default increment.
   """
-  headers = ("Time", "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
-  dates = []
+  days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 
-  start = startOfWeek(window.start)
-  end = start + 7 * day
+  i = startOfWeek(window.start)
+  dates = count(i, day)
 
-  h = origin
-  hh = start_of_day
-  while hh < end_of_day:
-    week = [[] for _ in range(8)]
-    week[0] = f"{(h + hh).hour:02d}:{(h + hh).minute:02d}"
-    d = start
-    while d < end:
-      if ds.intersects(Interval.fromStartDuration(d + hh, increment)):
-        week[d.weekday() + 1] = reverse(' ' * 4)
-      else:
-        week[d.weekday() + 1] = ' ' * 4
-      d += day
-    dates.append(week)
-    hh += increment
-
-  print(tabulate.tabulate(dates, headers = headers, tablefmt='simple_outline'))
+  while i < window.end:
+    end = i + 7 * day
+    xxx = []
+    headers = ("Time", *(f"{name} {d.day:02d}" for (name, d) in zip(days, dates)))
+    h = origin
+    hh = start_of_day
+    while hh < end_of_day:
+      week = [[] for _ in range(8)]
+      week[0] = f"{(h + hh).hour:02d}:{(h + hh).minute:02d}"
+      d = i
+      while d < end:
+        if ds.intersects(Interval.fromStartDuration(d + hh, increment)):
+          week[d.weekday() + 1] = reverse(' ' * 7)
+        else:
+          week[d.weekday() + 1] = ' ' * 7
+        d += day
+      xxx.append(week)
+      hh += increment
+    print(tabulate.tabulate(xxx, headers = headers, tablefmt='simple_outline'))
+    i += 7 * day
 
 def agenda(
     # date=None,
