@@ -1096,7 +1096,7 @@ def preview_list(ds, window):
       case Empty(): return ("--", "--")
       case LeftOpen(): return ("-∞", i.end)
       case RightOpen(): return (i.start, "∞")
-      case CLosed(): return (i.start, i.end)
+      case Closed(): return (i.start, i.end)
 
   print(
     tabulate.tabulate(
@@ -1243,10 +1243,10 @@ def agenda(
   # build habit graphs
   print("Habits")
   print(tabulate.tabulate(
-    ((gloss, completion_graph(ds, hist, Interval.fromDate(dt)))
-     for (gloss, ds, hist)
-     in habits.values())
-  ))
+    ((gloss, completion_graph(ds, hist, Closed(dt - 28 * day, dt))))
+    for (gloss, ds, hist)
+    in habits.values())
+  )
   print()
 
   # print the unscheduled tasks
