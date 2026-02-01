@@ -1426,10 +1426,17 @@ function has {
     filter graph_datum "${datum}" exists | query_filter_chain "$@"
 }
 
+# keep only nodes which are definitely tasks
+query_declare_type             is_task filter
+query_declare_default_producer is_task all
+function is_task {
+    graph filter_state NEW TODO WAIT SOMEDAY
+}
+
 # keep nodes states which track tasks.
-query_declare_type             is_actionable filter
-query_declare_default_producer is_actionable all
-function is_actionable { graph is_actionable | query_filter_chain "$@" ; }
+query_declare_type             is_todo filter
+query_declare_default_producer is_todo all
+function is_todo { graph filter_state TODO | query_filter_chain "$@" ; }
 
 # Keep only active nodes that should not be remove from the graph.
 query_declare_type             is_active filter
@@ -1470,7 +1477,7 @@ function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
 # Keep only next actions
 query_declare_type             is_next filter
 query_declare_default_producer is_next all
-function is_next { is_actionable | graph is_next | query_filter_chain "$@" ;}
+function is_next { is_todo | graph is_next | query_filter_chain "$@" ;}
 
 # Keep all isolated graph nodes regadless of state.
 query_declare_type             is_orphan filter
@@ -1508,7 +1515,7 @@ function is_leaf { graph is_leaf | query_filter_chain "$@" ; }
 query_declare_type             is_unassigned filter
 query_declare_default_producer is_unassigned all
 function is_unassigned {
-    is_actionable | graph is_unassigned | query_filter_chain "$@" ;
+    is_todo | graph is_unassigned | query_filter_chain "$@" ;
 }
 
 # Keep only waiting tasks
