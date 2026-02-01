@@ -1762,6 +1762,20 @@ function unschedule {
     database_commit "${SAVED_ARGV}"
 }
 
+# show nodes with a corrupted or invalid schedule
+query_declare_type             invalid_schedule formatter
+query_declare_default_producer invalid_schedule all is_scheduled
+function invalid_schedule {
+    while read id
+    do
+        if graph_datum schedule read "${id}" | _schedule validate &>/dev/null
+        then
+            :
+        else
+            echo "${id}"
+        fi
+    done
+}
 
 # show nodes with a corrupted or invalid completion history
 query_declare_type             invalid_completed formatter
