@@ -1527,7 +1527,7 @@ if __name__ == "__main__":
     case ["in_progress", *args]:   filter_datetime(in_progress, *args)
     case ["is_due", *args]:        filter_window(is_due,      *args)
     case ["complete", *args]:      complete(*args)
-    case ["completed"]:            foreach(read_completion_history)
+    case ["completed", *args]:     foreach(completed, window_args(*args))
     case ["schedule"]:             foreach(read_date_set, 'schedule')
     case ["deadline"]:             foreach(read_date_set, 'deadline')
     case ["classify"]:             foreach(classify_node)
