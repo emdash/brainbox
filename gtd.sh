@@ -1762,6 +1762,22 @@ function unschedule {
     database_commit "${SAVED_ARGV}"
 }
 
+
+# show nodes with a corrupted or invalid completion history
+query_declare_type             invalid_completed formatter
+query_declare_default_producer invalid_completed all has completed
+function invalid_completed {
+    while read id
+    do
+        if echo "${id}" | _schedule completed &>/dev/null
+        then
+            :
+        else
+            echo "${id}"
+        fi
+    done
+}
+
 ## Binary queries *************************************************************
 
 query_declare_type             union binop query

@@ -1061,6 +1061,15 @@ def completion_graph(when, history, window):
       ret += 'o'
   return ret
 
+def completed(window, node):
+  when = read_date_set('schedule', node)
+  history = read_completion_history(node)
+  # XXX: needing to add one second to prevent interval from collapsing
+  # into a single interval, which is most definitely incorrect behavior.
+  #
+  # write a regression test for this and and fix.
+  return completion_graph(when, history, window + 1 * second)
+
 def reverse(s):
   """Use ansi codes to invert video."""
   return f"\x1b[7m{s}\x1b[m"
