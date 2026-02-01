@@ -1339,11 +1339,11 @@ def is_unscheduled(id):
 
 def is_eternal(id):
   """True if a node has a schedule with no end date."""
-  return is_scheduled(id) and not read_date_set(id).span().is_finite()
+  return is_scheduled(id) and not read_date_set("schedule", id).span().is_finite()
 
 def is_temporal(id):
   """True if a task has a schedule with an end date."""
-  return is_scheduled(id) and read_date_set(id).span().is_finite()
+  return is_scheduled(id) and read_date_set("schedule", id).span().is_finite()
 
 def is_complete(window, id):
   """Keep nodes that are completed.
