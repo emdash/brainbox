@@ -1398,13 +1398,91 @@ def is_due(window, tasks):
   """
   raise NotImplemented
 
+def parse_datetime(args):
+  """Parse a list of strings into a date time.
+
+  This supports convenient shorthands for dates.
+  """
+
+  days = {
+    "mo": 0, "tu": 1, "we": 2, "th": 3, "fr": 4, "sa": 5, "su": 6,
+    "mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6,
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+  }
+
+  match args:
+    case []:
+      return today
+    case ["yesterday"]:
+      return startOfDay(today - day)
+    case ["tomorrow"]:
+      return startOfDay(today + day)
+    case ["this", dayName] | [dayName] if dayName.tolower() in days:
+      d = dayName.tolower()
+      if d in days:
+        return startOfWeek(today) + days[d]
+      else:
+        return startOfWeek(today) + int(d)
+    case ["last", dayName]:
+      d = dayName.tolower()
+      if d in days:
+        return startOfWeek(today) - 7 * day + days[dayName.tolower()]
+      else:
+        return startOfWeek(today) - 7 * day + int(d)
+    case ["next", dayName]:
+      d = dayName.tolower()
+      if d in days:
+        return startOfWeek(today) + 7 * day + days[dayName.tolower()]
+      else:
+        return startOfWeek(today) + 7 * day + int(d)
+    case [iso]:
+      return datetime.fromisoformat(iso)
+
+# XXX: rename and marge with parse_window
 def window_args(*args):
-  """Helper function to handle parsing dates and intervals from arguments.
+  """Parse a list of strings into an Interval.
+
+  This supports some conveninet shorthands like "past", "until", and "since".
   """
 
   match args:
     case []:
       return Interval.fromDate(today)
+    case ["until", *end]:
+      return LeftOpen(parse_datetime(end))
+    case ["past", "week"]:
+      return Closed(
+        today - 7 * day,
+        endOfDay(today)
+      )
+    case ["past", "fortnight"]:
+      return Closed(
+        today - 14 * day,
+        endOfDay(today)
+      )
+    case ["past", "month"]:
+      return Closed(
+        prevMonth(today.month).replace(day=today.day),
+        endOfDay(today),
+      )
+    case ["past", duration]:
+      return Closed(
+        today - parseDuration(duration),
+        today
+      )
+    case ["this", "week"]:
+      return Closed(
+        startOfWeek(today),
+        today
+      )
+    case ["since", *start]:
+      return RightOpen(parse_datetime(start))
     case [s]:
       try:
         return parseDuration(str)
@@ -1413,11 +1491,6 @@ def window_args(*args):
     case [start, end]|[start, "-", end]:
       return Interval.fromDate(
         datetime.fromisoformat(start),
-        datetime.fromisoformat(end)
-      )
-    case ["until", end]:
-      return Interval.fromDate(
-        today,
         datetime.fromisoformat(end)
       )
     case _: raise ValueError("Invalid window: {args}")
