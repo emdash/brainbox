@@ -1274,10 +1274,10 @@ def agenda(
   # build habit graphs
   print("Habits")
   print(tabulate.tabulate(
-    ((gloss, completion_graph(ds, hist, Closed(dt - 28 * day, dt))))
+    ((gloss, completion_graph(ds, hist, Closed(dt - 28 * day, dt)))
     for (gloss, ds, hist)
     in habits.values())
-  )
+  ))
   print()
 
   # print the unscheduled tasks
