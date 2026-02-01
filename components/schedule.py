@@ -1307,7 +1307,7 @@ def read_completion_history(id):
   """
   try:
     return set(
-      map(datetime.fromisoformat,
+      map(lambda x: datetime.fromisoformat(x).replace(tzinfo=None),
           map(str.strip, graph.datum_open("completed", id))))
   except ValueError:
     return set()
