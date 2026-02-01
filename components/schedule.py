@@ -89,6 +89,12 @@ def nextMonth(month, year=today.year):
     case 13: return datetime(year = year + 1, month = 1, day=1)
     case m:  return datetime(year = year, month = m, day = 1)
 
+def prevMonth(month, year=today.year):
+  """Return the first day of the month after this one."""
+  match month - 1:
+    case 0: return datetime(year = year - 1, month = 12, day=1)
+    case m: return datetime(year = year, month = m - 1, day=1)
+
 def lastOfMonth(month, year=today.year):
   """Return the last day of the given month."""
   return nextMonth(month, year) - 1 * day
