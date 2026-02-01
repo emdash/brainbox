@@ -2306,30 +2306,34 @@ function link {
     database_commit "${SAVED_ARGV[*]}"
 }
 
-# shortcut for:
-# - capture into bucket
-# - persist
-# - set date (defaults to today)
-function log {
+function log_weight {
     if test "$1" = "--date"
     then
 	local -r d="$2"
 	shift 2
     else
-	local -r d="$(date --iso)"
+	local -r d="$(date -I)"
     fi
 
-    if test -n "$1"
+    local -r id="${1}"
+
+    read -ep "Weight> " weight
+    read -ep "BF(%)> "  bfp   || true
+    read -ep "Notes> "  notes || true
+
+    local entry="${d}|${weight}"
+
+    if test -v bfp
     then
-	local bucket="$1"
-	shift
-    else
-	error "A bucket is required"
+        entry+="|${bfp}"
     fi
 
-    capture -b "${bucket}" "$@"
-    last_captured persist
-    last_captured set_ date "${d}"
+    if test -v notes
+    then
+        entry+="|${notes}"
+    fi
+
+    echo "${entry}" >> graph_datum path progress "${id}"
 }
 
 # remove subtasks
