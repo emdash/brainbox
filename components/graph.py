@@ -321,10 +321,8 @@ def is_orphan():
     has_adjacent(n, e, "incoming")
   ))
 
-def is_actionable():
-  """Return true if a node is a task or other action item."""
-  filter_state("NEW", "TODO", "WAIT", "SOMEDAY")
-
+# XXX: this doesn't work for scheduled dependencies
+# because the task state doesn't change.
 def is_next():
   """True if a task has no active dependencies."""
   filter_nodes_with_edges(
@@ -672,7 +670,6 @@ if __name__ == "__main__":
     "reachable_from": reachable_from,
     "union":          union,
     "filter_state":   filter_state,
-    "is_actionable":  is_actionable,
     "is_leaf":        is_leaf,
     "is_next":        is_next,
     "is_orphan":      is_orphan,
