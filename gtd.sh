@@ -2492,27 +2492,6 @@ function query_builder {
 
 # Agenda **********************************************************************
 
-function __agenda_set_context_filter {
-    if all \
-        | is_context \
-        | summarize -d '|' \
-        | fzf \
-          --header="Filter by Context (Esc to clear)" \
-          --style="full" \
-          --multi \
-          --reverse  \
-          -d '|' \
-          --with-nth="{3}" \
-          --accept-nth="{1}" \
-          --preview="$0 __agenda_preview" \
-        > "$(prefs path 'filter_contexts')"
-    then
-        :
-    else
-        prefs clobber filter_contexts
-    fi
-}
-
 function __agenda_preview {
     local path="$(prefs path filter_contexts)"
     echo -n "Filter: "
@@ -2525,12 +2504,6 @@ function __agenda_preview {
     echo
 
     __agenda_items | cut -d '|' -f 1 | _schedule agenda "${@}"
-}
-
-query_declare_type             agenda_items filter
-query_declare_default_producer agenda_items all
-function agenda_items {
-    is_next | in_progress | is_incomplete | query_filter_chain "${@}"
 }
 
 function __agenda_items {
@@ -2547,49 +2520,10 @@ function __agenda_items {
     fi | summarize -d '|'
 }
 
-function __agenda_wait_for {
-    read -ep "Waiting For> " reason
-    splat "${@}" | wait_for "${reason}"
-}
-
-function __agenda_bindings {
-    local -r rls="reload-sync($0 __agenda_items)"
-    fzf_bind_exec \
-        "ctrl-f" \
-        "Filter By Context" \
-        "$0 __agenda_set_context_filter" \
-        "${rls}"
-
-    fzf_bind_exec   "c"     "Capture"    "$0 capture"                          "${rls}"
-    fzf_bind_sexec  "u"     "Undo"       "$0 undo"                             "${rls}"
-    fzf_bind_sexec  "U"     "Redo"       "$0 redo"                             "${rls}"
-    fzf_bind_sexec  "enter" "Complete"   "$0 splat {+1} | $0 stdin complete"   "${rls}"
-    fzf_bind_exec   "r"     "Reschedule" "$0 splat {+1} | $0 stdin schedule"   "${rls}"
-    fzf_bind_exec   "w"     "Wait For"   "$0 __agenda_wait_for {+1}"           "${rls}"
-    fzf_bind_sexec  "X"     "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "${rls}"
-    fzf_bind_action "q"     "Quit"       "abort"
-}
-
-function __agenda {
-    fzf_menu \
-      "Agenda" \
-      __agenda_bindings \
-      __agenda_items \
-      --multi \
-      --layout="reverse" \
-      --disabled \
-      --query "${*:-all}" \
-      --preview="$0 __agenda_preview {+1}" \
-      --with-nth='{2} {3}' \
-      --print-query \
-      -d '|' \
-    | head -n 1
-}
-
-# show an agenda view with the given nodes
-command_declare agenda
-function agenda {
-    __agenda || true
+query_declare_type             agenda_items filter
+query_declare_default_producer agenda_items all
+function agenda_items {
+    is_next | in_progress | is_incomplete | query_filter_chain "${@}"
 }
 
 # Project-Subtasks Editor *****************************************************
@@ -2690,12 +2624,30 @@ function plan {
 ## Combining multiple specialized modes into a single gui with submenus.
 
 function __interactive_set_context_filter {
-    __agenda_set_context_filter
+    if all \
+        | is_context \
+        | summarize -d '|' \
+        | fzf \
+          --header="Filter by Context (Esc to clear)" \
+          --style="full" \
+          --multi \
+          --reverse  \
+          -d '|' \
+          --with-nth="{3}" \
+          --accept-nth="{1}" \
+          --preview="$0 __agenda_preview" \
+        > "$(prefs path 'filter_contexts')"
+    then
+        :
+    else
+        prefs clobber filter_contexts
+    fi
     exec $0 __interactive
 }
 
 function __interactive_wf {
-    __agenda_wait_for "${@}" || true
+    read -ep "Waiting For> " reason
+    splat "${@}" | wait_for "${reason}"
     exec "$0" __interactive
 }
 
@@ -2786,9 +2738,11 @@ function __interactive_path {
 }
 
 function __interactive_preview {
-    local mode
+    local mode menu
 
     read mode < <(prefs read 'interactive/mode' neighbors)
+    read menu < <(prefs read 'interactive/menu' node)
+
     splat "${@}" > "${DATA_DIR}/selection"
     echo "Mode: ${mode} "
 
@@ -2800,7 +2754,10 @@ function __interactive_preview {
         top="${1}"
     fi
 
-    task_details "${top}"
+    case "${menu}" in
+        agenda) __agenda_preview "${@}";;
+        *) task_details "${top}";;
+    esac
 }
 
 function __interactive_items {
@@ -2898,10 +2855,9 @@ function __interactive_node_submenu {
     fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
-    fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
-    fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
-    fzf_bind_action "w"      "Wait For"     "become($0 __interactive_wf {+1})"  "${rls}"
-    fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
+    # fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
+    # fzf_bind_action "w"      "Wait For"     "become($0 __interactive_wf {+1})"  "${rls}"
+    # fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
 }
 
 function __interactive_nav_submenu {
@@ -2979,6 +2935,16 @@ function __interactive_graph_submenu {
     fzf_bind_action "B" "Clear Bucket"               "become($0 __interactive_bucket --clear)" "${rls}"
 }
 
+function __interactive_agenda_submenu {
+    local -r rls="reload-sync($0 __interactive_items)"
+    fzf_bind_sexec  "enter"  "Complete"   "$0 splat {+1} | $0 stdin complete"   "${rls}"
+    fzf_bind_sexec  "delete" "Drop"       "$0 splat {+1} | $0 stdin drop"       "${rls}"
+    fzf_bind_sexec  "d"      "Defer"      "$0 splat {+1} | $0 stdin defer"      "${rls}"
+    fzf_bind_exec   "s"      "Schedule"   "$0 splat {+1} | $0 stdin schedule"   "${rls}"
+    fzf_bind_sexec  "X"      "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "${rls}"
+    fzf_bind_exec   "w"      "Wait For"   "$0 __interactive_wf {+1}"            "${rls}"
+}
+
 function __interactive_search_bindings {
     fzf_bind_action "backspace"     "--" "backward-delete-char"
     fzf_bind_sexec  "enter"         "--" "$0 __interactive_mode exit-search"
@@ -3015,7 +2981,7 @@ function __interactive_bindings {
     fzf_bind_sexec  "u"          "Undo"            "$0 undo"                   "${rls}"
     fzf_bind_sexec  "U"          "Redo"            "$0 redo"                   "${rls}"
     fzf_bind_action "alt-space"  "Clear Selection" "clear-multi"
-    fzf_bind_action "space"      "Select"          "toggle-select"
+    fzf_bind_action "space"      "Select"          "toggle"
     fzf_bind_action "ctrl-space" "Select All"      "select-all"
 
     # menu system bindings
@@ -3023,17 +2989,20 @@ function __interactive_bindings {
     fzf_bind_sexec  "2"          "--"              "$0 __interactive_mode nav"
     fzf_bind_sexec  "3"          "--"              "$0 __interactive_mode graph"
     fzf_bind_sexec  "4"          "--"              "$0 __interactive_mode view"
+    fzf_bind_sexec  "5"          "--"              "$0 __interactive_mode agenda"
     case "${menu}" in
         node)   __interactive_node_submenu;;
         nav)    __interactive_nav_submenu;;
         graph)  __interactive_graph_submenu;;
         view)   __interactive_view_submenu;;
+        agenda) __interactive_agenda_submenu;;
         all)
             __interactive_node_submenu
             __interactive_nav_submenu
             __interactive_graph_submenu
             __interactive_view_submenu
             __interactive_search_bindings
+            __interactive_agenda_submenu
         ;;
     esac
 
@@ -3049,10 +3018,11 @@ function __interactive_bindings {
 function __interactive_header {
     local tabs
     case "${1}" in
-        node)  tabs="[_ Node] [2 Nav] [3 Graph] [4 View]";;
-        nav)   tabs="[1 Node] [_ Nav] [3 Graph] [4 View]";;
-        graph) tabs="[1 Node] [2 Nav] [_ Graph] [4 View]";;
-        view)  tabs="[1 Node] [2 Nav] [3 Graph] [_ View]";;
+        node)   tabs="[_ Node] [2 Nav] [3 Graph] [4 View] [5 Agenda]";;
+        nav)    tabs="[1 Node] [_ Nav] [3 Graph] [4 View] [5 Agenda]";;
+        graph)  tabs="[1 Node] [2 Nav] [_ Graph] [4 View] [5 Agenda]";;
+        view)   tabs="[1 Node] [2 Nav] [3 Graph] [_ View] [5 Agenda]";;
+        agenda) tabs="[1 Node] [2 Nav] [3 Graph] [4 View] [_ Agenda]";;
         search) tabs="Search Mode";;
         *) debug "wtf" $1;;
     esac
@@ -3204,7 +3174,7 @@ function __interactive_mode {
     fi
 
     # update the header to show the current key bindings.
-    fzf_send "transform-header($0 __interactive_header ${mode})"
+    fzf_send "transform-header($0 __interactive_header ${mode})+refresh-preview"
 }
 
 # Save the current FZF state to disk
