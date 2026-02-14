@@ -226,9 +226,9 @@ function fzf_menu {
 function fzf_send {
     if test "$#" != 0
     then
-        curl -s --unix-socket "${FZF_SOCK}" http -d "$*"
+        curl -s --unix-socket "${FZF_SOCKET}" http -d "$*"
     else
-        curl -s --unix-socket "${FZF_SOCK}" http -d @-
+        curl -s --unix-socket "${FZF_SOCKET}" http -d @-
     fi
 }
 
@@ -3182,7 +3182,7 @@ function __interactive_mode {
 # this is needed for restoring state after executing a full-screen
 # command.
 function __interactive_save_state {
-    curl -s --unix-socket "${FZF_SOCK}" http | prefs write 'interactive/state'
+    curl -s --unix-socket "${FZF_SOCKET}" http | prefs write 'interactive/state'
 }
 
 # Restore current FZF state from disk after executing a fullscreen command.
