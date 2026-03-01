@@ -1330,7 +1330,7 @@ function stdin { cat | query_filter_chain "$@" ; }
 
 ### Query Filters *************************************************************
 
-# output nodes reachable from each node in the input set
+# insert nodes reachable from each node in the input set
 query_declare_type             reachable filter edgeset direction
 query_declare_default_producer reachable from cur
 function reachable {
@@ -1338,6 +1338,19 @@ function reachable {
     local direction="$2"
     shift 2
     graph reachable "${edges}" "${direction}" | query_filter_chain "$@"
+}
+
+# keep only nodes reachable from nodes in the given bucket
+query_declare_type             reachable_from filter edgeset bucket
+query_declare_default_producer reachable_from all
+function reachable_from {
+    local edges="$1"
+    local bucket="$2"
+    local -a roots
+    readarray -t roots < <(from "${bucket}")
+    shift 2
+    splat "${roots[@]}"
+    graph reachable_from "${edges}" outgoing "${roots[@]}" | query_filter_chain "$@"
 }
 
 # output the nodes adjacent to each input node
