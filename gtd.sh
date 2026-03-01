@@ -26,6 +26,9 @@ export NODE_DIR="${STATE_DIR}/nodes"
 export HIST_DIR="${DATA_DIR}/hist/"
 export BUCKET_DIR="${DATA_DIR}/buckets"
 export FZF_SOCKET="${DATA_DIR}/fzf.sock"
+export XDOT_PIPE="$(realpath "${DATA_DIR}/xdot.pipe")"
+# XXX: user config or assume globally installed
+export XDOT_DIR="${HOME}/src/xdot.py"
 
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
@@ -920,10 +923,20 @@ function task_details {
         local source
         read source < <(prefs read "details/graph_nodes" selected)
         echo "Graph Source: ${source}"
-        case "${source}" in
-            selected) chafa < "${nodes_file}";;
-            query)    chafa < "${DATA_DIR}/query_results";;
-        esac
+        if test -e "${XDOT_PIPE}"
+        then
+            case "${source}" in
+                selected) cat "${nodes_file}";;
+                query)    cat "${DATA_DIR}/query_results";;
+            esac | dot > "${XDOT_PIPE}"
+            echo -e '\f' > "${XDOT_PIPE}"
+        else
+            echo "wtf"
+            case "${source}" in
+                selected) chafa < "${nodes_file}";;
+                query)    chafa < "${DATA_DIR}/query_results";;
+            esac
+        fi
     fi
 
     cat "${DATA_DIR}/contents.txt"
@@ -1900,6 +1913,31 @@ function chafa {
     local -r height="${FZF_PREVIEW_LINES:-"${LINES:-24}"}"
     end_filter_chain "$@"
     svg | env chafa -s "$(("${width}" - 2))x$(("${height}" - 10))"
+}
+
+function __xdot_run {
+    if test -e "${XDOT_PIPE}"
+    then
+        error "Socket already exists"
+    else
+        mkfifo "${XDOT_PIPE}"
+        cd "${XDOT_DIR}"
+        if python -m xdot --streaming-mode < "${XDOT_PIPE}"
+        then
+            :
+        else
+            :
+        fi
+        rm -rf "${XDOT_PIPE}"
+        fzf_send "refresh-preview"
+    fi
+}
+
+function xdot_wrapper {
+    debug "got here"
+    __xdot_run &
+    disown
+    __interactive_preview > /dev/null
 }
 
 # select nodes from input set to be placed into the given bucket
@@ -3001,6 +3039,9 @@ function __interactive_bindings {
     fzf_bind_action "alt-space"  "Clear Selection" "clear-multi"
     fzf_bind_action "space"      "Select"          "toggle"
     fzf_bind_action "ctrl-space" "Select All"      "select-all"
+
+    # move graph to external viewer
+    fzf_bind_sexec "ctrl-x"     "XDot"            "$0 xdot_wrapper" "refresh-preview"
 
     # menu system bindings
     fzf_bind_sexec  "1"          "--"              "$0 __interactive_mode node"
