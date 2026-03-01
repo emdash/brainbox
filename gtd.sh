@@ -2868,9 +2868,10 @@ function __interactive_node_submenu {
     fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
-    # fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
-    # fzf_bind_action "w"      "Wait For"     "become($0 __interactive_wf {+1})"  "${rls}"
-    # fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
+    fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
+    fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
+    fzf_bind_action "w"      "Wait For"     "become($0 __interactive_wf {+1})"  "${rls}"
+    fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
 }
 
 function __interactive_nav_submenu {
@@ -2935,16 +2936,16 @@ function __interactive_view_submenu {
 function __interactive_graph_submenu {
     local -r rls="reload-sync($0 __interactive_items)"
     local -r selected="$0 splat {+1} |"
-    fzf_bind_action "c" "Capture"                    "become($0 __interactive_capture)"     "${rls}"
-    fzf_bind_sexec  "s" "Set Source"                 "${selected} $0 stdin into source"     "refresh-preview"
-    fzf_bind_sexec  "t" "Set Target"                 "${selected} $0 stdin into target"     "refresh-preview"
-    fzf_bind_sexec  "a" "Assign Source to Target"    "$0 assign"                            "${rls}"
-    fzf_bind_sexec  "A" "Unassign Source and Target" "$0 unassign"                          "${rls}"
-    fzf_bind_sexec  "S" "Swap Source and Target"     "$0 swap"                              "refresh-preview"
-    fzf_bind_sexec  "d" "Link Source and Target"     "$0 add"                               "${rls}"
-    fzf_bind_sexec  "D" "Unlink Source and Target"   "$0 remove"                            "${rls}"
-    fzf_bind_action "p" "Plan Project"               "become($0 __interactive_plan {1})"    "${rls}"
-    fzf_bind_action "b" "Bucket"                     "become($0 __interactive_bucket {+1})" "${rls}"
+    fzf_bind_action "c" "Capture"                    "become($0 __interactive_capture)"        "${rls}"
+    fzf_bind_sexec  "s" "Set Source"                 "${selected} $0 stdin into source"        "refresh-preview"
+    fzf_bind_sexec  "t" "Set Target"                 "${selected} $0 stdin into target"        "refresh-preview"
+    fzf_bind_sexec  "a" "Assign Source to Target"    "$0 assign"                               "${rls}"
+    fzf_bind_sexec  "A" "Unassign Source and Target" "$0 unassign"                             "${rls}"
+    fzf_bind_sexec  "S" "Swap Source and Target"     "$0 swap"                                 "refresh-preview"
+    fzf_bind_sexec  "d" "Link Source and Target"     "$0 add"                                  "${rls}"
+    fzf_bind_sexec  "D" "Unlink Source and Target"   "$0 remove"                               "${rls}"
+    fzf_bind_action "p" "Plan Project"               "become($0 __interactive_plan {1})"       "${rls}"
+    fzf_bind_action "b" "Bucket"                     "become($0 __interactive_bucket {+1})"    "${rls}"
     fzf_bind_action "B" "Clear Bucket"               "become($0 __interactive_bucket --clear)" "${rls}"
 }
 
@@ -2988,11 +2989,15 @@ function __interactive_bindings {
     fi
 
     # global bindings that appear at the top
-    fzf_bind_action "ctrl-f"     "Filter Contexts" "become($0 __interactive_set_context_filter)" "${rls}"
-    fzf_bind_action "Q"          "Change Query"    "become($0 __interactive_change_query)" "${rls}"
+    fzf_bind_action "ctrl-f"     "Filter Contexts" "become($0 __interactive_set_context_filter)"
+    fzf_bind_action "Q"          "Change Query"    "become($0 __interactive_change_query)"
     fzf_bind_sexec  "ctrl-s,/"   "Search"          "$0 __interactive_mode search"
-    fzf_bind_sexec  "u"          "Undo"            "$0 undo"                   "${rls}"
-    fzf_bind_sexec  "U"          "Redo"            "$0 redo"                   "${rls}"
+
+    # global undo / redo
+    fzf_bind_sexec  "u"          "Undo"            "$0 undo" "${rls}"
+    fzf_bind_sexec  "U"          "Redo"            "$0 redo" "${rls}"
+
+    # global selection
     fzf_bind_action "alt-space"  "Clear Selection" "clear-multi"
     fzf_bind_action "space"      "Select"          "toggle"
     fzf_bind_action "ctrl-space" "Select All"      "select-all"
