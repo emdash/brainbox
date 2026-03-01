@@ -3278,6 +3278,16 @@ function interactive {
     __interactive node
 }
 
+# Things built on interactive *************************************************
+
+function reassign {
+    gtd is_context choose into old
+    gtd is_context choose into new
+    gtd from old adjacent contexts outgoing \
+        union reachable_from contexts new \
+        interactive
+}
+
 # Syntax-directed completion **************************************************
 
 # bash completion hook
