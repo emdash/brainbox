@@ -25,7 +25,7 @@ export STATE_DIR="${DATA_DIR}/state"
 export NODE_DIR="${STATE_DIR}/nodes"
 export HIST_DIR="${DATA_DIR}/hist/"
 export BUCKET_DIR="${DATA_DIR}/buckets"
-export FZF_SOCKET="${DATA_DIR}/fzf.sock"
+export FZF_SOCKET="$(realpath "${DATA_DIR}/fzf.sock")"
 export XDOT_PIPE="$(realpath "${DATA_DIR}/xdot.pipe")"
 # XXX: user config or assume globally installed
 export XDOT_DIR="${HOME}/src/xdot.py"
@@ -1922,12 +1922,10 @@ function __xdot_run {
     else
         mkfifo "${XDOT_PIPE}"
         cd "${XDOT_DIR}"
-        if python -m xdot --streaming-mode < "${XDOT_PIPE}"
-        then
-            :
-        else
-            :
-        fi
+        python -m xdot --streaming-mode < "${XDOT_PIPE}" | while read id
+        do
+            __set_selection_to "${id}"
+        done || true
         rm -rf "${XDOT_PIPE}"
         fzf_send "refresh-preview"
     fi
@@ -3234,6 +3232,24 @@ function __interactive_mode {
 
     # update the header to show the current key bindings.
     fzf_send "transform-header($0 __interactive_header ${mode})+refresh-preview"
+}
+
+function __get_index_for_id {
+    local -r id="${1}"
+    curl -s --unix-socket "${FZF_SOCKET}" http \
+      | jq -r '.matches[] | select(.text | startswith($id)) | .index' \
+        --arg id "${id}"
+}
+
+function __set_selection_to {
+    local -r id="${1}"
+    if read pos < <(__get_index_for_id "${id}")
+    then
+        debug "id: ${id}, pos: ${pos}"
+        fzf_send "pos($(( "${pos}" + 1 )))"
+    else
+        debug "err"
+    fi
 }
 
 # Save the current FZF state to disk
