@@ -3235,8 +3235,8 @@ function __interactive_mode {
 
 function __get_index_for_id {
     local -r id="${1}"
-    curl -s --unix-socket "${FZF_SOCKET}" http \
-      | jq -r '.matches[] | select(.text | startswith($id)) | .index' \
+    curl -s --unix-socket "${FZF_SOCKET}" 'http://localhost?limit=10000' \
+      | jq '.matches[] | select(.text | startswith($id)) | .index' \
         --arg id "${id}"
 }
 
