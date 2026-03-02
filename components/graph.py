@@ -550,7 +550,7 @@ def dot_edge(u, v, style, color):
 
 def dot_edges(edges, nodes, color):
   """Format the given edge sets to stdout"""
-  for e in edges:
+  for e in sorted(edges):
     match e:
       case (u, v):
         if edge_contained(u, v, nodes):
@@ -627,9 +627,7 @@ def dot(*selection):
     case invalid:
       raise ValueError(f"Invalid mode: {invalid}")
 
-  # draw selection as a cluster, regardless of bucket style
   nodes |= selected
-  dot_subgraph("Selection", selection)
 
   # show implicit edges from source and target
   source = bucket_list("source")
@@ -651,6 +649,9 @@ def dot(*selection):
 
   if show_contexts:
     dot_edges(edge_list("contexts"), nodes, "green")
+
+  # draw selection as a cluster, regardless of bucket style
+  dot_subgraph("Selection", selection)
 
   print("}")
 
