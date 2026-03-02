@@ -2520,7 +2520,6 @@ function __query_builder_bindings {
     fzf_bind_action "change" "--"   "reload-sync($0 __query_builder_items {q})"
     fzf_bind_sexec  "focus"  "--"   "echo {1} | $0 stdin into cur"
     fzf_bind_action "enter"  "Accept" "accept-non-empty"
-    __graph_bindings
 }
 
 function query_builder {
