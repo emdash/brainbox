@@ -931,7 +931,6 @@ function task_details {
             esac | dot > "${XDOT_PIPE}"
             echo -e '\f' > "${XDOT_PIPE}"
         else
-            echo "wtf"
             case "${source}" in
                 selected) chafa < "${nodes_file}";;
                 query)    chafa < "${DATA_DIR}/query_results";;
@@ -1915,29 +1914,6 @@ function chafa {
     svg | env chafa -s "$(("${width}" - 2))x$(("${height}" - 10))"
 }
 
-function __xdot_run {
-    if test -e "${XDOT_PIPE}"
-    then
-        error "Socket already exists"
-    else
-        mkfifo "${XDOT_PIPE}"
-        cd "${XDOT_DIR}"
-        python -m xdot --streaming-mode < "${XDOT_PIPE}" | while read id
-        do
-            __set_selection_to "${id}"
-        done || true
-        rm -rf "${XDOT_PIPE}"
-        fzf_send "refresh-preview"
-    fi
-}
-
-function xdot_wrapper {
-    debug "got here"
-    __xdot_run &
-    disown
-    __interactive_preview > /dev/null
-}
-
 # select nodes from input set to be placed into the given bucket
 query_declare_type             goto selection "${BUCKET_OPTS}" bucket
 query_declare_default_producer goto all
@@ -2671,6 +2647,37 @@ function plan {
 
 ## Combining multiple specialized modes into a single gui with submenus.
 
+# start xdot in streaming mode, reading from the xdot named pipe.
+#
+# reads from xdot stdout so that user interaction can be proxied back
+# to FZF.
+function __interactive_xdot_wrapper {
+    if test -e "${XDOT_PIPE}"
+    then
+        error "Socket already exists"
+    else
+        mkfifo "${XDOT_PIPE}"
+        cd "${XDOT_DIR}"
+        python -m xdot --streaming-mode < "${XDOT_PIPE}" | while read id
+        do
+            __interactive_set_position "${id}"
+        done || true
+        rm -rf "${XDOT_PIPE}"
+        fzf_send "refresh-preview"
+    fi
+}
+
+# start the xdot wrapper as a background process, detaching from
+# parent shell.
+function __interactive_xdot_run {
+    debug "got here"
+    __interactive_xdot_wrapper &
+    disown
+    # this will trigger a write to the pipe, xdot process will hang
+    # until the first graph is written to the pipe.
+    __interactive_preview > /dev/null
+}
+
 function __interactive_set_context_filter {
     if all \
         | is_context \
@@ -3038,7 +3045,7 @@ function __interactive_bindings {
     fzf_bind_action "ctrl-space" "Select All"      "select-all"
 
     # move graph to external viewer
-    fzf_bind_sexec "ctrl-x"     "XDot"            "$0 xdot_wrapper" "refresh-preview"
+    fzf_bind_sexec "ctrl-x"     "XDot"            "$0 __interactive_xdot_run" "refresh-preview"
 
     # menu system bindings
     fzf_bind_sexec  "1"          "--"              "$0 __interactive_mode node"
@@ -3233,16 +3240,31 @@ function __interactive_mode {
     fzf_send "transform-header($0 __interactive_header ${mode})+refresh-preview"
 }
 
-function __get_index_for_id {
+# get the current state from FZF
+#
+# XXX: this is currently limited to an arbitrary 10k elements.
+function __interactive_get_state {
+    curl \
+        -s \
+        --unix-socket \
+        "${FZF_SOCKET}" \
+        'http://localhost?limit=10000'
+}
+
+# get the index of the id within the given FZF state
+function __interactive_get_index_for_id {
     local -r id="${1}"
-    curl -s --unix-socket "${FZF_SOCKET}" 'http://localhost?limit=10000' \
+    __interactive_get_state \
       | jq '.matches[] | select(.text | startswith($id)) | .index' \
         --arg id "${id}"
 }
 
-function __set_selection_to {
+# set the FZF cursor position to the selection to the id given in the
+# first argument.
+function __interactive_set_position {
     local -r id="${1}"
-    if read pos < <(__get_index_for_id "${id}")
+    debug "${FZF_SOCKET}" "${XDOT_PIPE}"
+    if read pos < <(__interactive_get_index_for_id "${id}")
     then
         debug "id: ${id}, pos: ${pos}"
         fzf_send "pos($(( "${pos}" + 1 )))"
@@ -3256,7 +3278,7 @@ function __set_selection_to {
 # this is needed for restoring state after executing a full-screen
 # command.
 function __interactive_save_state {
-    curl -s --unix-socket "${FZF_SOCKET}" http | prefs write 'interactive/state'
+    __interactive_get_state | prefs write 'interactive/state'
 }
 
 # Restore current FZF state from disk after executing a fullscreen command.
