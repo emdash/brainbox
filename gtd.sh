@@ -1585,6 +1585,13 @@ function subtasks {
     done | query_filter_chain "${@}"
 }
 
+# list nodes with broken dependencies
+query_declare_type             dangling filter
+query_declare_default_producer dangling all
+function dangling {
+    graph dangling dependencies | query_filter_chain "$@"
+}
+
 # Schedule queries ************************************************************
 
 # invoke schedule component with preferences exported to environment.

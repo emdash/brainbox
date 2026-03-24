@@ -344,8 +344,8 @@ def is_unassigned():
   )
 
 def flipped(edges):
-  for (u, v) in edges:
-    yield (v, u)
+  for (u, v, *rest) in edges:
+    yield (v, u, *rest)
 
 def adjacency_list(edges, direction):
   """Build forward edge adjacency list."""
@@ -356,8 +356,11 @@ def adjacency_list(edges, direction):
     case invalid: raise ValueError(f"{invalid} is not one of incoming or outgoing")
 
   ret = {id: set() for id in nodes()}
-  for (u, v) in edges:
-    ret[u].add(v)
+  for (u, v, *rest) in edges:
+    try:
+      ret[u].add(v)
+    except KeyError:
+      debug(f"Dangling reference to node {u}")
   return ret
 
 def reachable_from(edges, direction, *nodes):
@@ -369,10 +372,17 @@ def reachable_from(edges, direction, *nodes):
   def rec(n):
     if n not in mem:
       ret = {n}
-      for a in adj[n]:
-        ret |= rec(a)
-      mem[n] = ret
-    return mem[n]
+      try:
+        for a in adj[n]:
+          ret |= rec(a)
+          mem[n] = ret
+      except KeyError:
+        debug(f"Dangling reference to node {n}")
+    try:
+      return mem[n]
+    except KeyError:
+      debug(f"Dangling reference to node {n}")
+      return set()
 
   reachable = reduce(set.__ior__, (rec(n) for n in nodes))
   filter_nodes(lambda n: n in reachable)
@@ -407,6 +417,14 @@ def reachable(edges, direction):
       if subtask not in seen:
         seen.add(subtask)
         print(subtask)
+
+def dangling(edges):
+  """List edges pointing to dangling nodes"""
+  existing = set(nodes())
+  for (u, v, *rest) in edge_list(edges):
+    match (u not in existing, v not in existing):
+      case (True, False): print(v)
+      case (False, True): print(u)
 
 ## Data #################################################################
 
@@ -681,5 +699,6 @@ if __name__ == "__main__":
     "dot":            dot,
     "touches":        touches,
     "contained":      contained,
-    "summary":        summary
+    "summary":        summary,
+    "dangling":       dangling
   }[sys.argv[1]](*sys.argv[2:])
