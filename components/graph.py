@@ -419,12 +419,21 @@ def reachable(edges, direction):
         print(subtask)
 
 def dangling(edges):
-  """List edges pointing to dangling nodes"""
+  """List nodes still linked to deleted nodes."""
   existing = set(nodes())
   for (u, v, *rest) in edge_list(edges):
     match (u not in existing, v not in existing):
       case (True, False): print(v)
       case (False, True): print(u)
+
+def dangling_subtasks():
+  """Keep nodes which have subtasks referring to deleted nodes."""
+  existing = set(nodes())
+
+  def has_dangling_subtask(node):
+    return any(st not in existing for st in get_subtasks(node))
+
+  return filter_nodes(has_dangling_subtask)
 
 ## Data #################################################################
 
@@ -700,5 +709,5 @@ if __name__ == "__main__":
     "touches":        touches,
     "contained":      contained,
     "summary":        summary,
-    "dangling":       dangling
+    "dangling":       dangling_subtasks
   }[sys.argv[1]](*sys.argv[2:])

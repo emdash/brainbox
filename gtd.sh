@@ -1587,9 +1587,9 @@ function subtasks {
 
 # list nodes with broken dependencies
 query_declare_type             dangling filter
-query_declare_default_producer dangling all
+query_declare_default_producer dangling all is_project
 function dangling {
-    graph dangling dependencies | query_filter_chain "$@"
+    graph dangling | query_filter_chain "$@"
 }
 
 # Schedule queries ************************************************************
