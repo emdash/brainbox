@@ -1052,6 +1052,11 @@ function make_context_node {
     echo "CONTEXT" | task_state write "$1"
 }
 
+# mark the given node as area of focus
+function make_focus {
+    echo "FOCUS" | task_state write "$1"
+}
+
 # An Embedded DSL for Queries *************************************************
 
 
@@ -1472,6 +1477,7 @@ function is_active {
         TODO \
         WAITING \
         PERSIST \
+        FOCUS \
         CONTEXT \
         SOMEDAY \
     | query_filter_chain "$@"
@@ -1519,6 +1525,13 @@ query_declare_type             is_persistent filter
 query_declare_default_producer is_persistent all
 function is_persistent {
     graph filter_state PERSIST | query_filter_chain "$@"
+}
+
+# Keeop only tasks marked as FOCUS
+query_declare_type             is_focus filter
+query_declare_default_producer is_focus all
+function is_focus {
+    graph filter_state FOCUS | query_filter_chain "$@"
 }
 
 # Keep only tasks which are considered projects
@@ -2067,6 +2080,15 @@ query_declare_default_producer persist from target
 function persist {
     end_filter_chain "$@"
     map task_persist
+    database_commit "${SAVED_ARGV[*]}"
+}
+
+# promote each node to Area of Focus (FOCUS)
+query_declare_type             focus update
+query_declare_default_producer focus from target
+function focus {
+    end_filter_chain "$@"
+    map make_focus
     database_commit "${SAVED_ARGV[*]}"
 }
 
@@ -2768,7 +2790,7 @@ function __interactive_triage {
         fi
 
         # choose an area of focus
-        if all | is_persistent | choose -m | into source
+        if all | is_focus | choose -m | into source
         then
             add
         fi
@@ -2917,6 +2939,7 @@ function __interactive_node_submenu {
     fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
     fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
+    fzf_bind_sexec  "F"      "Make Focus"   "${selected} $0 stdin focus"        "${rls}"
     fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
     fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
     fzf_bind_action "w"      "Wait For"     "become($0 __interactive_wf {+1})"  "${rls}"
