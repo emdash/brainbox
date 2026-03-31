@@ -369,20 +369,13 @@ def reachable_from(edges, direction, *nodes):
   # Recursively-construct reachability map.
   adj = adjacency_list(edges, direction)
   mem = {}
+
   def rec(n):
     if n not in mem:
-      ret = {n}
-      try:
-        for a in adj[n]:
-          ret |= rec(a)
-          mem[n] = ret
-      except KeyError:
-        debug(f"Dangling reference to node {n}")
-    try:
-      return mem[n]
-    except KeyError:
-      debug(f"Dangling reference to node {n}")
-      return set()
+      mem[n] = {n}
+      for a in adj[n]:
+        mem[n] |= rec(a)
+    return mem[n]
 
   reachable = reduce(set.__ior__, (rec(n) for n in nodes))
   filter_nodes(lambda n: n in reachable)
@@ -418,10 +411,10 @@ def reachable(edges, direction):
         seen.add(subtask)
         print(subtask)
 
-def dangling(edges):
+def dangling_contexts():
   """List nodes still linked to deleted nodes."""
   existing = set(nodes())
-  for (u, v, *rest) in edge_list(edges):
+  for (u, v, *rest) in edge_list("contexts"):
     match (u not in existing, v not in existing):
       case (True, False): print(v)
       case (False, True): print(u)
@@ -434,6 +427,11 @@ def dangling_subtasks():
     return any(st not in existing for st in get_subtasks(node))
 
   return filter_nodes(has_dangling_subtask)
+
+def dangling(*args):
+  match args:
+    case ["subtasks", *rest]: return dangling_subtasks(*rest)
+    case ["contexts", *rest]: return dangling_contexts(*rest)
 
 ## Data #################################################################
 
@@ -712,5 +710,5 @@ if __name__ == "__main__":
     "touches":        touches,
     "contained":      contained,
     "summary":        summary,
-    "dangling":       dangling_subtasks
+    "dangling":       dangling
   }[sys.argv[1]](*sys.argv[2:])
