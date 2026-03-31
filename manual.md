@@ -67,20 +67,20 @@ Or, you can `capture` the output of a command:
 To see the tasks you've added:
 
 	gtd inbox summarize
-	
+
 To mark interactively mark tasks as completed, droped, or defered:
 
 	gtd choose complete
 	gtd choose drop
 	gtd choose defer
-	
+
 To see all your tasks, including inactive tasks:
 
 	gtd summarize
-	
+
 GtdGraph uses `fzf` for interactive selection.
 
-- By default, `fzf` uses the `tab` key to select nodes. 
+- By default, `fzf` uses the `tab` key to select nodes.
 - Press `<enter>` to accept the selection.
 - Use `Ctrl-C` to cancel the entire operation.
 
@@ -152,7 +152,7 @@ query.
 List the history and commit id of each command which has altered the
 database.
 
-### `home` 
+### `home`
 
 Unset the current node.
 
@@ -208,8 +208,8 @@ You can try the following examples on a sample database:
 
 ### Viewing your *Inbox* ###
 
-	gtd inbox summarize	
- 
+	gtd inbox summarize
+
 ### Triaging your Inbox
 
 **TBD**: rework this example
@@ -217,7 +217,7 @@ You can try the following examples on a sample database:
 ### Reviewing your *Next Actions* ###
 
 	gtd is_next summarize
-	
+
 *Key Concept*: The entire command is a *query* consisting of two
 *query commands*.
 
@@ -243,7 +243,7 @@ Print a summary of *next actions* for the `"Kitchen Remodel"` project.
 requires an *argument*. This *argument* may be:
 
 - a single unquoted word
-- a double-quoted string 
+- a double-quoted string
 - a single-quoted string
 
 The argument is interpreted as a regex pattern as interpreted by
@@ -266,7 +266,7 @@ are all simply *nodes* in a *graph*.
 In the remainder of this document:
 
 - *task* refers to a *node* used as a task, in the GTD sense.
-- *context* refers to a *node* used as a context, in the GTD sense 
+- *context* refers to a *node* used as a context, in the GTD sense
 - *project* refers to a *node* used as a project, in the GTD sense.
 - *node* is used when the distinction is irrelevant.
 
@@ -276,7 +276,7 @@ GtdGraph.
 ### Projects and Tree Formatting ###
 
 	gtd is_project choose -
-	
+
 Interactively select a single *project* from the database, and print
 its ID.
 
@@ -366,7 +366,7 @@ This will mark every node in the bucket named `trash` as
   *bucket*. It may only appear at the beginning of a query.
 - `drop` is a *query consumer*, which alters the *task state* of the
   *input set*.
-  
+
 *Key Concept*: Nodes have *state*, which is used by certain *query
 filters* to determine visibility.
 
@@ -380,7 +380,7 @@ will appear in unfiltered output.
 	gtd choose into source
 	gtd choose into target
 	gtd add
-	
+
 Choose a *project*. Then choose one or more *subtasks*. Finally, add
 the *subtasks* tasks to the *project*.
 
@@ -392,7 +392,7 @@ Link the task labeled `"buy milk"` to the context labeled `"Grocery
 Store"`.
 
 	gtd search "Grocery Store" assigned is_next summarize
-	
+
 Show the current shopping list.
 
 ### Breaking Links
@@ -409,7 +409,7 @@ TBD
 for flexible filtering.
 
 	gtd search "Errands" is_next summarize
-	
+
 This will show all the *Errands* that can be done right now. Note that
 this does not include the *Grocery Store* items we added in the
 previous section. Let's fix that:
@@ -417,12 +417,12 @@ previous section. Let's fix that:
 	gtd search "Grocery Store" into target
 	gtd search Errands into source
 	gtd link context
-	
+
 Find the context named "Grocery Store", and add it as a subcontext of
 "Errands".
 
 	gtd search "Errands" is_next summarize
-	
+
 Note that the shopping list now appears in the output.
 
 ### Associating Tasks and Data
@@ -431,20 +431,20 @@ You can store anything you want inside a graph node. Lets say you
 suddenly have an idea for a blog post.
 
 	gtd capture "Blogpost about frobulated mcguffins"
-	
+
 Later, you triage your inbox, and assign this task to a bucket for
 pending posts:
 
 	gtd inbox search "frobulated" into posts
-	
+
 Now you want to actually write the post:
 
 	gtd from posts choose into current_post
 	gtd from current_post datum post mkdir
 	gtd from current_post datum post/post.md edit
-	
+
 This will bring up the posts contents in your `"${EDITOR}"`.
-	
+
 *Key Concept*: Graph nodes may contain *data*. *Data* is
 plural. *Datum* is the singular form of *data*.
 
@@ -461,11 +461,11 @@ found the *perfect* illustration, and the artist has given you
 permission to use it. A copy now resides in your downloads folder:
 
 	gtd from current_post datum post cp ~/Downloads/mcguffin.svg
-	
+
 This will copy `mcguffin.svg` alongside your `post.md` file.
 
 	pushd "$(gtd from current_post datum post path)"
-	
+
 This will navigate directly to the `post` subdirectory within your
 database. When you are finished, you can return to where you started
 with `popd`.
@@ -478,12 +478,12 @@ whenever the database updates.
 	gtd follow inbox summarize &
 	gtd capture "I added something to the database"
 	gtd undo
-	
+
 Notice the query is reprinted each time. This is particularly useful
 in conjunction with the `dot` query consumer:
 
 *key concepts* Live queries get re-run wach time the database changes.
-	
+
 Live queries are the exception to rule of "at most one `gtd` process
 operating on the database" at a time. This is is because they are
 synchronized to occur after a successful database commit, ensuring
@@ -506,16 +506,16 @@ visual representation of your database from time to time. The `dot`
 understood by graphviz:
 
 	gtd dot
-	
+
 If you have graphviz installed, can view this directly:
-	
+
 	gtd dot | dot -Tx11
 
 The `dot` *query consumer* can be combined with *filters*, as with
 `summarize`. For example:
 
 	gtd search "Kitchen Remodel" subtasks dot | dot -Tx11
-	
+
 This will limit the output to subtasks of the "Kitchen Remodel"
 project.
 
@@ -530,26 +530,26 @@ input, you can use the `visualize` command instead.
 
 	gtd inbox into live
 	gtd visualize from live
-	
+
 This creates a *live query* which starts with the current contents of
 the inbox. To see your next-actions instead. *Note*: The `visualize`
 prefix implies the `dot` query consumer, and so the query may not
 contain any query consumers.
 
 Try changing one of the nodes:
-	
+
 	gtd inbox choose activate
-	
+
 You will see the color of the item change. You can change the set of
 nodes visualized in one of two ways: either by replacing the bucket
 contents...
 
 	gtd is_next into live
-	
+
 ...or by specifying a new query directly.
 
 	gtd visualize is_next
-	
+
 The choice depends on:
 
 - whether you want nodes which no longer satisfy the query to remain visible
@@ -558,7 +558,7 @@ The choice depends on:
 Node colors:
 
 - light grey: active nodes
-- muted grey: inactive 
+- muted grey: inactive
 - green: persistent nodes
 - hot pink: inbox nodes
 - off-wite: deferred nodes
@@ -600,7 +600,7 @@ database.
 | `inbox`         | alias for `all is_new`                                        |
 | `last_captured` | output the id of the last captured node                       |
 | `null`          | output an empty set                                           |
-	
+
 
 ## Filters ##
 
@@ -619,7 +619,8 @@ database.
 | `is_new`                                                     | keep only nodes with status NEW                                                    |
 | `is_next`                                                    | keep only nodes considered *next actions*                                          |
 | `is_orphan`                                                  | keep only orphaned nodes                                                           |
-| `is_persistent`                                              | keep only nodes with status PERSIST                                                |
+| `is_focus`                                                   | keep only nodes with status FOCUS                                                  |
+| `is_info`                                                    | keep only nodes with status INFO                                                   |
 | `is_project`                                                 | keep only nodes with at least one subtask and at least one supertask.              |
 | `is_root`                                                    | keep only nodes which have no supertask.                                           |
 | `is_unassigned`                                              | keep only nodes not assigned to any context                                        |
@@ -660,7 +661,7 @@ Updating Consumers:
 | `drop`                                          | mark tasks as DROPPED                                                         |
 | `edit` [ `--sequential` ]                       | invoke `${EDITOR}` on each node, simultaneously or sequentially.              |
 | `goto`                                          | choose a single node from the input to become the new current node            |
-| `persist`                                       | mark tasks as PERSIST                                                         |
+| `remember`                                      | mark tasks as INFO                                                            |
 | `triage` [ bucket... ]                          | interactively distribute tasks into buckets.                                  |
 
 # Appendix B: Recovering from Database Corruption
@@ -677,15 +678,15 @@ undo`, and then simply repeat the offending command, altering as
 appropriate.
 
 If a command exits prematurely, leaving the working tree dirty, you
-can manually commit any changes via 
-	
+can manually commit any changes via
+
 	gtd database_commit <message>
-	
+
 If this is not enough, then you can directly modify the git repository
 via:
-	
+
 	gtd database_git ...
-	
+
 This is a wrapper command, which sets the git directory and working
 tree as appropriate. Any arguments are forwarded directly to
 `git`. Knowledge of the `git` version control system is

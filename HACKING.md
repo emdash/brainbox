@@ -246,40 +246,47 @@ file, whose contents is one of:
 - `NEW`
 - `TODO`
 - `DONE`
-- `WAITING`
+- `WAIT`
 - `SOMEDAY`
 - `DROPPED` *excuse*
-- `SCHEDULED` *pattern*
-- `PERSIST`
+- `REPEAT` *pattern*
+- `INFO`
+- `FOCUS`
 - `CONTEXT`
 
-`NEW` and `TODO` indicate active nodes. The `capture` command creates
+`NEW` indicates an untriaged item that has been newly-captured. The
+`inbox` filter will list such items. The `capture` command creates
 nodes with status `NEW` in order to easily filter them for later
 triage.
 
-`COMPLETED` indicates a node should be ignored except for time tracking
+`TODO` indicates a triaged, active node. If a `schedule` datum exists,
+it controls the visibility of the item in the schedule.
+
+`DONE` indicates a node should be ignored except for time tracking
 purposes.
 
-`SCHEDULED` indicates a node should be ignored until or unless the
-specified pattern matches the current (or given) date. Scheduled nodes
-have the following additional data:
-- `completions` - list of timestamps on which the task was completed
-- `pattern` - the date expression which determines the task's deadline
-  / notification window.
+`REPEAT` indicates a node is a template for recurring events,
+instances of which should be created according to the `schedule`
+datum.
 
 `SOMEDAY` indicates a node should be ignored indefinitely, except for
-Someday/Maybe reports.
+Someday/Maybe reports. If a `schedule` datum exists, then this node is
+considered "snoozed".
 
 `DROPPED` indicates a node should be ignored, where the
 **not-yet-implemented** *excuse* is an aribtrary string. This is for
 your own benefit, and may be left blank. A lengthy excuse may be
 written on subsequent lines.
 
-`PERSIST` indicates a node that is expected to remain in the graph
-forever. Nodes used primarily as *contexts* and / or to store
-reference information that might be shared between tasks. You can use
-`is_persistent` as a general query filter when you're specifically
-looking for general information.
+`INFO` Indicates knowledge to be retained rather than an action to be
+performed. If a `schedule` datum exists, then it will appear in the
+agenda view according to the pattern of repetition. Info items linked
+to TODO items will be shown in the item summary. Info item
+links are not considered blocking.
+
+`FOCUS` indicates a node that is expected to remain in the graph
+indefinitely as an "Area of Focus". `make_focus`, `focus`, and
+`is_focus` operate on this node state.
 
 `CONTEXT` indicates a node that is used as a task context. This helps
 with search filtering to narrow down the scope of context assignments.

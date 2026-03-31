@@ -624,7 +624,7 @@ function test_is_active {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
 
-    for state in NEW TODO WAITING PERSIST CONTEXT SOMEDAY
+    for state in NEW TODO WAITING INFO FOCUS CONTEXT SOMEDAY
     do
         echo "${state}" | gtd task_state write fake-uuid
         assert_true test "$(gtd is_active)" = fake-uuid

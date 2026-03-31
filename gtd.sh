@@ -1042,9 +1042,9 @@ function task_wait {
     echo "${reason}" | graph_datum reason write "${id}"
 }
 
-# mark the given node as persistent
-function task_persist {
-    echo "PERSIST" | task_state write "$1"
+# mark the given node as factoid to be remembered
+function make_info {
+    echo "INFO" | task_state write "$1"
 }
 
 # mark the given node as context
@@ -1476,7 +1476,7 @@ function is_active {
         NEW \
         TODO \
         WAITING \
-        PERSIST \
+        INFO \
         FOCUS \
         CONTEXT \
         SOMEDAY \
@@ -1520,11 +1520,11 @@ query_declare_type             single_tasks filter
 query_declare_default_producer single_tasks all
 function single_tasks { is_orphan | is_next "${@}"; }
 
-# Keep only tasks in state PERSIST
-query_declare_type             is_persistent filter
-query_declare_default_producer is_persistent all
-function is_persistent {
-    graph filter_state PERSIST | query_filter_chain "$@"
+# Keep only tasks in state INFO
+query_declare_type             is_info filter
+query_declare_default_producer is_info all
+function is_info {
+    graph filter_state INFO | query_filter_chain "$@"
 }
 
 # Keeop only tasks marked as FOCUS
@@ -1599,10 +1599,12 @@ function subtasks {
 }
 
 # list nodes with broken dependencies
-query_declare_type             dangling filter
+query_declare_type             dangling filter edgeset
 query_declare_default_producer dangling all is_project
 function dangling {
-    graph dangling | query_filter_chain "$@"
+    edges="${1}"
+    shift
+    graph dangling "${edges}" | query_filter_chain "$@"
 }
 
 # Schedule queries ************************************************************
@@ -2075,11 +2077,11 @@ function edit {
 }
 
 # persist each task
-query_declare_type             persist update
-query_declare_default_producer persist from target
-function persist {
+query_declare_type             remember update
+query_declare_default_producer remember from target
+function remember {
     end_filter_chain "$@"
-    map task_persist
+    map make_info
     database_commit "${SAVED_ARGV[*]}"
 }
 
@@ -2938,7 +2940,7 @@ function __interactive_node_submenu {
     fzf_bind_action "t"      "Triage"       "become(${selected} $0 __interactive_triage)" "${rls}"
     fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
-    fzf_bind_sexec  "P"      "Persist"      "${selected} $0 stdin persist"      "${rls}"
+    fzf_bind_sexec  "r"      "Remember"     "${selected} $0 stdin remember"     "${rls}"
     fzf_bind_sexec  "F"      "Make Focus"   "${selected} $0 stdin focus"        "${rls}"
     fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
     fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"

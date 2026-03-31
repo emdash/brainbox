@@ -546,7 +546,7 @@ def dot_state_colors(state):
     case "DROPPED": return ("#FFDDDD",  "#FF9999")
     case "WAITING": return ("red",      "black"  )
     case "SOMEDAY": return ("#DDAAFF",  "black"  )
-    case "PERSIST": return ("gold",     "black"  )
+    case "INFO":    return ("gold",     "black"  )
     case "FOCUS":   return ("green",    "black"  )
     case "CONTEXT": return ("#aaFFdd",  "black"  )
     case _:         return ("grey95",   "grey50" )
