@@ -637,20 +637,20 @@ function test_is_active {
     done
 }
 
-function test_is_actionable {
+function test_is_todo {
     gtd init
     gtd graph_node_create fake-uuid > /dev/null
 
-    for state in NEW TODO
+    for state in TODO
     do
         echo "${state}" | gtd task_state write fake-uuid
-        assert_true test "$(gtd is_actionable)" = fake-uuid
+        assert_true test "$(gtd is_todo)" = fake-uuid
     done
 
-    for state in DONE WAITING DROPPED
+    for state in NEW WAITING INFO FOCUS CONTEXT SOMEDAY
     do
         echo "${state}" | gtd task_state write fake-uuid
-        assert_true test -z "$(gtd is_actionable)"
+        assert_true test -z "$(gtd is_todo)"
     done
 }
 
@@ -851,7 +851,7 @@ function run_all_tests {
     should_pass test_is_leaf
     should_pass test_is_orphan
     should_pass test_is_active
-    should_pass test_is_actionable
+    should_pass test_is_todo
     should_pass test_task_auto_triage
     should_pass test_is_waiting
     should_pass test_task_summary

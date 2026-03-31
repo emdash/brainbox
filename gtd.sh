@@ -25,10 +25,16 @@ export STATE_DIR="${DATA_DIR}/state"
 export NODE_DIR="${STATE_DIR}/nodes"
 export HIST_DIR="${DATA_DIR}/hist/"
 export BUCKET_DIR="${DATA_DIR}/buckets"
-export FZF_SOCKET="$(realpath "${DATA_DIR}/fzf.sock")"
-export XDOT_PIPE="$(realpath "${DATA_DIR}/xdot.pipe")"
+export FZF_SOCKET="${DATA_DIR}/fzf.sock"
+export XDOT_PIPE="${DATA_DIR}/xdot.pipe"
 # XXX: user config or assume globally installed
 export XDOT_DIR="${HOME}/src/xdot.py"
+
+if test -d "${DATA_DIR}"
+then
+    FZF_SOCKET="$(realpath "${FZF_SOCKET}")"
+    XDOT_PIPE="$(realpath "${XDOT_PIPE}")"
+fi
 
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
