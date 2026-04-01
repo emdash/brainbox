@@ -1,5 +1,6 @@
 #! /usr/bin/env bash
 
+# Initialization **************************************************************
 
 set -eo pipefail
 shopt -s failglob
@@ -10,7 +11,6 @@ then
     set -x
 fi
 
-
 # name-prefixed variable here, but ...
 if test -v GTD_DATA_DIR; then
     # ... prefer to keep the short name in the rest of the code.
@@ -19,23 +19,39 @@ else
     export DATA_DIR="./gtdgraph"
 fi
 
-
 # Important directories
 # XXX: how to make lib dir point to directory containing this script?
 export STATE_DIR="${DATA_DIR}/state"
 export NODE_DIR="${STATE_DIR}/nodes"
 export HIST_DIR="${DATA_DIR}/hist/"
 export BUCKET_DIR="${DATA_DIR}/buckets"
+export FZF_SOCKET="${DATA_DIR}/fzf.sock"
+export XDOT_PIPE="${DATA_DIR}/xdot.pipe"
+# XXX: user config or assume globally installed
+export XDOT_DIR="${HOME}/src/xdot.py"
 
+if test -d "${DATA_DIR}"
+then
+    FZF_SOCKET="$(realpath "${FZF_SOCKET}")"
+    XDOT_PIPE="$(realpath "${XDOT_PIPE}")"
+fi
 
 # These directories represent distinct sets of edges, which express
 # different relations between nodes. Hopefully the names are
 # self-explanatory.
-EDGES=("dependencies", "contexts")
+EDGE_DIRS=("dependencies" "contexts")
 
+declare -r ff="$(echo -e '\f')"
+
+function info {
+    echo $DATA_DIR
+    echo $STATE_DIR
+    echo $NODE_DIR
+    echo $HIST_DIR
+    echo $BUCKET_DIR
+}
 
 # Helpers *********************************************************************
-
 
 # print to stderr
 function debug {
@@ -53,11 +69,6 @@ function error {
     exit 1
 }
 
-# Return true if stdin is empty
-function empty {
-    xargs -rn 1 false
-}
-
 # Subclass of error for umimplemented features.
 function not_implemented {
     error "$1 is not implemented."
@@ -69,14 +80,14 @@ function filter {
     then
 	shift
 	local input
-	while IFS="" read -r input; do	
+	while IFS="" read -r input; do
 	    if ! "$@" "${input}"; then
 		echo "${input}"
 	    fi
 	done
     else
 	local input
-	while IFS="" read -r input; do	
+	while IFS="" read -r input; do
 	    if "$@" "${input}"; then
 		echo "${input}"
 	    fi
@@ -92,9 +103,145 @@ function map {
     done
 }
 
+# Print all arguments to stdout, one per line.
+function splat {
+    for id in "${@}"
+    do
+        echo "${id}"
+    done
+}
+
+# Invoke a command with arguments from stdin, one per line.
+#
+# Example:
+#   $ seq 10 | apply echo foo
+#   foo 1 2 3 4 5 6 7 8 9 10
+function apply {
+    declare -a args
+    readarray -t args
+    if test -v 1
+    then
+        "${@}" "${args[@]}"
+    else
+        "${args[@]}"
+    fi
+}
+
+# Menu System *****************************************************************
+
+# Helper for creating fzf bindings
+#
+# key     - fzf-compatible key spec
+# help    - text to show in the help menu
+# action  - fzf-compatible action to be bound
+# [extra] - optional additional actions to be bound
+function fzf_bind_action {
+    local key="${1}"
+    local help="${2}"
+    shift 2
+    local actions="$(splat "${@}" | paste -sd '+')"
+    echo -e "${key}\f${help}\f${actions}"
+}
+
+# Helper to create execution bindings.
+#
+# The `cmd` argument is wrapped in `execute(...)`, and any remaining
+# arguments are interpreted as extra actions to be performed
+# (e.g. "up" or "down").
+#
+# You can bind any command you want, but it must be a string. To bind
+# an internal command, prefix the string with "$0". Because the
+# command must be a single string, you need to properly escape any
+# shell variables. Since escaping is notoriously error-prone, it's
+# recommended to pass values via the environment instead.
+function fzf_bind_exec {
+    local key="${1}"
+    local help="${2}"
+    local cmd="${3}"
+    shift 3
+    fzf_bind_action "${key}" "${help}" "execute(${cmd})" "${@}"
+}
+
+# Helper to create execution bindings.
+#
+# Exactly like `fzf_bind_exec`, but wraps with `execute-silent` to
+# reduce visual flicker with non-interactive commands.
+function fzf_bind_sexec {
+    local key="${1}"
+    local help="${2}"
+    local cmd="${3}"
+    shift 3
+    fzf_bind_action "${key}" "${help}" "execute-silent(${cmd})" "${@}"
+}
+
+# Convert a list of bindings into the FZF binding string.
+#
+# Bindings are passed one-per-line on stdin, each of which should be
+# the output of an `fzf_bind`-family function.
+function fzf_bind {
+    while IFS="${ff}" read key _ action
+    do
+        echo "${key}:${action}"
+    done | paste -sd ','
+}
+
+# Convert a list of bindings to the FZF header string.
+#
+# This first agument is used as the header label, followed by the
+# table of key bindings read from stdin.
+function fzf_help {
+    if test -v COLUMNS
+    then
+        local columns="${COLUMNS}"
+    else
+        read columns < <(tput cols)
+    fi
+    local -r width="$(( ("${columns}" / 2 ) ))"
+    echo "${1}"
+    echo
+    while IFS="${ff}" read key help _
+    do
+        if test "${help}" != "--"
+        then
+            echo "${key}|${help}"
+        fi
+    done | tabulate -f tsv -s '\|'
+}
+
+# Display an interactive menu using FZF.
+#
+# header      - header, or title of the menu.
+# bindings_fn - function which prints a list of bindings on its stdout.
+# reload_fn   - function which loads the menu contents.
+# ...         - remaining arguments are forwarded to FZF.
+function fzf_menu {
+    local -r header="${1}"
+    local -r bindings_fn="${2}"
+    local -r load_fn="${3}"
+    shift 3
+    "${load_fn}" | fzf \
+       --style=full \
+       --layout=reverse \
+       --no-input \
+       --no-sort \
+       --track \
+       --cycle \
+       --header="$("${bindings_fn}" | fzf_help "${header}")" \
+       --bind="$("${bindings_fn}" | fzf_bind)" \
+       "${@}"
+}
+
+# send a command back to FZF via the http socket
+function fzf_send {
+    if test "$#" != 0
+    then
+        curl -s --unix-socket "${FZF_SOCKET}" http -d "$*"
+    else
+        curl -s --unix-socket "${FZF_SOCKET}" http -d @-
+    fi
+}
 
 # Database Management *********************************************************
-
 
 # Initialize a GTD database relative to the current working directory.
 function database_init {
@@ -125,7 +272,7 @@ function database_clobber {
     local confirm
     read -re confirm
     case "${confirm}" in
-	yes) rm -rf "${DATA_DIR}";;
+	yes) rm -r "${DATA_DIR}";;
 	*)   echo "Not wiping database."; return 1;;
     esac
 }
@@ -150,7 +297,7 @@ function database_commit {
     local path
 
     if test -f "${DATA_DIR}/undo_stack"; then
-	rm -rf "${DATA_DIR}/undo_stack"
+	rm -r "${DATA_DIR}/undo_stack"
     fi
 
     database_keep_empty
@@ -174,9 +321,6 @@ function database_commit {
 
     # commit the changes. arguments interpreted as message.
     database_git commit -am "$*"
-
-    # trigger update of any live queries.
-    follow_notify
 }
 
 # list all the changes to the db from the beginning of time
@@ -214,7 +358,6 @@ function database_redo {
 	    rm "${DATA_DIR}/tmp"
 	fi
 	# if all the above succeeded, trigger update of any live queries.
-	follow_notify
     else
 	echo "nothing to redo"
     fi
@@ -232,13 +375,11 @@ function database_undo {
 
     database_current_commit >> "${DATA_DIR}/undo_stack"
     database_git reset --hard HEAD^
-    follow_notify
 }
 
 # revert any uncommitted changes
 function database_revert {
     database_git reset --hard HEAD
-    follow_notify
 }
 
 # generate random UUIDs.
@@ -255,11 +396,232 @@ function gen_uuid {
     python3 -c 'import uuid; print(uuid.uuid4())'
 }
 
+# Preferences and Settings ****************************************************
+
+# Read or write global preference settings.
+#
+# Preferences are stored in a subdirectory under `DATA_DIR`, rather
+# than `STATE_DIR`, and therefore ephemeral. They should not be used
+# for the user's primary data, but for application state that must be
+# mutable across process boundaries. This comes up often in shell
+# programming.
+#
+# Usage:
+# prefs path       <path>
+# prefs read       <path> [<default>]`
+# prefs write [-a] <path> [<value>]
+# prefs clobber    <path>
+#
+# @cmd      - `read` or `write`
+# @path     - a relative path to the preferences file in question
+#             e.g. `"nav/mode"`.
+# @default  - the value to return if no value exists.
+# @value    - the value to write if given as an argument.
+#
+# Without a default, read will fail if the given preference doesn't
+# exist. Without a value, write expects the value on stdin.
+function prefs {
+    local -r cmd="${1}"
+    # it's technically possible to avoid uses of cat here, but it
+    # involves manipulating global file descriptors, and feels like a
+    # bad idea. `cat` seems like the least bad options here, despite
+    # it being technically not needed. these
+    case "${1}" in
+        path)
+            local -r path="${DATA_DIR}/prefs/${2}"
+            echo "${path}"
+            ;;
+        read)
+            local -r path="${DATA_DIR}/prefs/${2}"
+            if test -e "${path}"
+            then
+                cat "${path}"
+            else
+                if test -v 3
+                then
+                    echo "${3}"
+                else
+                    return 1
+                fi
+            fi
+            ;;
+        write)
+            case "${2}" in
+                -a) local -r append=1; shift;;
+            esac
+
+            local -r path="${DATA_DIR}/prefs/${2}"
+
+            local dir
+            read dir < <(dirname "${path}")
+            mkdir -p "${dir}"
+            local -r dir
+
+            if test -v append
+            then
+                if test -v 3
+                then
+                    echo "${3}" >> "${path}"
+                else
+                    cat >> "${path}"
+                fi
+            else
+                if test -v 3
+                then
+                    echo "${3}" > "${path}"
+                else
+                    cat > "${path}"
+                fi
+            fi
+            ;;
+        clobber)
+            local -r path="${DATA_DIR}/prefs/${2}"
+            if test -f "${path}"
+            then
+                rm "${path}"
+            fi
+            ;;
+        *)
+            debug "invalid subcommand: ${1}"
+            exit 1;
+            ;;
+    esac
+}
+
+# Read a pref value, succeding iff the value is exactly "1"
+function prefs_bool_test {
+    local -r path="${1}"
+    local value
+
+    read value < <(
+        if test -v 2
+        then
+            prefs read "${path}" "${2}"
+        else
+            prefs read "${path}"
+        fi
+    )
+
+    test "${value}" = 1
+}
+
+# Toggle a boolean pref value. This always succeeds.
+function prefs_bool_toggle {
+    local -r path="${1}"
+    local -r default="${2}"
+
+    if prefs_bool_test "${path}" "${default}"
+    then
+        prefs write "${path}" 0
+    else
+        prefs write "${path}" 1
+    fi
+}
+
+# Cycle a pref value through its variants.
+#
+# The zeroth variant is assumed to be the default.
+function prefs_cycle {
+    local -r path="${1}"
+    local -a values=("${@:2}")
+
+    local current
+    read current < <(prefs read "${path}" "${values[0]}")
+
+    read i < <(seq 0 $(("${#values[@]}" - 1)) | while read i
+    do
+        if test "${values["${i}"]}" = "${current}"
+        then
+            echo "${i}"
+            break
+        fi
+    done)
+    prefs write "${path}" "${values[$(( ("${i}" + 1) % "${#values[@]}" ))]}"
+}
+
+# Execute a command, exporting multiple preference values to the environment.
+#
+# Usage:
+#
+#  prefs_export_env (<path> <var> <default)... -- cmd (arg)...
+#
+# Preferences are read in triplets of:
+#
+#   path    - preferences path key
+#   var     - the env var to export to
+#   default - the default value if the preference key is absent.
+#
+# Separate preference declarations from the final command with --.
+#
+# Example: prefs_export_as 'test/foo' PREFS_TEST_FOO bar -- env | grep FOO
+function prefs_export_env {
+    local pref var default
+    while test "$#" -gt 0
+    do
+        pref="${1}"
+        if test "${pref}" = "--"
+        then
+            shift
+            break
+        fi
+        var="${2}"
+        default="${3}"
+        shift 3
+        read "${var}" < <(prefs read "${pref}" "${default}")
+        IFS='' declare -x "${var}=${!var}"
+    done
+    "${@}"
+}
+
+# Declare a menu key binding that sets a preference key to a specific value
+function prefs_bind {
+    fzf_bind_sexec \
+        "${1}" \
+        "${2}" \
+        "$0 prefs write ${3} ${4}" \
+        "refresh-preview"
+}
+
+# Declare a menu key that toggles a boolean preference on or off.
+function prefs_bind_toggle {
+    fzf_bind_sexec \
+        "${1}" \
+        "Toggle ${2}" \
+        "$0 prefs_bool_toggle ${3}" \
+        "refresh-preview"
+}
+
+# Declare a menu key that cycles between multiple values.
+function prefs_bind_cycle {
+    local -r key="${1}"
+    local -r help="${2}"
+    local -r path="${3}"
+    shift 3
+    fzf_bind_sexec \
+        "${key}" \
+        "Cycle ${help}" \
+        "$0 prefs_cycle ${path} ${*}" \
+        "refresh-preview"
+}
 
 # Graph Database **************************************************************
 
-# wraps a python script which is used to "accelerate" some operations.
-function graph { "${GTD_DIR}/graph.py" "$@" ; }
+# Wraps a python script which is used to "accelerate" some operations.
+#
+# The script can be tweaked with a number of enivronment variables,
+# which we store in the prefs system, and export before executing the
+# script.
+function graph {
+    prefs_export_env \
+        "graph/font"          GTD_GRAPH_FONT          "monospace" \
+        "graph/bg"            GTD_GRAPH_BG            "white"     \
+        "graph/bucket_mode"   GTD_GRAPH_BUCKET_MODE   "cluster"   \
+        "graph/subtasks_mode" GTD_GRAPH_SUBTASKS_MODE "cluster"   \
+        "graph/rankdir"       GTD_GRAPH_RANKDIR       "TB"        \
+        "graph/show_contexts" GTD_GRAPH_SHOW_CONTEXTS "1"         \
+        "graph/show_deps"     GTD_GRAPH_SHOW_DEPS     "1"         \
+        -- "${GTD_DIR}/components/graph.py" "$@"
+}
 
 # list all the valid edge sets
 function edges { echo "${EDGE_DIRS[@]}" ; }
@@ -333,6 +695,7 @@ function graph_datum {
 	mkdir)  mkdir -p       "${path}";;
 	cp)     cp "$@"        "${path}";;
 	mv)     mv "$@"        "${path}";;
+        rm)     rm             "${path}";;
 
 	*) error "invalid subcommand: ${command}";;
     esac
@@ -403,6 +766,43 @@ function graph_edge_delete {
     rm -rf "$(graph_edge_path "$1" "$2" "$3")"
 }
 
+# Delete the given node, and any edges which touch it.
+function graph_node_delete {
+    database_ensure_init
+    rm -rf "$(graph_node_path "${1}")"
+}
+
+# Common keybindings for graph views
+function __graph_bindings {
+    prefs_bind_cycle \
+      "alt-b" \
+      "Bucket Mode" \
+      "graph/bucket_mode" \
+      "cluster" \
+      "label" \
+      "node" \
+      "hidden"
+
+    prefs_bind_cycle \
+        "alt-r" \
+        "Rankdir" \
+        "graph/rankdir" \
+        "TB" "LR" "RL" "BT"
+
+    prefs_bind_cycle \
+       "alt-s" \
+       "Subtasks Mode" \
+       "graph/subtasks_mode" \
+       "cluster" \
+       "label" \
+       "hidden"
+
+    fzf_bind_exec \
+        "shift-delete" \
+        "Clear Buckets" \
+        "$0 buckets clear" \
+        "refresh-preview"
+}
 
 ## define task data ***********************************************************
 
@@ -419,7 +819,174 @@ function task_gloss {
 
 # summarize the current task: id, status, and gloss
 function task_summary {
-    printf "%s %7s %s\n" "$1" "$(task_state read "$1")" "$(task_gloss "$1")"
+    case "${1}" in
+        -d|--delimiter)
+            local -r sep="${2}"
+            shift 2
+            ;;
+        *)
+            local -r sep=' '
+           ;;
+    esac
+    printf \
+        "%s%c%7s%c%s\n" \
+        "$1" \
+        "${sep}" \
+        "$(task_state read "$1")" \
+        "${sep}" \
+        "$(task_gloss "$1")"
+}
+
+# display extended task information.
+#
+# this is used for preview windows and the like.
+function task_details {
+    local -r width="${FZF_PREVIEW_COLUMNS:-"${LINES:-80}"}"
+    local -r nodes_file="${DATA_DIR}/details/nodes"
+
+    mkdir -p "$(dirname "${nodes_file}")"
+    rm -f "${nodes_file}" || true
+    touch "${nodes_file}"
+
+    task_summary "${1}"
+    case "$(task_state read "${1}")" in
+        WAIT) echo -n "Waiting For:" ; graph_datum reason read "${1}";;
+    esac
+    echo
+
+    if prefs_bool_test "details/show_contents" 1
+    then
+      task_contents read "${1}" \
+          | bat -f --file-name "Contents" --terminal-width "${width}"
+      echo
+    fi > "${DATA_DIR}/contents.txt"
+
+    if prefs_bool_test "details/show_subtasks" 1
+    then
+      echo "Subtasks"
+      if graph_datum subtasks exists "${1}"
+      then
+        # don't show ourselves as the first subtask.
+        echo "${1}" \
+          | subtasks \
+          | tail -n +2 \
+          | tee -pa "${nodes_file}" \
+          | summarize -d '|' \
+          | cut -d '|' -f '2,3'
+      fi
+      echo
+    fi > "${DATA_DIR}/subtasks.txt"
+
+    if prefs_bool_test "details/show_contexts" 1
+    then
+      echo "Contexts"
+      echo "${1}" \
+        | graph adjacent contexts incoming \
+        | tee -pa "${nodes_file}" \
+        | tail -n +2 \
+        | summarize -d '|' \
+        | cut -d '|' -f '3' \
+        | while read context
+          do
+            echo  "        ${context}"
+          done
+      echo
+    fi > "${DATA_DIR}/contexts.txt"
+
+    if prefs_bool_test "details/show_deps" 1
+    then
+      echo "Depends"
+      echo "${1}" \
+        | graph adjacent dependencies outgoing --nost \
+        | tee -pa "${nodes_file}" \
+        | tail -n +2 \
+        | summarize -d '|' \
+        | cut -d '|' -f '2,3'
+      echo
+    fi > "${DATA_DIR}/deps.txt"
+
+    if prefs_bool_test "details/show_rdeps" 1
+    then
+      echo "Blocks"
+      echo "${1}" \
+        | graph adjacent dependencies incoming \
+        | tee -pa "${nodes_file}" \
+        | tail -n +2 \
+        | summarize -d '|' \
+        | cut -d '|' -f '2,3'
+      echo
+    fi > "${DATA_DIR}/rdeps.txt"
+
+    if prefs_bool_test "details/show_buckets" 1
+    then
+        echo "Buckets"
+        buckets show
+        echo
+    fi > "${DATA_DIR}/buckets.txt"
+
+    if prefs_bool_test "details/show_graph" 1
+    then
+        local source
+        read source < <(prefs read "details/graph_nodes" selected)
+        echo "Graph Source: ${source}"
+        if test -e "${XDOT_PIPE}"
+        then
+            case "${source}" in
+                selected) cat "${nodes_file}";;
+                query)    cat "${DATA_DIR}/query_results";;
+            esac | dot > "${XDOT_PIPE}"
+            echo -e '\f' > "${XDOT_PIPE}"
+        else
+            case "${source}" in
+                selected) chafa < "${nodes_file}";;
+                query)    chafa < "${DATA_DIR}/query_results";;
+            esac
+        fi
+    fi
+
+    cat "${DATA_DIR}/contents.txt"
+
+    if prefs_bool_test "details/show_schedule" 1
+    then
+        if graph_datum schedule exists "${id}"
+        then
+            echo -n "Schedule"
+            local style
+            read style < <(prefs read "details/schedule_style" week)
+            case "${style}" in
+                literal)
+                    echo -n ": "
+                    graph_datum schedule read "${id}";;
+                *)
+                    echo
+                    graph_datum schedule read "${id}" | _schedule preview "${style}";;
+            esac
+            echo
+        fi
+    fi
+
+    cat "${DATA_DIR}/contexts.txt" \
+        "${DATA_DIR}/subtasks.txt" \
+        "${DATA_DIR}/deps.txt" \
+        "${DATA_DIR}/rdeps.txt"
+
+    cat "${DATA_DIR}/buckets.txt"
+}
+
+function __details_bindings {
+    prefs_bind_toggle "ctrl-alt-c" "Contents" "details/show_contents"
+    prefs_bind_toggle "ctrl-alt-b" "Buckets"  "details/show_buckets"
+    prefs_bind_toggle "ctrl-s"     "Subtasks" "details/show_subtasks"
+    prefs_bind_toggle "ctrl-alt-s" "Schedule" "details/show_schedule"
+    prefs_bind_toggle "ctrl-c"     "Contexts" "details/show_contexts"
+    prefs_bind_toggle "ctrl-b"     "Blocks"   "details/show_rdeps"
+    prefs_bind_toggle "ctrl-d"     "Depends"  "details/show_deps"
+    prefs_bind_toggle "ctrl-g"     "Graph"    "details/show_graph"
+    prefs_bind_cycle \
+        "alt-g" \
+        "Graph Source" \
+        "details/graph_nodes" "selected" "query"
+    __graph_bindings
 }
 
 ## Task Management
@@ -445,7 +1012,27 @@ function task_drop {
 
 # mark the given task as completed
 function task_complete {
-    echo "DONE" | task_state write "$1"
+    case "${1}" in
+        -d|--date)
+            local date="${2}"
+            shift 2
+            ;;
+        *)
+            local date
+            read date < <(date -Iminute)
+            ;;
+    esac
+
+    local -r id="${1}"
+
+    if graph_datum schedule exists "${id}"
+    then
+        :
+    else
+      echo "DONE" | task_state write "${id}"
+    fi
+
+    echo "${date}" | graph_datum completed append "${id}"
 }
 
 # mark the given task as someday
@@ -453,11 +1040,28 @@ function task_defer {
     echo "SOMEDAY" | task_state write "$1"
 }
 
-# mark the given task as persistent
-function task_persist {
-    echo "PERSIST" | task_state write "$1"
+# mark the given task as externally blocked
+function task_wait {
+    local reason="${1}"
+    local id="${2}"
+    echo "WAIT" | task_state write "${id}"
+    echo "${reason}" | graph_datum reason write "${id}"
 }
 
+# mark the given node as factoid to be remembered
+function make_info {
+    echo "INFO" | task_state write "$1"
+}
+
+# mark the given node as context
+function make_context_node {
+    echo "CONTEXT" | task_state write "$1"
+}
+
+# mark the given node as area of focus
+function make_focus {
+    echo "FOCUS" | task_state write "$1"
+}
 
 # An Embedded DSL for Queries *************************************************
 
@@ -546,6 +1150,11 @@ function query_declare_canonical_name {
 #
 # this also registers the function in the list of completions
 function query_declare_type {
+    case "${2}" in
+        filter|producer|consumer|formatter|update|binop|selection) : ;;
+        *) error "Invalid query type: ${2}" ;;
+    esac
+
     GTD_QUERY_TYPE["$1"]="$2"
     command_declare "$1" "${@:3:$# - 2}"
 }
@@ -614,9 +1223,9 @@ function query_command_is_consumer {
     esac
 }
 
-# return true if the given query command allows 
+# return true if the given query command allows
 
-# print the index into which the 
+# print the index into which the
 function query_find_consumer {
     local -i i=1
     while test -n "$*"; do
@@ -704,13 +1313,6 @@ function end_filter_chain {
     fi
 }
 
-# disables destructive operations in preview mode
-function forbid_preview {
-    if test -v GTD_PREVIEW_MODE; then
-	error "Disabled in preview mode."
-    fi
-}
-
 ## Query Commands *************************************************************
 
 # XXX: everything below here must be manually kept in sync with
@@ -745,16 +1347,33 @@ function last_captured { from last_captured | query_filter_chain "$@" ; }
 query_declare_type null producer
 function null { : | query_filter_chain "$@" ; }
 
+# output fromstdin
+query_declare_type stdin producer
+function stdin { cat | query_filter_chain "$@" ; }
+
 ### Query Filters *************************************************************
 
-# output nodes reachable from each node in the input set
+# insert nodes reachable from each node in the input set
 query_declare_type             reachable filter edgeset direction
-query_declare_default_producer reachable from cur 
+query_declare_default_producer reachable from cur
 function reachable {
     local edges="$1"
     local direction="$2"
     shift 2
     graph reachable "${edges}" "${direction}" | query_filter_chain "$@"
+}
+
+# keep only nodes reachable from nodes in the given bucket
+query_declare_type             reachable_from filter edgeset bucket
+query_declare_default_producer reachable_from all
+function reachable_from {
+    local edges="$1"
+    local bucket="$2"
+    local -a roots
+    readarray -t roots < <(from "${bucket}")
+    shift 2
+    splat "${roots[@]}"
+    graph reachable_from "${edges}" outgoing "${roots[@]}" | query_filter_chain "$@"
 }
 
 # output the nodes adjacent to each input node
@@ -766,6 +1385,16 @@ function adjacent {
     shift 2
     graph adjacent "${edges}" "${direction}" | query_filter_chain "$@"
 }
+
+# immediate neighbors of node
+query_declare_type             neighbors filter
+query_declare_default_producer neighbors from cur
+function neighbors { adjacent dependencies all "$@" ; }
+
+# reachable dependencies in either direction
+query_declare_type             family filter
+query_declare_default_producer family from cur
+function family { reachable dependencies all "$@" ; }
 
 # insert tasks assigned to each incoming context id
 query_declare_type             assignees filter
@@ -780,9 +1409,9 @@ function assignments { adjacent contexts incoming | query_filter_chain "$@" ; }
 # immediate subtasks of the input set
 query_declare_type             children filter
 query_declare_default_producer children from cur
-function children { adjacent dependencies outgoing "$@" ; } 
+function children { adjacent dependencies outgoing "$@" ; }
 
-# immediate context edgres
+# immediate context edges
 query_declare_type             contexts filter
 query_declare_default_producer contexts from cur
 function contexts { adjacent contexts incoming "$@" ; }
@@ -791,16 +1420,37 @@ function contexts { adjacent contexts incoming "$@" ; }
 query_declare_type             choose   filter '--multi|--single'
 query_declare_default_producer choose   all
 function choose {
-    # can't preview because this also uses FZF.
-    forbid_preview
-
     case "$1" in
        -m|--multi)  local opt="-m"; shift;;
        -s|--single) local opt=""  ; shift;;
        *)           local opt="-m"       ;;
     esac
 
-    summarize | fzf ${opt} | cut -d ' ' -f 1 | query_filter_chain "$@"
+    fzf_menu \
+      "Choose Node: ${SAVED_ARGV[*]}" \
+      __choose_bindings \
+      __choose_items \
+      -d '|' \
+      ${opt} \
+      --with-nth='{2} {3}' \
+      --accept-nth='{1}' \
+      --preview="$0 __choose_preview {+1}" \
+      --bind="load:enable-search+show-input" \
+    | query_filter_chain "$@"
+}
+
+function __choose_preview {
+    splat "${@}" > "${DATA_DIR}/selection"
+    task_details "${1}"
+}
+
+function __choose_items {
+    tee -p "${DATA_DIR}/query_results" | summarize -d '|'
+}
+
+function __choose_bindings {
+    __details_bindings
+    fzf_bind_action "ctrl-q" "Quit"      "accept"
 }
 
 # keep nodes for which the given datum exists
@@ -812,34 +1462,44 @@ function has {
     filter graph_datum "${datum}" exists | query_filter_chain "$@"
 }
 
-# Keep only actionable tasks.
-query_declare_type             is_actionable filter
-query_declare_default_producer is_actionable all
-function is_actionable {
-    graph filter_state NEW TODO | query_filter_chain "$@"
+# keep only nodes which are definitely tasks
+query_declare_type             is_task filter
+query_declare_default_producer is_task all
+function is_task {
+    graph filter_state NEW TODO WAIT SOMEDAY
 }
 
-# Keep only active tasks.
+# keep nodes states which track tasks.
+query_declare_type             is_todo filter
+query_declare_default_producer is_todo all
+function is_todo { graph filter_state TODO | query_filter_chain "$@" ; }
+
+# Keep only active nodes that should not be remove from the graph.
 query_declare_type             is_active filter
 query_declare_default_producer is_active all
 function is_active {
     graph filter_state \
-	NEW \
-	TODO \
-	WAITING \
-	PERSIST \
+        NEW \
+        TODO \
+        WAITING \
+        INFO \
+        FOCUS \
+        CONTEXT \
+        SOMEDAY \
     | query_filter_chain "$@"
 }
 
-# Keep only completed tasks
-query_declare_type             is_complete filter
-query_declare_default_producer is_complete all
-function is_complete { graph filter_state DONE | query_filter_chain "$@" ; }
+# Show nodes that could be safely removed from the graph.
+query_declare_type             inactive filter
+query_declare_default_producer inactive all
+function inactive {
+    graph filter_state DONE DROPPED | query_filter_chain "$@"
+}
 
 # Keep only context nodes
 query_declare_type             is_context filter
 query_declare_default_producer is_context all
-function is_context { graph is_context | query_filter_chain "$@" ; }
+function is_context { graph filter_state CONTEXT | query_filter_chain "$@" ; }
 
 # Keep only deferred nodes
 query_declare_type             is_deferred filter
@@ -854,18 +1514,30 @@ function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
 # Keep only next actions
 query_declare_type             is_next filter
 query_declare_default_producer is_next all
-function is_next { graph is_next | is_actionable "$@" ; }
+function is_next { is_todo | graph is_next | query_filter_chain "$@" ;}
 
-# Keep only tasks not associated with any other tasks
+# Keep all isolated graph nodes regadless of state.
 query_declare_type             is_orphan filter
 query_declare_default_producer is_orphan all
 function is_orphan { graph is_orphan | query_filter_chain "$@" ; }
 
-# Keep only tasks in state PERSIST
-query_declare_type             is_persistent filter
-query_declare_default_producer is_persistent all
-function is_persistent {
-    graph filter_state PERSIST | query_filter_chain "$@"
+# Show next actions which are also isolated
+query_declare_type             single_tasks filter
+query_declare_default_producer single_tasks all
+function single_tasks { is_orphan | is_next "${@}"; }
+
+# Keep only tasks in state INFO
+query_declare_type             is_info filter
+query_declare_default_producer is_info all
+function is_info {
+    graph filter_state INFO | query_filter_chain "$@"
+}
+
+# Keeop only tasks marked as FOCUS
+query_declare_type             is_focus filter
+query_declare_default_producer is_focus all
+function is_focus {
+    graph filter_state FOCUS | query_filter_chain "$@"
 }
 
 # Keep only tasks which are considered projects
@@ -878,15 +1550,22 @@ query_declare_type             is_root filter
 query_declare_default_producer is_root all
 function is_root { graph is_root | query_filter_chain "$@" ; }
 
+# Keep only tasks which are the root of a subgraph
+query_declare_type             is_leaf filter
+query_declare_default_producer is_leaf all
+function is_leaf { graph is_leaf | query_filter_chain "$@" ; }
+
 # Keep only tasks not assigned to any context
 query_declare_type             is_unassigned filter
 query_declare_default_producer is_unassigned all
-function is_unassigned { graph is_unassigned | query_filter_chain "$@" ; }
+function is_unassigned {
+    is_todo | graph is_unassigned | query_filter_chain "$@" ;
+}
 
 # Keep only waiting tasks
 query_declare_type             is_waiting filter
 query_declare_default_producer is_waiting all
-function is_waiting { graph filter_state WAITING | query_filter_chain "$@" ; }
+function is_waiting { graph filter_state WAIT | query_filter_chain "$@" ; }
 
 # adjacent incoming dependencies of input set
 query_declare_type             parents filter
@@ -898,24 +1577,279 @@ query_declare_type             projects filter
 query_declare_default_producer projects from cur
 function projects { reachable dependencies incoming "$@" ; }
 
-# insert subtasks of each incoming parent task id
+# all dependencies of each incoming parent task id
+query_declare_type             blockers filter
+query_declare_default_producer blockers from cur
+function blockers { reachable dependencies outgoing "$@" ; }
+
+# insert direct subtasks of each parent id
 query_declare_type             subtasks filter
 query_declare_default_producer subtasks from cur
-function subtasks { reachable dependencies outgoing "$@" ; }
+function subtasks {
+    while IFS='' read id
+    do
+        echo "${id}"
+        if graph_datum subtasks exists "${id}"
+        then
+            # skip blank lines which separate serial task chains.
+            graph_datum subtasks read "${id}" \
+            | while read line
+              do
+                  if test -n "${line}"
+                  then
+                      echo "${line}"
+                  fi
+              done
+        fi
+    done | query_filter_chain "${@}"
+}
 
-# keep only nodes whose contents matches the given *pattern*.
-#
-# tbd: make this more configurable
-query_declare_type             search filter
-query_declare_default_producer search all
-function search {
-    local pattern="$1"; shift
-    local id
-    while IFS="" read -r id; do
-	if graph_datum contents read "${id}" | grep -q "${pattern}" -; then
-	    echo "${id}"
-	fi
-    done | query_filter_chain "$@"
+# list nodes with broken dependencies
+query_declare_type             dangling filter edgeset
+query_declare_default_producer dangling all is_project
+function dangling {
+    edges="${1}"
+    shift
+    graph dangling "${edges}" | query_filter_chain "$@"
+}
+
+# Schedule queries ************************************************************
+
+# invoke schedule component with preferences exported to environment.
+function _schedule {
+    prefs_export_env \
+        "schedule/default_reminders" GTD_SCHEDULE_DEFAULT_REMINDERS '
+           -10 * minute,
+           -2  * hour,
+           -1  * day,
+           -1  * week' \
+        -- "${GTD_DIR}/components/schedule.py" "$@"
+}
+
+# keep nodes which have an associated schedule
+query_declare_type             is_scheduled filter
+query_declare_default_producer is_scheduled all
+function is_scheduled {
+    _schedule is_scheduled | query_filter_chain "${@}"
+}
+
+# keep nodes which have do not have an associated schedule.
+query_declare_type             is_unscheduled filter
+query_declare_default_producer is_unscheduled all
+function is_unscheduled {
+    _schedule is_unscheduled | query_filter_chain "${@}"
+}
+
+# keep nodes which have an infinite schedule.
+query_declare_type             is_scheduled filter
+query_declare_default_producer is_scheduled all
+function is_eternal { _schedule is_eternal ; }
+
+# keep nodes which have a finite schedule.
+query_declare_type             is_scheduled filter
+query_declare_default_producer is_scheduled all
+function is_temporal {
+    _schedule is_temporal ; query_filter_chain "${@}"
+}
+
+# keep nodes which are active w/r/t their schedule.
+query_declare_type             in_progress filter "-d|--date:string"
+query_declare_default_producer in_progress all
+function in_progress {
+    if test -v 1
+    then
+        case "${1}" in
+            -d|--date) local -r date="${2}"; shift 2;;
+        esac
+    fi
+    if ! test -v date
+    then
+        read date < <(date -Iminute)
+    fi
+    _schedule in_progress "${date}" | query_filter_chain "${@}"
+}
+
+# keep nodes with schedule intervals beginning within the given time window.
+query_declare_type             is_upcoming filter window
+query_declare_default_producer is_upcoming all
+function is_upcoming {
+    declare -x GTD_DEFAULT_REMINDERS
+    read GTD_DEFAULT_REMINDERS < <(
+        prefs read 'schedule/default_reminders' '
+        -10 * minute,
+        -2  * hour,
+        -1  * day,
+        -1  * week
+        '
+    )
+    case "${1}" in
+        -d|--date)
+            shift
+            _schedule is_upcoming "${1}" | query_filter_chain "${@}"
+            ;;
+        *)
+            _schedule is_upcoming  | query_filter_chain "${@}"
+            ;;
+    esac
+}
+
+# keep nodes with schedule intervals ending within the given time window.
+query_declare_type             is_due filter "--window:window"
+query_declare_default_producer is_due all
+function is_due {
+    case "${1}" in
+        -w|--window)
+            shift
+            _schedule is_due "${1}" | query_filter_chain "${@}"
+            ;;
+        *)
+            _shchedule is_due  | query_filter_chain "${@}"
+            ;;
+    esac
+}
+
+# keep nodes which are complete
+query_declare_type             is_complete filter "-w|--window:window"
+query_declare_default_producer is_complete all
+function is_complete {
+    if test -v 1
+    then
+        case "${1}" in
+            -w|--window)
+                local -r window="${2}"
+                shift 2
+                ;;
+        esac
+    fi
+
+    if test -v window
+    then
+        _schedule is_complete "${window}"
+    else
+        _schedule is_complete
+    fi | query_filter_chain "${@}"
+}
+
+# keep nodes which are complete
+query_declare_type             is_incomplete filter "-w|--window:window"
+query_declare_default_producer is_incomplete all
+function is_incomplete {
+    if test -v 1
+    then
+        case "${1}" in
+            -w|--window)
+                local -r window="${2}"
+                shift 2
+                ;;
+        esac
+    fi
+
+    if test -v window
+    then
+        _schedule is_incomplete "${window}"
+    else
+        _schedule is_incomplete
+    fi | query_filter_chain "${@}"
+}
+
+# preview date patterns according to mode
+query_declare_type             preview_schedule formatter "list|month|week"
+query_declare_default_producer preview_schedule last_captured
+function preview_schedule {
+    if test -v 1
+    then
+        local style="${1}"
+        shift
+    else
+        local style="week"
+    fi
+
+    end_filter_chain "${@}"
+
+    local schedule
+    local path
+
+    while read id
+    do
+        read path < <(graph_datum schedule path "${id}")
+        if test -f "${path}"
+        then
+            task_summary "${id}"
+            graph_datum schedule read "${id}" | _schedule preview "${style}"
+            echo
+        fi
+    done
+}
+
+# set the schedule for the given nodes
+query_declare_type             schedule update dateset
+query_declare_default_producer schedule all
+function schedule {
+    local -a ids
+    readarray -t ids
+
+    # if we were given an explicit schedule, use that. Otherwise run
+    # the schedule builder UI.
+    if test -v 1
+    then
+        local -r sch="${1}"
+    else
+        local sch
+        # intialize the schedule if we have one
+        read sch < <(
+          splat "${ids[@]}" \
+            | get schedule \
+            | head -n 1 \
+            | cut -d '|' -f 2
+        ) || true
+        if read sch < <(splat "${ids[@]}" | schedule_builder "${sch}")
+        then
+            # write the schedule to the state.
+            for id in "${ids[@]}"
+            do
+                echo "${sch}" | graph_datum schedule write "${id}"
+            done
+            database_commit "${SAVED_ARGV}"
+        fi
+    fi
+}
+
+# remove any scheduling from the given node
+query_declare_type             unschedule update
+query_declare_default_producer unschedule from cur
+function unschedule {
+    filter graph_datum schedule rm ;
+    database_commit "${SAVED_ARGV}"
+}
+
+# show nodes with a corrupted or invalid schedule
+query_declare_type             invalid_schedule formatter
+query_declare_default_producer invalid_schedule all is_scheduled
+function invalid_schedule {
+    while read id
+    do
+        if graph_datum schedule read "${id}" | _schedule validate &>/dev/null
+        then
+            :
+        else
+            echo "${id}"
+        fi
+    done
+}
+
+# show nodes with a corrupted or invalid completion history
+query_declare_type             invalid_completed formatter
+query_declare_default_producer invalid_completed all has completed
+function invalid_completed {
+    while read id
+    do
+        if echo "${id}" | _schedule completed &>/dev/null
+        then
+            :
+        else
+            echo "${id}"
+        fi
+    done
 }
 
 ## Binary queries *************************************************************
@@ -963,28 +1897,60 @@ function get {
 	shift
     fi
     end_filter_chain "$@"
-    map graph_datum "${datum}" read
+    map __get "${datum}"
+}
+
+function __get {
+    local datum="${1}"
+    local id="${2}"
+    if graph_datum "${datum}" exists "${id}"
+    then
+        echo -n "${id}|"
+        graph_datum "${datum}" read "${id}"
+    fi
 }
 
 # dotfile export for graphviz
 query_declare_type             dot formatter
 query_declare_default_producer dot all
 function dot {
+    local -r path="${DATA_DIR}/selection"
+    local -a selection
+
+    if test -e "${path}"
+    then
+        readarray -t selection < "${path}"
+    fi
+    graph dot "${selection[@]}"
+}
+
+# render graph directly to svg, printed to stdout
+query_declare_type             svg formatter
+query_declare_default_producer svg all
+function svg {
     end_filter_chain "$@"
-    graph dot
+    dot | env dot -Tsvg
+}
+
+# render a project graph straight to the terminal (uses chafa).
+query_declare_type             chafa formatter
+query_declare_default_producer chafa from cur subtasks
+function chafa {
+    local -r width="${FZF_PREVIEW_COLUMNS:-"${COLUMNS:-80}"}"
+    local -r height="${FZF_PREVIEW_LINES:-"${LINES:-24}"}"
+    end_filter_chain "$@"
+    svg | env chafa -s "$(("${width}" - 2))x$(("${height}" - 10))"
 }
 
 # select nodes from input set to be placed into the given bucket
 query_declare_type             goto selection "${BUCKET_OPTS}" bucket
 query_declare_default_producer goto all
 function goto {
-    forbid_preview
-
     case "$1" in
 	--*) local -r opt="$1"; shift;;
 	*)   local -r opt="--noempty";;
     esac
-    
+
     echo "$@"
     local bucket="$1"
     shift
@@ -1007,7 +1973,7 @@ function into {
     while IFS="" read -r id; do
 	touch "${temp}/${id}"
     done
-    
+
     case "$1" in
 	--union)
 	    __into_copy "$2"
@@ -1040,7 +2006,6 @@ function into {
 	    ;;
     esac
     __into_delete_empty
-    follow_notify
 }
 
 function __into_clear {
@@ -1051,6 +2016,7 @@ function __into_clear {
 }
 
 function __into_copy {
+    mkdir -p "${BUCKET_DIR}/${1}"
     ls "${temp}" | while read -r id; do
 	touch "${BUCKET_DIR}/$1/${id}"
     done
@@ -1061,36 +2027,11 @@ function __into_delete_empty {
 }
 
 # Print a one-line summary for each task id
-query_declare_type             summarize formatter
+query_declare_type             summarize formatter "-d|--delimiter:string"
 query_declare_default_producer summarize inbox
 function summarize {
-    end_filter_chain "$@"
-    map task_summary
+    graph summary "${@}"
 }
-
-# tree expansion of project rooted at the given node for given edge set and direction.
-#
-# tree filters can be chained onto this, but not graph filters
-query_declare_type             tree formatter
-query_declare_default_producer tree inbox
-function tree { graph expand "$1" "$2" | __tree_indent "$@" ; }
-
-function __tree_indent {
-    local marker='  '
-
-    local depth
-    while IFS="" read -r id depth; do
-	printf "%s %7s" "${id}" "$(task_state read "${id}")"
-
-	# indent the line.
-	for i in $(seq $(("${depth}"))); do
-	    echo -n "${marker}"
-	done
-
-	printf " $(task_gloss "${id}")\n"
-    done
-}
-
 
 ## Updates ********************************************************************
 
@@ -1098,63 +2039,82 @@ function __tree_indent {
 query_declare_type             activate update
 query_declare_default_producer activate from target
 function activate {
-    forbid_preview
     end_filter_chain "$@"
     map task_activate
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # Complete each task id
 query_declare_type             complete update
 query_declare_default_producer complete from target
 function complete {
-    forbid_preview
     end_filter_chain "$@"
     map task_complete
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # Defer each task id
 query_declare_type             defer update
 query_declare_default_producer defer from target
 function defer {
-    forbid_preview
     end_filter_chain "$@"
     map task_defer
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # drop each task in the input set
 query_declare_type             drop update
 query_declare_default_producer drop from target
 function drop {
-    forbid_preview
     end_filter_chain "$@"
     map task_drop
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # edit the contents of node in the input set in turn.
 query_declare_type             edit update
 query_declare_default_producer edit from last_captured
 function edit {
-    forbid_preview
-
     # xargs -o: reopens stdin / stdout as tty in the child
     # process, allowing the editor to function even though stdin
     # is the query result.
     map graph_datum "${1:-contents}" path | xargs -o "${EDITOR}"
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # persist each task
-query_declare_type             persist update
-query_declare_default_producer persist from target
-function persist {
-    forbid_preview
+query_declare_type             remember update
+query_declare_default_producer remember from target
+function remember {
     end_filter_chain "$@"
-    map task_persist
-    database_commit "${SAVED_ARGV}"
+    map make_info
+    database_commit "${SAVED_ARGV[*]}"
+}
+
+# promote each node to Area of Focus (FOCUS)
+query_declare_type             focus update
+query_declare_default_producer focus from target
+function focus {
+    end_filter_chain "$@"
+    map make_focus
+    database_commit "${SAVED_ARGV[*]}"
+}
+
+# make each node a context node
+query_declare_type             make_context update
+query_declare_default_producer make_context from target
+function make_context {
+    end_filter_chain "$@"
+    map make_context_node
+    database_commit "${SAVED_ARGV[*]}"
+}
+
+# mark a node as waiting for the given reason
+query_declare_type             wait_for update "reason:string"
+query_declare_default_producer wait_for from target
+function wait_for {
+    map task_wait "${1}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # set the given datum on the input set to the given args or stdin.
@@ -1162,14 +2122,33 @@ query_declare_type             set_ formatter datum
 query_declare_default_producer set_ from target
 query_declare_canonical_name   set_ set
 function set_ {
-    forbid_preview
+    case "${1}" in
+        -a) shift; local -r cmd="append";;
+        *)  local -r cmd="write";;
+    esac
     while IFS='' read -r id
     do
-	echo "${@:2}" | graph_datum "$1" write "${id}"
+	echo "${@:2}" | graph_datum "$1" "${cmd}" "${id}"
     done
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
+command_declare                delete bucket
+function delete {
+    local -r bucket="${1:-trash}"
+    from "${bucket}" | graph touches | while read u v edge_set
+    do
+        graph_edge_delete "${u}" "${v}" "${edge_set}"
+    done
+
+    from "${bucket}" | while read node
+    do
+        graph_node_delete "${node}"
+    done
+
+    database_commit "${SAVED_ARGV[*]}"
+    dispatch null into "${bucket}"
+}
 
 # Non-query commands **********************************************************
 
@@ -1180,10 +2159,8 @@ function swap {
 	2) local a="$1"     b="$2";;
 	*) local a="source" b="target";;
     esac
-    mv "${BUCKET_DIR}/${a}" "${BUCKET_DIR}/temp"
-    mv "${BUCKET_DIR}/${b}" "${BUCKET_DIR}/${a}"
-    mv "${BUCKET_DIR}/temp" "${BUCKET_DIR}/${b}"
-    follow_notify
+
+    mv -T --exchange "${BUCKET_DIR}/${a}" "${BUCKET_DIR}/${b}"
 }
 
 # add subtasks to target
@@ -1204,9 +2181,54 @@ function assign {
 
 # List all known buckets
 function buckets {
-    debug "buckets:"
+  if test -v 1
+  then
+    case "${1}" in
+      clear)
+        if test -v 2
+        then
+          # lookup find command
+          rm -rv --one-file-system --preserve-root=all "${BUCKET_DIR}/${2}"
+        else
+          rm -rv --one-file-system --preserve-root=all "${BUCKET_DIR}"
+          mkdir -p "${BUCKET_DIR}"
+        fi
+        ;;
+      show)
+        # fail if there are no buckets
+        if test -s "${BUCKET_DIR}"
+        then
+          local tmpdir
+          read tmpdir < <(mktemp -d)
+          ls "${BUCKET_DIR}" | while read bucket
+          do
+            { echo "${bucket}"
+              ls "${BUCKET_DIR}/${bucket}" \
+                | summarize -d '|' \
+                | cut -d '|' -f '2,3'
+            } > "${tmpdir}/${bucket}"
+          done
+          find "${tmpdir}" \
+            | tail -n +2 \
+            | sort \
+            | apply paste -d '^' \
+            | tabulate -f plain -s '\^'
+          fi
+        ;;
+    esac
+  else
     ls "${BUCKET_DIR}"
+  fi
 }
+
+# capture takes so many options they don't fit on one line
+declare -a capture_args=(
+    '--oneline'
+    '--bucket'
+    '--context'
+    '--parents'
+    '--dependents:bucket'
+)
 
 # Create a new task.
 #
@@ -1215,12 +2237,15 @@ function buckets {
 # If no arguments are given:
 # - and stdin is a tty, invokes $EDITOR to create the node contents.
 # - otherwise, stdin is written to the contents file.
-command_declare capture '--bucket|--context|--parents|--dependents:bucket'
+command_declare capture "$(echo "${capture_args[@]}" | paste -sd '|'))"
 function capture {
-    forbid_preview
     while true
     do
 	case "$1" in
+            -1|--oneline)
+                local oneline="1"
+                shift 1
+                ;;
 	    -b|--bucket)
 		local bucket="$2"
 		shift 2
@@ -1249,7 +2274,14 @@ function capture {
     # no need to call "end filter chain", as we consume all arguments.
     if test -z "$*"; then
 	if tty > /dev/null; then
-	    graph_datum contents edit "${node}"
+            if test -v oneline
+            then
+                local line
+                read -ep "Gloss> " line
+                echo "${line}" | graph_datum contents write "${node}"
+            else
+	        graph_datum contents edit "${node}"
+            fi
 	else
 	    debug "from stdin"
 	    graph_datum contents write "${node}"
@@ -1258,7 +2290,7 @@ function capture {
 	echo "$*" | graph_datum contents write "${node}"
     fi
 
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 
     echo "${node}" | into this
 
@@ -1285,15 +2317,12 @@ function capture {
 # Clobber the database
 command_declare clobber
 function clobber {
-    forbid_preview
     database_clobber;
 }
 
 # move downward from cur
 command_declare down '--union' bucket
 function down {
-    forbid_preview
-
     if test "$1" = "--union"
     then
 	local -r opt="$1"
@@ -1307,7 +2336,6 @@ function down {
 
 # Initialize the database
 function init {
-    forbid_preview
     database_init;
     mkdir -p "${BUCKET_DIR}"
 }
@@ -1326,7 +2354,6 @@ function init {
 # node.
 command_declare link edgeset bucket bucket
 function link {
-    forbid_preview
     local edge_set="$1"
     local from_ids="$(from "${2:-source}")"
     local into_ids="$(from "${3:-target}")"
@@ -1338,33 +2365,37 @@ function link {
 	done
     done
 
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
-# shortcut for:
-# - capture into bucket
-# - persist
-# - set date (defaults to today)
-function log {
+function log_weight {
     if test "$1" = "--date"
     then
 	local -r d="$2"
 	shift 2
     else
-	local -r d="$(date --iso)"
+	local -r d="$(date -I)"
     fi
 
-    if test -n "$1"
+    local -r id="${1}"
+
+    read -ep "Weight> " weight
+    read -ep "BF(%)> "  bfp   || true
+    read -ep "Notes> "  notes || true
+
+    local entry="${d}|${weight}"
+
+    if test -v bfp
     then
-	local bucket="$1"
-	shift
-    else
-	error "A bucket is required"
+        entry+="|${bfp}"
     fi
 
-    capture -b "${bucket}" "$@"
-    last_captured persist
-    last_captured set_ date "${d}"
+    if test -v notes
+    then
+        entry+="|${notes}"
+    fi
+
+    echo "${entry}" >> graph_datum path progress "${id}"
 }
 
 # remove subtasks
@@ -1386,8 +2417,6 @@ function unassign {
 # remove edges between sets of nodes in different buckets
 command_declare unlink edgeset bucket bucket
 function unlink {
-    forbid_preview
-
     local -r edge_set="$1"
     local from_ids="$(from "${2:-source}")"
     local into_ids="$(from "${3:-target}")"
@@ -1398,14 +2427,12 @@ function unlink {
 	done
     done
 
-    database_commit "${SAVED_ARGV}"
+    database_commit "${SAVED_ARGV[*]}"
 }
 
 # Move upward from cur
 command_declare up '--union' bucket
 function up {
-    forbid_preview
-
     if test "$1" = "--union"
     then
 	local -r opt="$1"
@@ -1417,94 +2444,17 @@ function up {
     from "$1" parents goto "${opt}" "$1"
 }
 
-## Live Queries ***************************************************************
-
-# evaluate read-only queries each time the database changes
-#
-# the arguments are interpreted as the *initial query*.
-#
-# only one live query is supported per database. if called multiple
-# times, the *initial query* is replaced.
-command_declare follow query
-function follow {
-    local -r initial_query="$@"
-    local -r fifo="${DATA_DIR}/follow"
-
-    if query_find_consumer
-    then
-	error "live queries may not contain consumers"
-    fi
-
-    echo "${initial_query}" > "${DATA_DIR}/query"
-
-    if test -e "${fifo}"; then
-	follow_notify
-    else
-	trap __follow_exit EXIT
-	mkfifo "${fifo}"
-
-	# the protocol is really simple. we just read a line from the
-	# fifo, re-running the query each time
-	while true; do
-	    local ignored
-	    # read the query into an array
-	    local -a query
-	    read -ra query < "${DATA_DIR}/query"
-
-	    # run the query
-	    "$0" "${query[@]}"
-
-	    # output the record delimiter
-	    echo -ne '\0'
-
-	    # wait for the next notification
-	    read -r ignored < "${fifo}" || true
-	done
-    fi
-}
-
-function __follow_exit {
-    test -e "${DATA_DIR}/follow" && rm "${DATA_DIR}/follow"
-}
-
-# notify live queries to re-run after database commits.
-function follow_notify {
-    local -r fifo="${DATA_DIR}/follow"
-    if test -e "${fifo}"; then
-	echo "notify" > "${fifo}"
-    fi
-}
-
-# short for follow *query* *filter*... dot all | xdot --streaming-mode
-#
-# --streaming-mode is a customization I added, it's not available on
-# --the official xdot. PR submitted
-command_declare visualize query
-function visualize {
-    if test -z "$*"; then
-	error "An initial query is required"
-    else
-	if test -e "${DATA_DIR}/follow"; then
-	    follow "$@" dot
-	else
-	    follow "$@" dot | xdot --streaming-mode
-	fi
-    fi
-}
-
 ## State management ***********************************************************
 
 # restore the last undone command, if one exists
 command_declare redo
 function redo {
-    forbid_preview
     database_redo
 }
 
 # roll back to the state prior to execution of the last destructive
 command_declare undo
 function undo {
-    forbid_preview
     database_undo
 }
 
@@ -1516,6 +2466,961 @@ function history {
     database_history | cat ;
 }
 
+# Interactive Schedule Previewer **********************************************
+
+function __schedule_builder_preview {
+    local style start end
+    read style    < <(prefs read 'schedule_builder/style'    week)
+    read start    < <(prefs read 'schedule_builder/start'    "$(date -Iminutes)")
+    read duration < <(prefs read 'schedule_builder/duration' '1w')
+
+    prefs read 'schedule_builder/schedule' | _schedule preview "${style}" "${start}"
+}
+
+function __schedule_builder_items {
+    if echo "${1}" | _schedule validate &>/dev/null
+    then
+        prefs write 'schedule_builder/schedule' "${1}"
+    fi
+
+    prefs read 'schedule_builder/schedule' | _schedule preview list | tail -n +5
+}
+
+function __schedule_builder_bindings {
+    fzf_bind_action "start"  "--" "show-input+reload-sync($0 __schedule_builder_items {q})"
+    fzf_bind_action "change" "--" "reload-sync($0 __schedule_builder_items {q})"
+    fzf_bind_sexec  "alt-w" "Week View"  "$0 prefs write 'schedule_builder/style' week"  "refresh-preview"
+    fzf_bind_sexec  "alt-m" "Month View" "$0 prefs write 'schedule_builder/style' month" "refresh-preview"
+    fzf_bind_action "enter" "Accept" "accept"
+}
+
+function schedule_builder {
+    if test -n "${1}"
+    then
+        local -r sch="${1}"
+    else
+        local -r sch='["weekly", 1, 3, 5]'
+    fi
+    # run mainloop
+    fzf_menu \
+      "Schedule Builder" \
+      __schedule_builder_bindings \
+      __schedule_builder_items \
+      --layout="reverse" \
+      --disabled \
+      --query "${sch}" \
+      --preview="$0 __schedule_builder_preview {q}" \
+      --print-query \
+    | head -n 1
+}
+
+# Interactive query editor ****************************************************
+
+function __query_builder_preview {
+    local -a query
+    splat "${@}" | chafa
+}
+
+function __query_builder_items {
+    local -a query
+    read -a query < <(echo "${@}")
+    dispatch "${query[@]}" | summarize -d '|'
+}
+
+function __query_builder_bindings {
+    fzf_bind_action "start"  "--"   "toggle-input" "reload-sync($0 __query_builder_items {q})"
+    fzf_bind_action "load"   "--"   "refresh-preview" "unbind(load)"
+    fzf_bind_action "change" "--"   "reload-sync($0 __query_builder_items {q})"
+    fzf_bind_sexec  "focus"  "--"   "echo {1} | $0 stdin into cur"
+    fzf_bind_action "enter"  "Accept" "accept-non-empty"
+}
+
+function query_builder {
+    # run mainloop
+    fzf_menu \
+      "Query Builder" \
+      __query_builder_bindings \
+      __query_builder_items \
+      --layout="reverse" \
+      --disabled \
+      --query "${*:-all}" \
+      --preview="$0 __query_builder_preview {*1}" \
+      --with-nth='{2} {3}' \
+      --print-query \
+      -d '|' \
+    | head -n 1
+}
+
+# Agenda **********************************************************************
+
+function __agenda_preview {
+    local path="$(prefs path filter_contexts)"
+    echo -n "Filter: "
+    if test -s "${path}"
+    then
+        map task_gloss < "${path}"
+    else
+        echo "None"
+    fi | paste -sd ' '
+    echo
+
+    __agenda_items | cut -d '|' -f 1 | _schedule agenda "${@}"
+}
+
+function __agenda_items {
+    local path
+    IFS='' read -r path < <(prefs path 'filter_contexts')
+
+    all | if test -s "${path}"
+    then
+        local ctxts
+        readarray -t ctxts < "${path}"
+        agenda_items | graph reachable_from contexts outgoing "${ctxts[@]}"
+    else
+        agenda_items
+    fi | summarize -d '|'
+}
+
+query_declare_type             agenda_items filter
+query_declare_default_producer agenda_items all
+function agenda_items {
+    is_next | in_progress | is_incomplete | query_filter_chain "${@}"
+}
+
+# Project-Subtasks Editor *****************************************************
+
+function __plan_modify {
+    read path < <(graph_datum subtasks path "${SUBTASK_ID}")
+    case "${1}" in
+        add)
+            all | choose >> "${path}"
+            database_commit "added from project planner"
+            ;;
+        capture)
+            echo | xargs -o "$0" capture --oneline
+            last_captured >> "${path}"
+            last_captured | activate
+            database_commit "capture from project planner"
+            ;;
+        edit)
+            echo "${2}" | edit;;
+        *)
+            "${GTD_DIR}/components/subtasks.py" "${path}" "${@}"
+            database_commit "project planner: ${*}"
+            ;;
+    esac
+}
+
+function __plan_items {
+    graph_datum subtasks read "${SUBTASK_ID}" | while read id
+    do
+        if test -n "${id}"
+        then
+            task_summary -d '|' "${id}"
+        else
+            echo "|--||"
+        fi
+    done
+}
+
+function __plan_preview {
+    task_summary "${SUBTASK_ID}"
+    splat "${@}" > "${DATA_DIR}/selection}"
+    echo "${SUBTASK_ID}" | reachable dependencies outgoing | chafa
+}
+
+function __plan_bindings {
+    local rls="reload-sync($0 __plan_items)"
+    local plm="$0 __plan_modify"
+    local -r selected="$0 splat {+1} |"
+    fzf_bind_sexec  "u"          "Undo"            "$0 undo"       "${rls}"
+    fzf_bind_sexec  "U"          "Redo"            "$0 redo"       "${rls}"
+    fzf_bind_sexec  "shift-up"   "Move Up"     "${plm} up     {n}" "${rls}" "up"
+    fzf_bind_sexec  "shift-down" "Move Down"   "${plm} down   {n}" "${rls}" "down"
+    fzf_bind_sexec  "space"      "Split Group" "${plm} split  {n}" "${rls}" "down"
+    fzf_bind_sexec  "delete"     "Delete"      "${plm} delete {n}" "${rls}"
+    fzf_bind_exec   "e"          "Edit"        "${plm} edit   {1}" "${rls}"
+    fzf_bind_exec   "enter"      "Plan Subprj" "$0 plan {1}"       "${rls}"
+    fzf_bind_exec   "a"          "Add"         "${plm} add"        "${rls}"
+    fzf_bind_exec   "c"          "Capture"     "${plm} capture"    "${rls}" "last"
+    fzf_bind_action "q"          "Quit"        "accept"        "${rls}"
+    fzf_bind_action "?"          "Toggle Help" "toggle-header" "${rls}"
+}
+
+command_declare plan
+function plan {
+    if test -v 1
+    then
+       export SUBTASK_ID="${1}"
+    else
+        declare SUBTASK_ID
+        read SUBTASK_ID < <(dispatch "${@}" choose --single)
+        export SUBTASK_ID
+    fi
+
+    # save current settings
+    read bm < <(prefs read 'graph/bucket_mode'   'hidden')
+    read sm < <(prefs read 'graph/subtasks_mode' 'hidden')
+
+    # turn off subtasks and buckets
+    prefs write 'graph/bucket_mode' 'cluster'
+    prefs write 'graph/subtasks_mode' 'hidden'
+
+    # run mainloop
+    fzf_menu \
+      "Edit Project Subtasks" \
+      __plan_bindings \
+      __plan_items \
+      --preview="$0 __plan_preview {+1}" \
+      --with-nth='{2} {3}' \
+      -d '|'
+
+    # restore settings
+    prefs write 'graph/bucket_mode' "${bm}"
+    prefs write 'graph/subtasks_mode' "${sm}"
+}
+
+# Interactive Mode ************************************************************
+
+## Combining multiple specialized modes into a single gui with submenus.
+
+# start xdot in streaming mode, reading from the xdot named pipe.
+#
+# reads from xdot stdout so that user interaction can be proxied back
+# to FZF.
+function __interactive_xdot_wrapper {
+    if test -e "${XDOT_PIPE}"
+    then
+        error "Socket already exists"
+    else
+        mkfifo "${XDOT_PIPE}"
+        cd "${XDOT_DIR}"
+        python -m xdot --streaming-mode < "${XDOT_PIPE}" | while read id
+        do
+            __interactive_set_position "${id}"
+        done || true
+        rm -rf "${XDOT_PIPE}"
+        fzf_send "refresh-preview"
+    fi
+}
+
+# start the xdot wrapper as a background process, detaching from
+# parent shell.
+function __interactive_xdot_run {
+    debug "got here"
+    __interactive_xdot_wrapper &
+    disown
+    # this will trigger a write to the pipe, xdot process will hang
+    # until the first graph is written to the pipe.
+    __interactive_preview > /dev/null
+}
+
+function __interactive_set_context_filter {
+    if all \
+        | is_context \
+        | summarize -d '|' \
+        | fzf \
+          --header="Filter by Context (Esc to clear)" \
+          --style="full" \
+          --multi \
+          --reverse  \
+          -d '|' \
+          --with-nth="{3}" \
+          --accept-nth="{1}" \
+          --preview="$0 __agenda_preview" \
+        > "$(prefs path 'filter_contexts')"
+    then
+        :
+    else
+        prefs clobber filter_contexts
+    fi
+    exec $0 __interactive
+}
+
+function __interactive_wf {
+    read -ep "Waiting For> " reason
+    splat "${@}" | wait_for "${reason}"
+    exec "$0" __interactive
+}
+
+function __interactive_schedule {
+    local schedule ts _
+    local -a tasks
+
+    readarray -t tasks
+    for id in "${tasks[@]}"
+    do
+      read ts < <(task_state read "${id}")
+      case "${ts}" in
+          TODO|NEW) : ;;
+          *) break  ;;
+      esac
+    done
+
+    if test "$?" == "0"
+    then
+        splat "${tasks[@]}" | schedule
+    fi || true
+
+    exec "$0" __interactive
+}
+
+# prompt user to choose a context, add it to a project, then edit the project.
+function __interactive_triage {
+    local proj ts _
+    local -a tasks aofs
+
+    readarray -t tasks
+    for id in "${tasks[@]}"
+    do
+      read ts < <(task_state read "${id}")
+      case "${ts}" in
+          TODO|NEW) : ;;
+          *) break  ;;
+      esac
+    done
+
+    if test "$?" == 0
+    then
+        splat "${tasks[@]}" | into target
+
+        # choose a context
+        if all | is_context | choose -m | into source
+        then
+            assign
+        fi
+
+        # choose an existing node to add to as a subtask
+        if read proj < <(all | graph filter_state NEW TODO | choose)
+        then
+            splat "${tasks[@]}" | graph_datum subtasks append "${proj}"
+            plan "${proj}"
+        fi
+
+        # choose an area of focus
+        if all | is_focus | choose -m | into source
+        then
+            add
+        fi
+    else
+        echo "selection must be tasks (enter to continue)"
+        echo -n | xargs -o "read"
+    fi || true
+    exec "$0" __interactive
+}
+
+function __interactive_top {
+    prefs read "interactive/path" | tail -n 1
+}
+
+function __interactive_push {
+    prefs write -a "interactive/path" "${1}"
+}
+
+function __interactive_pop {
+    local temp
+    read temp < <(mktemp -p "${DATA_DIR}")
+    prefs read  'interactive/path' | head -n -1 > "${temp}"
+    prefs write 'interactive/path' < "${temp}"
+    rm "${temp}"
+}
+
+function __interactive_path {
+    prefs read 'interactive/path' | map task_gloss | paste -sd '/'
+}
+
+function __interactive_preview {
+    local mode menu
+
+    read mode < <(prefs read 'interactive/mode' neighbors)
+    read menu < <(prefs read 'interactive/menu' node)
+
+    splat "${@}" > "${DATA_DIR}/selection"
+    echo "Mode: ${mode} "
+
+    if read top < <(__interactive_top)
+    then
+        echo -n "Path: " ; __interactive_path
+    else
+        echo "Path: [Root]"
+        top="${1}"
+    fi
+
+    case "${menu}" in
+        agenda) __agenda_preview "${@}";;
+        *) task_details "${top}";;
+    esac
+}
+
+function __interactive_items {
+    local top mode filters
+    read mode < <(prefs read 'interactive/mode' neighbors)
+    read filters < <(prefs path 'filter_contexts')
+
+    # check whether the navigation stack is non-empty, and display
+    # from top-of-stack in that case.
+    if read top < <(__interactive_top)
+    then
+        # don't filter by context when navigating.
+        # XXX: validate before blindly executing ${mode}
+        echo "${top}" \
+          |  "${mode}" \
+          | filter test "${top}" !=
+    else
+        # if nav stack is empty, re-run the stored query, saving the
+        # query results for the preview window.
+        prefs read 'interactive/query' \
+          | apply dispatch \
+          | tee -p "${DATA_DIR}/query_results" \
+          | if test -s "${filters}"
+        then
+            # filter according to context preferences
+            local -a ctxts
+            readarray -t ctxts < "${filters}"
+            graph reachable_from contexts outgoing "${ctxts[@]}" | summarize -d '|'
+        else
+            summarize -d '|'
+        fi
+    fi
+}
+
+# one-line capture for the interactive menu
+function __interactive_capture {
+    capture --oneline
+    exec "$0" __interactive
+}
+
+# set bucket from interactive menu
+function __interactive_bucket {
+    local bucket
+    read bucket < <(
+        buckets | fzf \
+          --style=full \
+          --layout=reverse \
+          --cycle \
+          --header="Choose Bucket" \
+          --bind="enter:accept-or-print-query"
+    )
+    if test -v 1
+    then
+        case "${1}" in
+            --clear) null into "${bucket}";;
+            *) splat "${@}" | into --union "${bucket}"
+        esac
+    fi
+    exec "$0" __interactive
+}
+
+# edit graph datum from interactive menu
+function __interactive_edit {
+    echo "${1}" | edit || true
+    exec "$0" __interactive
+}
+
+# edit project subtasks
+function __interactive_plan {
+    plan "${1}" || true
+    exec "$0" __interactive
+}
+
+# enter query editor
+function __interactive_change_query {
+    local -a query
+
+    readarray -t query < <(prefs read 'interactive/query')
+    if read -a query < <(query_builder "${query[@]}")
+    then
+        splat "${query[@]}" | prefs write 'interactive/query'
+    fi
+    exec "$0" __interactive
+}
+
+# define key bindings for node submenu
+function __interactive_node_submenu {
+    local -r rls="reload-sync($0 __interactive_items)"
+    local -r selected="$0 splat {+1} |"
+    fzf_bind_action "c"      "Capture"      "become($0 __interactive_capture)"  "${rls}"
+    fzf_bind_action "e"      "Edit"         "become($0 __interactive_edit {1})" "${rls}"
+    fzf_bind_action "p"      "Plan Project" "become($0 __interactive_plan {1})" "${rls}"
+    fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
+    fzf_bind_action "t"      "Triage"       "become(${selected} $0 __interactive_triage)" "${rls}"
+    fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
+    fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
+    fzf_bind_sexec  "r"      "Remember"     "${selected} $0 stdin remember"     "${rls}"
+    fzf_bind_sexec  "F"      "Make Focus"   "${selected} $0 stdin focus"        "${rls}"
+    fzf_bind_sexec  "enter"  "Complete"     "${selected} $0 stdin complete"     "${rls}"
+    fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
+    fzf_bind_action "w"      "Wait For"     "become($0 __interactive_wf {+1})"  "${rls}"
+    fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
+}
+
+function __interactive_nav_submenu {
+    local rls="reload-sync($0 __interactive_items)"
+    local setpref="$0 prefs write"
+    fzf_bind_sexec  "backspace" "Back"      "$0 __interactive_pop"                    "${rls}"
+    fzf_bind_sexec  "enter"     "Goto"      "$0 __interactive_push {1}"               "${rls}"
+    fzf_bind_action "c"         "Capture"   "become($0 __interactive_capture)"        "${rls}"
+    fzf_bind_sexec  "f"         "Family"    "${setpref} 'interactive/mode' family"    "${rls}"
+    fzf_bind_sexec  "n"         "Neighbors" "${setpref} 'interactive/mode' neighbors" "${rls}"
+    fzf_bind_sexec  "p"         "Parents"   "${setpref} 'interactive/mode' parents"   "${rls}"
+    fzf_bind_sexec  "C"         "Children"  "${setpref} 'interactive/mode' children"  "${rls}"
+}
+
+function __interactive_view_submenu {
+    prefs_bind_toggle "c" "Contents" "details/show_contents"
+
+    prefs_bind_toggle "alt-s" "Schedule" "details/show_schedule"
+
+    prefs_bind_toggle "b" "Buckets"  "details/show_buckets"
+    prefs_bind_toggle "s" "Subtasks" "details/show_subtasks"
+    prefs_bind_toggle "C" "Contexts" "details/show_contexts"
+    prefs_bind_toggle "d" "Depends"  "details/show_deps"
+    prefs_bind_toggle "D" "Blocks"   "details/show_rdeps"
+    prefs_bind_toggle "g" "Graph"    "details/show_graph"
+
+    prefs_bind_cycle "alt-S" "Schedule Style" "details/schedule_style" \
+        "week" \
+        "month" \
+        "list" \
+        "literal"
+
+    prefs_bind_cycle \
+        "G" \
+        "Graph Source" \
+        "details/graph_nodes" "selected" "query"
+
+    prefs_bind_cycle \
+      "B" \
+      "Bucket Mode" \
+      "graph/bucket_mode" \
+      "cluster" \
+      "label" \
+      "node" \
+      "hidden"
+
+    prefs_bind_cycle \
+        "r" \
+        "Rankdir" \
+        "graph/rankdir" \
+        "TB" "LR" "RL" "BT"
+
+    prefs_bind_cycle \
+       "S" \
+       "Subtasks Mode" \
+       "graph/subtasks_mode" \
+       "cluster" \
+       "label" \
+       "hidden"
+}
+
+function __interactive_graph_submenu {
+    local -r rls="reload-sync($0 __interactive_items)"
+    local -r selected="$0 splat {+1} |"
+    fzf_bind_action "c" "Capture"                    "become($0 __interactive_capture)"        "${rls}"
+    fzf_bind_sexec  "s" "Set Source"                 "${selected} $0 stdin into source"        "refresh-preview"
+    fzf_bind_sexec  "t" "Set Target"                 "${selected} $0 stdin into target"        "refresh-preview"
+    fzf_bind_sexec  "a" "Assign Source to Target"    "$0 assign"                               "${rls}"
+    fzf_bind_sexec  "A" "Unassign Source and Target" "$0 unassign"                             "${rls}"
+    fzf_bind_sexec  "S" "Swap Source and Target"     "$0 swap"                                 "refresh-preview"
+    fzf_bind_sexec  "d" "Link Source and Target"     "$0 add"                                  "${rls}"
+    fzf_bind_sexec  "D" "Unlink Source and Target"   "$0 remove"                               "${rls}"
+    fzf_bind_action "p" "Plan Project"               "become($0 __interactive_plan {1})"       "${rls}"
+    fzf_bind_action "b" "Bucket"                     "become($0 __interactive_bucket {+1})"    "${rls}"
+    fzf_bind_action "B" "Clear Bucket"               "become($0 __interactive_bucket --clear)" "${rls}"
+}
+
+function __interactive_agenda_submenu {
+    local -r rls="reload-sync($0 __interactive_items)"
+    fzf_bind_sexec  "enter"  "Complete"   "$0 splat {+1} | $0 stdin complete"   "${rls}"
+    fzf_bind_sexec  "delete" "Drop"       "$0 splat {+1} | $0 stdin drop"       "${rls}"
+    fzf_bind_sexec  "d"      "Defer"      "$0 splat {+1} | $0 stdin defer"      "${rls}"
+    fzf_bind_exec   "s"      "Schedule"   "$0 splat {+1} | $0 stdin schedule"   "${rls}"
+    fzf_bind_sexec  "X"      "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "${rls}"
+    fzf_bind_exec   "w"      "Wait For"   "$0 __interactive_wf {+1}"            "${rls}"
+}
+
+function __interactive_search_bindings {
+    fzf_bind_action "backspace"     "--" "backward-delete-char"
+    fzf_bind_sexec  "enter"         "--" "$0 __interactive_mode exit-search"
+    fzf_bind_sexec  "esc"           "--" "$0 __interactive_mode exit-search"
+    fzf_bind_action "alt-backspace" "--" "backward-delete-word"
+    fzf_bind_action "ctrl-k"        "--" "kill-line"
+}
+
+# define global keybindings for interactive mode.
+function __interactive_bindings {
+    local -r rls="reload-sync($0 __interactive_items)"
+
+    # use mode given in $1 or load from
+    if test -v 1
+    then
+        local -r menu="$1"
+    else
+        local menu
+        read menu < <(prefs read 'interactive/menu' node)
+        local -r menu
+    fi
+
+    # special-case for search mode
+    if test "${menu}" == "search"
+    then
+        __interactive_search_bindings
+        return 0
+    fi
+
+    # global bindings that appear at the top
+    fzf_bind_action "ctrl-f"     "Filter Contexts" "become($0 __interactive_set_context_filter)"
+    fzf_bind_action "Q"          "Change Query"    "become($0 __interactive_change_query)"
+    fzf_bind_sexec  "ctrl-s,/"   "Search"          "$0 __interactive_mode search"
+
+    # global undo / redo
+    fzf_bind_sexec  "u"          "Undo"            "$0 undo" "${rls}"
+    fzf_bind_sexec  "U"          "Redo"            "$0 redo" "${rls}"
+
+    # global selection
+    fzf_bind_action "alt-space"  "Clear Selection" "clear-multi"
+    fzf_bind_action "space"      "Select"          "toggle"
+    fzf_bind_action "ctrl-space" "Select All"      "select-all"
+
+    # move graph to external viewer
+    fzf_bind_sexec "ctrl-x"     "XDot"            "$0 __interactive_xdot_run" "refresh-preview"
+
+    # menu system bindings
+    fzf_bind_sexec  "1"          "--"              "$0 __interactive_mode node"
+    fzf_bind_sexec  "2"          "--"              "$0 __interactive_mode nav"
+    fzf_bind_sexec  "3"          "--"              "$0 __interactive_mode graph"
+    fzf_bind_sexec  "4"          "--"              "$0 __interactive_mode view"
+    fzf_bind_sexec  "5"          "--"              "$0 __interactive_mode agenda"
+    case "${menu}" in
+        node)   __interactive_node_submenu;;
+        nav)    __interactive_nav_submenu;;
+        graph)  __interactive_graph_submenu;;
+        view)   __interactive_view_submenu;;
+        agenda) __interactive_agenda_submenu;;
+        all)
+            __interactive_node_submenu
+            __interactive_nav_submenu
+            __interactive_graph_submenu
+            __interactive_view_submenu
+            __interactive_search_bindings
+            __interactive_agenda_submenu
+        ;;
+    esac
+
+    # global bindings that appear at the end.
+    fzf_bind_sexec  "shift-delete"        "Clear Buckets" "$0 buckets clear" "refresh-preview"
+    fzf_bind_action "F5"    "Refresh"     "reload-sync($0 __interactive_items)"
+    fzf_bind_sexec  "?"     "Toggle Help" "$0 __interactive_mode toggle-help"
+    fzf_bind_action "q"     "Quit"        "accept"
+    fzf_bind_action "esc"   "--"          "accept"
+}
+
+# render the menu bar according to the menu we're in.
+function __interactive_header {
+    local tabs
+    case "${1}" in
+        node)   tabs="[_ Node] [2 Nav] [3 Graph] [4 View] [5 Agenda]";;
+        nav)    tabs="[1 Node] [_ Nav] [3 Graph] [4 View] [5 Agenda]";;
+        graph)  tabs="[1 Node] [2 Nav] [_ Graph] [4 View] [5 Agenda]";;
+        view)   tabs="[1 Node] [2 Nav] [3 Graph] [_ View] [5 Agenda]";;
+        agenda) tabs="[1 Node] [2 Nav] [3 Graph] [4 View] [_ Agenda]";;
+        search) tabs="Search Mode";;
+        *) debug "wtf" $1;;
+    esac
+
+    local path="$(prefs path filter_contexts)"
+
+    if prefs_bool_test 'interactive/show_help' 1
+    then
+        __interactive_bindings "${1}" | fzf_help "${tabs}"
+        if test -s "${path}"
+        then
+            echo -n "Filter: "
+            map task_gloss < "${path}" | paste -sd ' '
+        fi
+    else
+        echo "${tabs} (Help ?)"
+        if test -s "${path}"
+        then
+            echo -n "Filter: "
+            map task_gloss < "${path}" | paste -sd ' '
+        fi
+    fi
+}
+
+# FZF key press dispatch handler.
+#
+# Because we can't change the binding on the fly, I instead bind all
+# keys to this function, passing in the FZF key name as the first
+# argument.
+#
+# This function searches through the current bindings until it finds a
+# key that matches, then sends the action to be performed back to FZF
+# using the socket.
+function __interactive_dispatch {
+    local -r pressed="${1}"
+    local -a binding
+    local key menu action
+
+    read menu < <(prefs read 'interactive/menu' node)
+    __interactive_bindings "${menu}" | while IFS="${ff}" read -a binding
+    do
+        key="${binding[0]}"
+        if test "${key}" == "${pressed}"
+        then
+            echo "${binding[@]}" >&2
+            splat "${binding[@]:2}" \
+              | paste -sd '+' \
+              | fzf_send
+            return 0
+        fi
+    done
+}
+
+# Bind any key that is potentially bound in a menu.
+#
+# FZF doesn't allow us to change the keybiding at runtime, only
+# unbind/rebind it.
+#
+# This is used as the initial binding string so can the keys be
+# rebound later when switching menus/modes.
+#
+# All keys / events are bound to a trampoline function that actually
+# looks up the key-press. This means that all keys are effectively
+# bound as execute-silent.
+function __interactive_bind_dispatch {
+    local -a binding
+    local -A keys
+    local key
+
+    __interactive_bindings all | while IFS="${ff}" read -a binding
+    do
+        key="${binding[0]}"
+        if test -z "${keys["${key}"]}"
+        then
+            keys["${key}"]="bound"
+            # save current state before any user action is taken.
+            echo -n "${key}:execute-silent($0 __interactive_save_state)"
+            echo    "+execute-silent($0 __interactive_dispatch '${key}')"
+        fi
+    done | paste -sd ','
+}
+
+# unbind all the keys that might be bound for any menu.
+function __interactive_unbind {
+    local -a binding
+
+    __interactive_bindings all | while IFS="${ff}" read -a binding
+    do
+        echo "unbind(${binding[0]})"
+    done | paste -sd '+'
+}
+
+# rebind keys for the current mode
+function __interactive_rebind {
+    local key action
+    __interactive_bindings | while IFS="${ff}" read -a binding
+    do
+        key="${binding[0]}"
+        read action < <(splat "${binding[@]:2}")
+        echo "rebind(${key})"
+    done | paste -sd '+'
+}
+
+# configure FZF key bindings and help text according to menu.
+function __interactive_mode {
+    local unbind header help rebind
+
+    # if we're given a mode, use that. otherwise load from saved state.
+    if test -v 1
+    then
+        local mode="${1}"
+        case "${mode}" in
+            search)
+                prefs read 'interactive/menu' | prefs write 'interactive/prev_menu'
+                local -r mode
+                ;;
+            exit-search)
+                read mode < <(prefs read 'interactive/prev_menu')
+                local -r mode
+                ;;
+            toggle-help)
+                prefs_bool_toggle 'interactive/show_help' 1
+                unset mode
+                ;;
+        esac
+    fi
+
+    if test -v mode
+    then
+        local -r mode
+    else
+        local -r mode="$(prefs read 'interactive/menu' node)"
+    fi
+
+    # unbind all keys for all menus.
+    __interactive_unbind | fzf_send
+
+    # save the new menu state.
+    prefs write "interactive/menu" "${mode}"
+
+    # rebind just the keys for this menu.
+    __interactive_rebind | fzf_send
+
+    if test "${mode}" == "search"
+    then
+        fzf_send "hide-header+show-input+enable-search"
+    else
+        fzf_send "clear-query+hide-input+show-header"
+    fi
+
+    # update the header to show the current key bindings.
+    fzf_send "transform-header($0 __interactive_header ${mode})+refresh-preview"
+}
+
+# get the current state from FZF
+#
+# XXX: this is currently limited to an arbitrary 10k elements.
+function __interactive_get_state {
+    curl \
+        -s \
+        --unix-socket \
+        "${FZF_SOCKET}" \
+        'http://localhost?limit=10000'
+}
+
+# get the index of the id within the given FZF state
+function __interactive_get_index_for_id {
+    local -r id="${1}"
+    __interactive_get_state \
+      | jq '.matches[] | select(.text | startswith($id)) | .index' \
+        --arg id "${id}"
+}
+
+# set the FZF cursor position to the selection to the id given in the
+# first argument.
+function __interactive_set_position {
+    local -r id="${1}"
+    debug "${FZF_SOCKET}" "${XDOT_PIPE}"
+    if read pos < <(__interactive_get_index_for_id "${id}")
+    then
+        debug "id: ${id}, pos: ${pos}"
+        fzf_send "pos($(( "${pos}" + 1 )))"
+    else
+        debug "err"
+    fi
+}
+
+# Save the current FZF state to disk
+#
+# this is needed for restoring state after executing a full-screen
+# command.
+function __interactive_save_state {
+    __interactive_get_state | prefs write 'interactive/state'
+}
+
+# Restore current FZF state from disk after executing a fullscreen command.
+#
+# This is mainly needed because of how the menu system is implemented.
+function __interactive_restore_state {
+    # build an associative array that will tell us which items are selected
+    local -a selected
+    local -A is_selected
+    local i id
+    readarray -t selected < <(
+        prefs read 'interactive/state' \
+            | jq -r '.selected[].text' \
+            | cut -d '|' -f 1
+    )
+    for id in "${selected[@]}"
+    do
+        is_selected["${id}"]=1
+    done
+
+    # for each item in the query results, if the item is in the
+    # selection, tell fzf to select the item.
+    local i=0
+    prefs read 'interactive/query_results' | while read id
+    do
+        if test -n "${is_selected[${id}]}"
+        then
+            echo "pos($(( "${i}" + 1 )))+select"
+        fi
+        i="$(("${i}" + 1))"
+    done | paste -sd '+' | fzf_send
+
+    # set the cursor to the last known position
+    {
+        read pos < <(prefs read 'interactive/state' | jq -r .position)
+        echo "pos($(( "${pos}" + 1 )))"
+    } | fzf_send
+}
+
+# run interactive mainloop
+#
+# this is a separate function so that we can re-enter the main loop
+# after performing a `become(...)` action.
+function __interactive {
+    if test -v 1
+    then
+        prefs write "interactive/menu" "${1}"
+    fi
+
+    __interactive_items | fzf \
+       --input-label="Search" \
+       --style=full \
+       --layout=reverse \
+       --no-input \
+       --cycle \
+       --bind="$(__interactive_bind_dispatch)" \
+       --bind="start:execute-silent($0 __interactive_mode)" \
+       --bind="load:execute-silent($0 __interactive_restore_state)+unbind(load)" \
+       --multi \
+       --track \
+       --no-sort \
+       -d '|' \
+       --with-nth='{2} {3}' \
+       --accept-nth='{1}' \
+       --listen="${FZF_SOCKET}" \
+       --preview="$0 __interactive_preview {+1}"
+}
+
+# an interactive TUI which ties everything together.
+query_declare_type             interactive formatter     "node|nav|graph|view"
+query_declare_default_producer interactive all is_active
+function interactive {
+    prefs clobber "interactive/path"
+    prefs clobber "interactive/state"
+
+    # save initial query results to prevent stdin from blocking.
+    prefs write "interactive/query_results"
+
+    end_filter_chain "${@}"
+
+    local query
+    local consumer
+    query_split_consumer "${SAVED_ARGV[@]}"
+
+    # save the first part of the query so we can re-run it.
+    if test -z "${query[*]}"
+    then
+        splat all is_active | prefs write "interactive/query"
+    else
+        splat "${query[@]}" | prefs write "interactive/query"
+    fi
+
+    __interactive node
+}
+
+# Things built on interactive *************************************************
+
+function reassign {
+    gtd is_context choose into old
+    gtd is_context choose into new
+    gtd from old adjacent contexts outgoing \
+        union reachable_from contexts new \
+        interactive
+}
 
 # Syntax-directed completion **************************************************
 
@@ -1616,7 +3521,6 @@ function __suggest_option {
     fi
 }
 
-
 function __suggest_flags {
     debug suggest_flags
     local flag
@@ -1685,13 +3589,13 @@ function __suggest_matches {
 	shift
     done
     return 1
-}			
+}
 
 
 # Main entry point ************************************************************
 
 # save args for undo log
-SAVED_ARGV="$@"
+declare -ar SAVED_ARGV=("$@")
 
 # I painted myself into a bit of a corner here, with the postfix
 # syntax.
@@ -1708,25 +3612,32 @@ function dispatch {
     fi
 }
 
-if test "$1" = "--debug"
-then
-    shift
-    for name in GTD_COMMAND_ARGS GTD_QUERY_DEFAULT \
-		    GTD_QUERY_TYPE \
-		    GTD_QUERY_CANONICAL_NAME
-    do
-	declare -n arr="${name}"
-	echo "${name}"
-	for key in "${!arr[@]}"
-	do
-	    echo "    ${key} = ${arr[${key}]}"
-	done
-    done
+case "$1" in
+    "--debug")
+      shift
+      for name in GTD_COMMAND_ARGS GTD_QUERY_DEFAULT \
+          	    GTD_QUERY_TYPE \
+          	    GTD_QUERY_CANONICAL_NAME
+      do
+          declare -n arr="${name}"
+          echo "${name}"
+          for key in "${!arr[@]}"
+          do
+              echo "    ${key} = ${arr[${key}]}"
+          done
+      done
 
-    declare -a canonical
-    query_canonicalize "$@"
-    echo "Canonical query"
-    echo "${canonical[@]}"
-else
-    dispatch "$@"
-fi
+      declare -a canonical
+      query_canonicalize "$@"
+      echo "Canonical query"
+      echo "${canonical[@]}"
+      ;;
+    "--query")
+        declare -a query
+        read -a query < <(echo "${2}")
+        dispatch "${query[@]}" "${@:3}"
+        ;;
+    *)
+        dispatch "$@"
+        ;;
+esac

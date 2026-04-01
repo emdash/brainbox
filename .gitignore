@@ -1,0 +1,7 @@
+gtdgraph/*
+*~
+test/*
+test-run/*
+tattle/*
+__pycache__/*
+components/__pycache__/*

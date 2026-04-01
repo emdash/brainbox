@@ -1,4 +1,4 @@
-# GtdGraph [Working Title]
+# Brainbox
 
 A productivity tool that is:
 
@@ -9,34 +9,49 @@ A productivity tool that is:
 I have a long-time fascination with "productivity tools" and the
 [GTD](https://en.wikipedia.org/wiki/Getting_Things_Done) philosophy.
 
-Recently, I discovered [`taskwarrior`](https://taskwarrior.org/). I
-like a lot of things about it, does not do the one thing I wanted
-most: automatic maintenance of "Next Actions". So, wrote my own tool,
-and now I'm sharing it with the world.
+Some time ago, I discovered
+[`taskwarrior`](https://taskwarrior.org/). I like a lot of things
+about it, does not do the one thing I wanted most: automatic
+maintenance of "Next Actions" via a graph of projects.
 
 To get a feel for how it works, please read the [manual](manual.md),
 which is written in a tutorial style.
 
-**TBD:** Screen capture of basic usage
+## v2 Database Schema *Warning*
+
+I don't think anyone but me is using this tool, but on the off-chance
+that someone is, DO NOT UPGRADE to this version with an old database!
+
+Create a fresh database for V2, and migrate your tasks either manually
+or write some custom shell to do it, or if you really need help, open
+an issue and I will spend some time on migration scripts..
+
+The commit tagged `v0.3` is the last official version supporting the
+original DB schema.
+
+In addition, the `v2` schema is still evolving. I am trying to fix
+some design mistakes. `v3.0` will be the next stable schema.
 
 ## Distinguishing Features
 
-### Automatic Task Categorization 
+### Automatic Next Action Tracking
 
 If you've ever tried to observe GTD discipline, one thing you probably
 found tedious was maintaining lists of *Next Actions*, *Projects*,
-*Contexts*, etc. With GtdGraph this is automatic!
+*Contexts*, etc. With Brainbox this is automatic!
 
-Instead, GtGraph shifts the focus to the relationships between tasks,
-inferring the rest through the magic of [graph
-theory](https://en.wikipedia.org/wiki/Graph_theory).
+A task can link to subtasks, in serial or parallel, and dependencies
+can be shared by multiple tasks.
+
+The *agenda* view automatically filters out blocked tasks. As you
+unblock tasks, they will automatically appear in the agenda view.
 
 ### Opinionated, GTD-oriented command set
 
 #### *Capture* and *Inbox*
 
 Quickly insert a new item in to the task system, before you forget
-about it. 
+about it.
 
 Quickly review and triage your inbox.
 
@@ -52,7 +67,7 @@ Easily review and filter entries by any combination of:
 
 ### Context Linking and Subsetting
 
-Whereas most prodctivity tools treat contexts as labels, GtdGraph,
+Whereas most prodctivity tools treat contexts as labels, Brainbox,
 contexts have graph structure.
 
 For example, you might have the following:
@@ -66,15 +81,14 @@ For example, you might have the following:
 | "South Side"     | "Safeway" "Home Depot"           |
 | "North Side"     | "Albertsons" "Costco" "Ace"      |
 
-Given the above, GtdGraph can easily help you answer questions like:
+Given the above, Brainbox can answer questions like:
 
 - what am I ready to do today?
 - what do I want from any grocery store?
-- what can I do while I'm in the north side of my home town?
+- what else can I do while I'm on the north side of town?
 
-Because the same tasks can be linked in multiple ways, you can create
-multiple, overlapping context nextworks to handle different scenarios,
-like: 
+Because tasks can be linked in multiple ways, you can create multiple,
+overlapping context nextworks to handle different scenarios, like:
 
 - being at home
 - being at work
@@ -84,28 +98,25 @@ like:
 
 ### zero-install, if desired
 
-GtdGraph is a shell script which can be run directly from the project
+Brainbox is a shell script which can be run directly from the project
 source directory, or simply add a couple lines to your shell config to
 achieve a user or system-wide installation.
 
-At the time of this writing, GtdGraph has not been packaged by any
+At the time of this writing, Brainbox has not been packaged by any
 distribution.
 
 #### Dependencies
 
-GtdGraph relies on a small number of dependencies.
+Brainbox relies on a small number of runtime dependencies:
 
-- python3, for some targeted "optimizations"
+- python3, for some targeted optimizations
 - fzf, or a compatible alternative, for some interactive search
 - git, for history managment
-- graphviz for static visualization
-- [my fork of xdot](http://github.com/emdash/xdot) for interactive
+- graphviz for graph visualization
+- [my fork of xdot](http://github.com/emdash/xdot.py) for interactive
   visualization.
   - I have submitted a PR which is still awaiting review.
-
-#### Recommended
-
-- optionally, graphviz (for visualizations)
+- for graph visualization, a terminal supporting images (I use `foot`)
 
 #### Dev Dependencies
 
@@ -117,26 +128,24 @@ The "database" is just nested subdirectories. You can store whatever
 data you wish directly within your database alongside your task
 entries. The database can be freely copied, compressed, uploaded, etc.
 
-#### Status, and V1.0 Roadmap ####
+#### Status, and V2.0 Roadmap ####
 
-This is the TODO list for v1.0
+This is the TODO list for v2.0
 
 - Code Quality
   - [ ] Pass shell check lints
   - [ ] Every function has a unit test
-  - [ ] Every function has doc comments
+  - [X] Every function has doc comments
   - [ ] Stretch goal: documentation generated from doc comments
-- Database v1.0
+- Database v2.0
   - [X] Basic graph algorithms
   - [X] Filtering functions
   - [X] Tasks
   - [X] Contexts
   - [X] Simple Task States
-  - [ ] Time-Based Task State
-	- [ ] DELAYED
-	- [ ] REPEATS
-  - [X] cycle detection
-	- [X] separate for dependencies and contexts.
+  - [X] Time-Based Task State
+  - [ ] cycle detection
+	- [ ] separate for dependencies and contexts.
 - Task Management
   - [X] Capture new item
   - [X] List all tasks
@@ -148,10 +157,10 @@ This is the TODO list for v1.0
   - [X] Defer task
   - [X] Drop task
   - [X] Complete task
-  - [ ] Delete selected tasks
-    - [ ] Also deletes edges
-  - [ ] Delete selected edges
-  - [ ] Archive inactive subgraphs
+  - [X] Delete selected tasks
+    - [X] Also deletes edges
+    - [ ] Also delete subtasks
+  - [X] Delete selected edges
   - [X] Task Data (need tests untested)
     - [X] Copy files under task dir
 - History Management
@@ -163,36 +172,27 @@ This is the TODO list for v1.0
   - [X] format project as a tree
   - [X] dotfile conversion of entire db
   - [X] Visualize subgraph rooted at given node or set of nodes.
-  - [ ] dot file export
+  - [X] dot file export
     - [X] Basic export
-	- [ ] visually distinguish between context and dependency edges 
-	- [ ] visually distinguish node state and GTD classification
+	- [X] visually distinguish between context and dependency edges
+	- [X] visually distinguish node state and GTD classification
   - [ ] Gantt Charts
-  - [ ] "Completion Calendars"
+  - [X] "Completion Calendars"
 - Console UX
-  - [ ] Completion scripts for bash
-  - [ ] Menu-driven Triage mode
-  - [ ] Project Planify mode
+  - [X] Completion scripts for bash
+  - [X] Menu-driven Triage mode
+  - [X] Project Planify mode
   - [X] interactively select single task
   - [X] interactively select multiple tasks
 
-## V2.0 and beyond
+## V3.0 and beyond
 
-At minimum:
-
-- terminal output should achieve similar level of polish to what tools
-like TaskWarrior already deliver.
-- richer set of visualizations and reporting out of the box
-
-Depending on and user demand:
-
-- May offer less opinionated feature set
-- May offer more facilities for customiztion
-- May focus on supporting a wider range of shells.
-  - or pick a *specific* shell to embrace
-- May focus on secure handling of untrusted data:
-  - for safe integration with external tools
-	- which likely requires moving to a SQL database
-	- filesystem + git doesn't scale.
-- May add a menu-driven or gui interface on top of the core command
-  line tool
+- rewrite TUI using a dedicated TUI framework
+  - web UI?
+- rewrite core components in strongly-typed language
+- opinionated DB construction
+- facilities for user customizations
+- direct support for syncing across multiple devices
+- direct support for integration with external services / tools
+  - weather plugin
+  - google calendar, etc
