@@ -2269,7 +2269,7 @@ function capture {
     done
 
     local node="$(graph_node_create)"
-    echo "NEW" | graph_datum state write "${node}"
+    echo "NEW" | task_state write "${node}"
 
     # no need to call "end filter chain", as we consume all arguments.
     if test -z "$*"; then
