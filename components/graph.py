@@ -440,14 +440,19 @@ def datum_read(datum, id):
 def task_contents(id):
   return datum_read("contents", id)
 
-def task_gloss(id):
-  if has("contents", id):
-    return task_contents(id).split('\n')[0]
-  else:
-    if id in os.listdir(BUCKET_DIR):
-      return id
+def task_gloss(ref):
+  def gloss(id):
+    if has("contents", id):
+      return task_contents(id).split('\n')[0]
     else:
-      return "[no contents]"
+      if id in os.listdir(BUCKET_DIR):
+        return id
+      else:
+        return "[no contents]"
+
+  match ref.split("-start"):
+    case [id, '']: return gloss(id) + "::start"
+    case [id]:     return gloss(id)
 
 def task_state(id):
   return datum_read("state", id)
