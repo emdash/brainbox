@@ -141,22 +141,24 @@ def subtask_groups(node):
 
   return ret
 
-def project_subgraph(node, groups):
-  """Compute subgraph for a given project node.
+def subtask_edges(node, groups, projects):
+  """Generate the edges for a set of subtask groups.
 
   Groups are parallel w/r/t each other. Each group is a linear chain
-  of tasks.
-  """
+  of tasks. Tasks groups are assumed to be in reverse order from the
+  on-disk format.
 
+  """
   for group in groups:
     match group:
       case [prev, *rest] as subtasks:
-        yield (node, prev, "implicit")
+        yield (node, prev, "subtask")
         for next in rest:
-          yield (prev, next, "implicit")
+          if prev in projects:
+            yield (f"{prev}-start", f"{node}-start", "sibling")
+          yield (prev, next, "sibling")
           prev = next
-      case _:
-        raise ValueError("Empty group")
+        yield (prev, f"{node}-start", "leaf")
 
 def get_subtasks(node):
   """Get all the subtasks of a project.
@@ -165,21 +167,101 @@ def get_subtasks(node):
   """
   return filter(bool, read_subtasks(node))
 
+def is_start_node(node):
+  """True if a node id identifies a virtual start node."""
+  return node.endswith("-start")
+
+def project_subgraph(projects):
+  """Construct the intermediate project task graph.
+
+  This is the union of all subtask edges and all the explicit eges,
+  with project-level dependencies blocking the project
+  start node.
+  """
+
+  for (node, groups) in projects.items():
+    yield from subtask_edges(node, groups, projects)
+
+  for (u, v) in read_edges("dependencies"):
+    if u in projects:
+      yield (f"{u}-start", v, "leaf")
+    else:
+      yield (u, v)
+
+def merge_start_nodes_iter(edges):
+  """Remove one layer of virtual nodes, preserving connectivity.
+  """
+
+  edges = set(edges)
+  outgoing = adjacency_list(edges)
+  incoming = adjacency_list(flipped(edges))
+  empty = set()
+
+  for (u, v, *rest) in edges:
+    us = incoming.get(u, empty) if is_start_node(u) else {u}
+    vs = outgoing.get(v, empty) if is_start_node(v) else {v}
+    for u in us:
+      for v in vs:
+        yield (u, v, *rest)
+
+def merge_start_nodes(edges):
+  """Recursively remove start nodes from the graph.
+
+  We need to the full edge list in order to do this correctly, so it
+  has to be a distinct pass.
+
+  If any start nodes remain in the output, we recursively perform
+  another pass.
+  """
+
+  iter = False
+  ret = set()
+
+  for edge in merge_start_nodes_iter(edges):
+    (u, v, *rest) = edge
+    if is_start_node(u) or is_start_node(v):
+      iter = True
+    ret.add(edge)
+
+  if iter:
+    return merge_start_nodes(ret)
+  else:
+    return ret
+
 def dependencies():
   """A generator which yields all dependency edges.
 
   We have to special-case "Project" nodes to get the correct
   graph.
 
-  Confusion arises from the tension between "outline format" and the
-  naive interpretation of a tree as a DAG. Outline format implies:
+  Complexity arises from the "outline format" of the substasks file
+  and the naive interpretation of a tree as an explicit DAG. Outline
+  format implies:
 
-   1. Reverse ordering, with the first subtask considered a leaf.
-   2. Implicit chaining, with a happens-before between each successive sibling.
-   3. Project-level dependencies implicitly project from the first child.
+   1. Reverse ordering, with the first subtask in a group considered a leaf.
+   2. Implicit chaining, with each successive sibling depending on the previous.
+   3. Project-level dependencies implicitly block project leaves.
 
-  In addition, we want to allow arbitrary parallelism within the
-  project, where appropriate.
+  This requires a multi-pass approach. The first pass constructs an
+  incomplete project dag from the subtasks file for each
+  project. During this pass, we in insert virtual start nodes which
+  implicitly block the leaves of each project.
+
+  We then process the explicit edges of the graph, adjusting any
+  project-level dependencies to block to the virtual start node,
+  rather than the project node itself.
+
+  Finally, the virtual nodes are removed by merging edges with their
+  neighbors. We could skip this step, but this breaks the invariant
+  that node IDs always refer to a valid path in the DB, resulting in
+  numerous downstream issues.
+
+  Earlier approaches were simpler, but incorrectly treated
+  project-level dependencies as leaves in some cases. The intention is
+  that as a task expands into a project, any explicit dependencies it
+  might have continue to depend on the task as a whole, including its
+  transitive dependencies.
+
   """
 
   # Find all the project nodes
@@ -189,25 +271,7 @@ def dependencies():
     if has("subtasks", node)
   }
 
-  # Emit all the project subtask edges.
-  for (node, groups) in projects.items():
-    yield from project_subgraph(node, groups)
-
-  # Emit all the explicit edges in the graph, special-casing direct
-  # dependencies from project nodes.
-  #
-  # Project-level dependencies implicitly block all the leaves of a
-  # project. Direct dependencies between a project's subtasks may also
-  # exist.
-  #
-  # The leaves of a project are just the last task in each subtask
-  # group.
-  for (u, v) in read_edges("dependencies"):
-    if u in projects and projects[u]:
-      for subtask in [g[-1] for g in projects[u]]:
-        yield (subtask, v, "implicit")
-    else:
-      yield (u, v)
+  yield from merge_start_nodes(project_subgraph(projects))
 
 def edge_list(edge_set, subtasks=True):
   """Get the set of edges for the given edge set.
@@ -673,5 +737,5 @@ if __name__ == "__main__":
     "touches":        touches,
     "contained":      contained,
     "summary":        summary,
-    "dangling":       dangling
+    "dangling":       dangling,
   }[sys.argv[1]](*sys.argv[2:])
