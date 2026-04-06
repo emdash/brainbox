@@ -344,6 +344,7 @@ def is_unassigned():
   )
 
 def flipped(edges):
+  """Return the reverse graph, with all edges flipped."""
   for (u, v, *rest) in edges:
     yield (v, u, *rest)
 
