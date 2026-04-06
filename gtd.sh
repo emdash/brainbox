@@ -2456,11 +2456,12 @@ function history {
 
 function __schedule_builder_preview {
     local style start end
-    read style    < <(prefs read 'schedule_builder/style'    week)
     read start    < <(prefs read 'schedule_builder/start'    "$(date -Iminutes)")
     read duration < <(prefs read 'schedule_builder/duration' '1w')
 
-    prefs read 'schedule_builder/schedule' | _schedule preview "${style}" "${start}"
+    echo "Previewing for: ${start} ${duration}"
+    echo "${@}" | _schedule preview month "${start}"
+    echo "${@}" | _schedule preview week  "${start}"
 }
 
 function __schedule_builder_items {
@@ -2475,9 +2476,11 @@ function __schedule_builder_items {
 function __schedule_builder_bindings {
     fzf_bind_action "start"  "--" "show-input+reload-sync($0 __schedule_builder_items {q})"
     fzf_bind_action "change" "--" "reload-sync($0 __schedule_builder_items {q})"
-    fzf_bind_sexec  "alt-w" "Week View"  "$0 prefs write 'schedule_builder/style' week"  "refresh-preview"
-    fzf_bind_sexec  "alt-m" "Month View" "$0 prefs write 'schedule_builder/style' month" "refresh-preview"
-    fzf_bind_action "enter" "Accept" "accept"
+    fzf_bind_sexec  "alt-w"  "Week View"  "$0 prefs write 'schedule_builder/style' week"  "refresh-preview"
+    fzf_bind_sexec  "alt-m"  "Month View" "$0 prefs write 'schedule_builder/style' month" "refresh-preview"
+    fzf_bind_action "enter"  "Accept" "accept"
+    fzf_bind_action "ctrl-k"        "--" "kill-line"
+    fzf_bind_action "alt-backspace" "--" "backward-kill-word"
 }
 
 function schedule_builder {

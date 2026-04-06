@@ -1414,22 +1414,22 @@ def parse_datetime(args):
       return startOfDay(today - day)
     case ["tomorrow"]:
       return startOfDay(today + day)
-    case ["this", dayName] | [dayName] if dayName.tolower() in days:
-      d = dayName.tolower()
+    case ["this", dayName] | [dayName] if dayName.lower() in days:
+      d = dayName.lower()
       if d in days:
         return startOfWeek(today) + days[d]
       else:
         return startOfWeek(today) + int(d)
     case ["last", dayName]:
-      d = dayName.tolower()
+      d = dayName.lower()
       if d in days:
-        return startOfWeek(today) - 7 * day + days[dayName.tolower()]
+        return startOfWeek(today) - 7 * day + days[dayName.lower()]
       else:
         return startOfWeek(today) - 7 * day + int(d)
     case ["next", dayName]:
-      d = dayName.tolower()
+      d = dayName.lower()
       if d in days:
-        return startOfWeek(today) + 7 * day + days[dayName.tolower()]
+        return startOfWeek(today) + 7 * day + days[dayName.lower()]
       else:
         return startOfWeek(today) + 7 * day + int(d)
     case [iso]:
