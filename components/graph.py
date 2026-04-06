@@ -250,35 +250,6 @@ def node_adjacent(node, edges, direction):
         if   node == u: yield v
         elif node == v: yield u
 
-def traverse(node, edges, direction, ancestors=None, seen=None):
-  """Yield nodes from the subgraph rooted at `node`.
-
-  @node      - the root node
-  @edges     - the edge set to follow
-  @direction - incoming, outoging, or both.
-  @ancestors - the path up to the root.
-  @seen      - a.k.a. the "visited" set.
-
-  This is the general traversal, special cases of which appear below.
-  """
-  if node in ancestors:
-    if direction == "all":
-      return
-    else:
-      print("Graph contains a cycle", file=sys.stderr)
-      exit(1)
-
-  if node not in seen:
-    yield node
-    for adj in node_adjacent(node, edges, direction):
-      yield from traverse(
-        adj,
-        edges,
-        direction,
-        ancestors | {node},
-        seen    | {node}
-      )
-
 def has_adjacent(node, edges, direction):
   """True if a node has edges in the given direction"""
   return len(list(node_adjacent(node, edges, direction))) > 0
