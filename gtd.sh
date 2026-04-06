@@ -2799,13 +2799,11 @@ function __interactive_path {
 }
 
 function __interactive_preview {
-    local mode menu
+    local menu
 
-    read mode < <(prefs read 'interactive/mode' neighbors)
     read menu < <(prefs read 'interactive/menu' node)
 
     splat "${@}" > "${DATA_DIR}/selection"
-    echo "Mode: ${mode} "
 
     if read top < <(__interactive_top)
     then
@@ -2821,36 +2819,47 @@ function __interactive_preview {
     esac
 }
 
-function __interactive_items {
-    local top mode filters
-    read mode < <(prefs read 'interactive/mode' neighbors)
+function __interactive_items_from_stack {
+    local -r top="${1}"
+
+    # don't filter by context when navigating.
+    # XXX: validate before blindly executing ${mode}
+    echo "${top}" \
+        | neighbors \
+        | filter test "${top}" !=
+}
+
+function __interactive_items_from_query {
+    local filters
     read filters < <(prefs path 'filter_contexts')
 
+    # re-run the stored query, saving query results for the preview
+    # window.
+    prefs read 'interactive/query' \
+      | apply dispatch > "${DATA_DIR}/query_results"
+
+    if test -s "${filters}"
+    then
+        # filter according to context preferences
+        local -a ctxts
+        readarray -t ctxts < "${filters}"
+        graph reachable_from contexts outgoing "${ctxts[@]}" \
+          < "${DATA_DIR}/query_results"
+    else
+        cat "${DATA_DIR}/query_results"
+    fi
+}
+
+function __interactive_items {
+    local top
     # check whether the navigation stack is non-empty, and display
     # from top-of-stack in that case.
     if read top < <(__interactive_top)
     then
-        # don't filter by context when navigating.
-        # XXX: validate before blindly executing ${mode}
-        echo "${top}" \
-          |  "${mode}" \
-          | filter test "${top}" !=
+        __interactive_items_from_stack "${top}"
     else
-        # if nav stack is empty, re-run the stored query, saving the
-        # query results for the preview window.
-        prefs read 'interactive/query' \
-          | apply dispatch \
-          | tee -p "${DATA_DIR}/query_results" \
-          | if test -s "${filters}"
-        then
-            # filter according to context preferences
-            local -a ctxts
-            readarray -t ctxts < "${filters}"
-            graph reachable_from contexts outgoing "${ctxts[@]}" | summarize -d '|'
-        else
-            summarize -d '|'
-        fi
-    fi
+        __interactive_items_from_query
+    fi | summarize -d '|'
 }
 
 # one-line capture for the interactive menu
@@ -2923,21 +2932,11 @@ function __interactive_node_submenu {
     fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
 }
 
-function __interactive_nav_submenu {
+function __interactive_view_submenu {
     local rls="reload-sync($0 __interactive_items)"
     local setpref="$0 prefs write"
-    fzf_bind_sexec  "backspace" "Back"      "$0 __interactive_pop"                    "${rls}"
-    fzf_bind_sexec  "enter"     "Goto"      "$0 __interactive_push {1}"               "${rls}"
-    fzf_bind_action "c"         "Capture"   "become($0 __interactive_capture)"        "${rls}"
-    fzf_bind_sexec  "f"         "Family"    "${setpref} 'interactive/mode' family"    "${rls}"
-    fzf_bind_sexec  "n"         "Neighbors" "${setpref} 'interactive/mode' neighbors" "${rls}"
-    fzf_bind_sexec  "p"         "Parents"   "${setpref} 'interactive/mode' parents"   "${rls}"
-    fzf_bind_sexec  "C"         "Children"  "${setpref} 'interactive/mode' children"  "${rls}"
-}
 
-function __interactive_view_submenu {
     prefs_bind_toggle "c" "Contents" "details/show_contents"
-
     prefs_bind_toggle "alt-s" "Schedule" "details/show_schedule"
 
     prefs_bind_toggle "b" "Buckets"  "details/show_buckets"
@@ -3037,21 +3036,22 @@ function __interactive_bindings {
     # move graph to external viewer
     fzf_bind_sexec "ctrl-x"     "XDot"            "$0 __interactive_xdot_run" "refresh-preview"
 
+    # navigation commands
+    fzf_bind_sexec "left"       "Back"            "$0 __interactive_pop"              "${rls}"
+    fzf_bind_sexec "right"      "Goto Node"       "$0 __interactive_push {1}"         "${rls}"
+
     # menu system bindings
-    fzf_bind_sexec  "1"          "--"              "$0 __interactive_mode node"
-    fzf_bind_sexec  "2"          "--"              "$0 __interactive_mode nav"
-    fzf_bind_sexec  "3"          "--"              "$0 __interactive_mode graph"
-    fzf_bind_sexec  "4"          "--"              "$0 __interactive_mode view"
-    fzf_bind_sexec  "5"          "--"              "$0 __interactive_mode agenda"
+    fzf_bind_sexec  "1"          "--"             "$0 __interactive_mode node"
+    fzf_bind_sexec  "2"          "--"             "$0 __interactive_mode graph"
+    fzf_bind_sexec  "3"          "--"             "$0 __interactive_mode view"
+    fzf_bind_sexec  "4"          "--"             "$0 __interactive_mode agenda"
     case "${menu}" in
         node)   __interactive_node_submenu;;
-        nav)    __interactive_nav_submenu;;
         graph)  __interactive_graph_submenu;;
         view)   __interactive_view_submenu;;
         agenda) __interactive_agenda_submenu;;
         all)
             __interactive_node_submenu
-            __interactive_nav_submenu
             __interactive_graph_submenu
             __interactive_view_submenu
             __interactive_search_bindings
@@ -3071,11 +3071,10 @@ function __interactive_bindings {
 function __interactive_header {
     local tabs
     case "${1}" in
-        node)   tabs="[_ Node] [2 Nav] [3 Graph] [4 View] [5 Agenda]";;
-        nav)    tabs="[1 Node] [_ Nav] [3 Graph] [4 View] [5 Agenda]";;
-        graph)  tabs="[1 Node] [2 Nav] [_ Graph] [4 View] [5 Agenda]";;
-        view)   tabs="[1 Node] [2 Nav] [3 Graph] [_ View] [5 Agenda]";;
-        agenda) tabs="[1 Node] [2 Nav] [3 Graph] [4 View] [_ Agenda]";;
+        node)   tabs="[_ Node] [2 Graph] [3 View] [4 Agenda]";;
+        graph)  tabs="[1 Node] [_ Graph] [3 View] [4 Agenda]";;
+        view)   tabs="[1 Node] [2 Graph] [_ View] [4 Agenda]";;
+        agenda) tabs="[1 Node] [2 Graph] [3 View] [_ Agenda]";;
         search) tabs="Search Mode";;
         *) debug "wtf" $1;;
     esac
