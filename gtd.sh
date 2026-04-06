@@ -2517,11 +2517,13 @@ function __query_builder_items {
 }
 
 function __query_builder_bindings {
-    fzf_bind_action "start"  "--"   "toggle-input" "reload-sync($0 __query_builder_items {q})"
-    fzf_bind_action "load"   "--"   "refresh-preview" "unbind(load)"
-    fzf_bind_action "change" "--"   "reload-sync($0 __query_builder_items {q})"
-    fzf_bind_sexec  "focus"  "--"   "echo {1} | $0 stdin into cur"
-    fzf_bind_action "enter"  "Accept" "accept-non-empty"
+    fzf_bind_action "start"         "--"     "toggle-input" "reload-sync($0 __query_builder_items {q})"
+    fzf_bind_action "load"          "--"     "refresh-preview" "unbind(load)"
+    fzf_bind_action "change"        "--"     "reload-sync($0 __query_builder_items {q})"
+    fzf_bind_sexec  "focus"         "--"     "echo {1} | $0 stdin into cur"
+    fzf_bind_action "enter"         "Accept" "accept-non-empty"
+    fzf_bind_action "ctrl-k"        "--"     "kill-line"
+    fzf_bind_action "alt-backspace" "--"     "backward-kill-word"
 }
 
 function query_builder {
@@ -3002,7 +3004,7 @@ function __interactive_search_bindings {
     fzf_bind_action "backspace"     "--" "backward-delete-char"
     fzf_bind_sexec  "enter"         "--" "$0 __interactive_mode exit-search"
     fzf_bind_sexec  "esc"           "--" "$0 __interactive_mode exit-search"
-    fzf_bind_action "alt-backspace" "--" "backward-delete-word"
+    fzf_bind_action "alt-backspace" "--" "backward-kill-word"
     fzf_bind_action "ctrl-k"        "--" "kill-line"
 }
 
