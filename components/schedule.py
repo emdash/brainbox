@@ -1280,15 +1280,6 @@ def agenda(
   ))
   print()
 
-  # print the unscheduled tasks
-  print("Unscheduled Tasks")
-  print(tabulate.tabulate(
-    ((graph.task_state(id), show_gloss(id)) for id in todo),
-    headers=["State", "Task"],
-    tablefmt="simple"
-  ))
-  print()
-
 def datum_read_json(datum, id):
   """Read the given datum and try to decode it as JSON."""
   return json.load(open(graph.datum_path(datum, id)))
@@ -1423,22 +1414,22 @@ def parse_datetime(args):
       return startOfDay(today - day)
     case ["tomorrow"]:
       return startOfDay(today + day)
-    case ["this", dayName] | [dayName] if dayName.tolower() in days:
-      d = dayName.tolower()
+    case ["this", dayName] | [dayName] if dayName.lower() in days:
+      d = dayName.lower()
       if d in days:
         return startOfWeek(today) + days[d]
       else:
         return startOfWeek(today) + int(d)
     case ["last", dayName]:
-      d = dayName.tolower()
+      d = dayName.lower()
       if d in days:
-        return startOfWeek(today) - 7 * day + days[dayName.tolower()]
+        return startOfWeek(today) - 7 * day + days[dayName.lower()]
       else:
         return startOfWeek(today) - 7 * day + int(d)
     case ["next", dayName]:
-      d = dayName.tolower()
+      d = dayName.lower()
       if d in days:
-        return startOfWeek(today) + 7 * day + days[dayName.tolower()]
+        return startOfWeek(today) + 7 * day + days[dayName.lower()]
       else:
         return startOfWeek(today) + 7 * day + int(d)
     case [iso]:

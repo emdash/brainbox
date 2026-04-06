@@ -835,6 +835,11 @@ function task_details {
     esac
     echo
 
+    if prefs_bool_test "details/show_agenda" 1
+    then
+        __agenda_preview "${@}"
+    fi
+
     if prefs_bool_test "details/show_contents" 1
     then
       task_contents read "${1}" \
@@ -1408,7 +1413,7 @@ function choose {
     esac
 
     fzf_menu \
-      "Choose Node: ${SAVED_ARGV[*]}" \
+      "${GTD_CHOOSE_PROMPT:-"Choose Node: ${SAVED_ARGV[*]}"}" \
       __choose_bindings \
       __choose_items \
       -d '|' \
@@ -2451,11 +2456,12 @@ function history {
 
 function __schedule_builder_preview {
     local style start end
-    read style    < <(prefs read 'schedule_builder/style'    week)
     read start    < <(prefs read 'schedule_builder/start'    "$(date -Iminutes)")
     read duration < <(prefs read 'schedule_builder/duration' '1w')
 
-    prefs read 'schedule_builder/schedule' | _schedule preview "${style}" "${start}"
+    echo "Previewing for: ${start} ${duration}"
+    echo "${@}" | _schedule preview month "${start}"
+    echo "${@}" | _schedule preview week  "${start}"
 }
 
 function __schedule_builder_items {
@@ -2470,9 +2476,11 @@ function __schedule_builder_items {
 function __schedule_builder_bindings {
     fzf_bind_action "start"  "--" "show-input+reload-sync($0 __schedule_builder_items {q})"
     fzf_bind_action "change" "--" "reload-sync($0 __schedule_builder_items {q})"
-    fzf_bind_sexec  "alt-w" "Week View"  "$0 prefs write 'schedule_builder/style' week"  "refresh-preview"
-    fzf_bind_sexec  "alt-m" "Month View" "$0 prefs write 'schedule_builder/style' month" "refresh-preview"
-    fzf_bind_action "enter" "Accept" "accept"
+    fzf_bind_sexec  "alt-w"  "Week View"  "$0 prefs write 'schedule_builder/style' week"  "refresh-preview"
+    fzf_bind_sexec  "alt-m"  "Month View" "$0 prefs write 'schedule_builder/style' month" "refresh-preview"
+    fzf_bind_action "enter"  "Accept" "accept"
+    fzf_bind_action "ctrl-k"        "--" "kill-line"
+    fzf_bind_action "alt-backspace" "--" "backward-kill-word"
 }
 
 function schedule_builder {
@@ -2509,11 +2517,13 @@ function __query_builder_items {
 }
 
 function __query_builder_bindings {
-    fzf_bind_action "start"  "--"   "toggle-input" "reload-sync($0 __query_builder_items {q})"
-    fzf_bind_action "load"   "--"   "refresh-preview" "unbind(load)"
-    fzf_bind_action "change" "--"   "reload-sync($0 __query_builder_items {q})"
-    fzf_bind_sexec  "focus"  "--"   "echo {1} | $0 stdin into cur"
-    fzf_bind_action "enter"  "Accept" "accept-non-empty"
+    fzf_bind_action "start"         "--"     "toggle-input" "reload-sync($0 __query_builder_items {q})"
+    fzf_bind_action "load"          "--"     "refresh-preview" "unbind(load)"
+    fzf_bind_action "change"        "--"     "reload-sync($0 __query_builder_items {q})"
+    fzf_bind_sexec  "focus"         "--"     "echo {1} | $0 stdin into cur"
+    fzf_bind_action "enter"         "Accept" "accept-non-empty"
+    fzf_bind_action "ctrl-k"        "--"     "kill-line"
+    fzf_bind_action "alt-backspace" "--"     "backward-kill-word"
 }
 
 function query_builder {
@@ -2754,20 +2764,30 @@ function __interactive_triage {
         splat "${tasks[@]}" | into target
 
         # choose a context
-        if all | is_context | choose -m | into source
+        if all \
+                | is_context \
+                | GTD_CHOOSE_PROMPT="Context" choose -m \
+                | into source
         then
             assign
         fi
 
         # choose an existing node to add to as a subtask
-        if read proj < <(all | graph filter_state NEW TODO | choose)
+        if read proj < <(
+                all \
+                    | graph filter_state NEW TODO SOMEDAY \
+                    | GTD_CHOOSE_PROMPT="Add to Existing Project" choose \
+                )
         then
             splat "${tasks[@]}" | graph_datum subtasks append "${proj}"
             plan "${proj}"
         fi
 
         # choose an area of focus
-        if all | is_focus | choose -m | into source
+        if all \
+                | is_focus \
+                | GTD_CHOOSE_PROMPT="Area of Focus" choose -m \
+                | into source
         then
             add
         fi
@@ -2799,13 +2819,11 @@ function __interactive_path {
 }
 
 function __interactive_preview {
-    local mode menu
+    local menu
 
-    read mode < <(prefs read 'interactive/mode' neighbors)
     read menu < <(prefs read 'interactive/menu' node)
 
     splat "${@}" > "${DATA_DIR}/selection"
-    echo "Mode: ${mode} "
 
     if read top < <(__interactive_top)
     then
@@ -2813,44 +2831,53 @@ function __interactive_preview {
     else
         echo "Path: [Root]"
         top="${1}"
+        shift
     fi
 
-    case "${menu}" in
-        agenda) __agenda_preview "${@}";;
-        *) task_details "${top}";;
-    esac
+    task_details "${top}" "${@}"
+}
+
+function __interactive_items_from_stack {
+    local -r top="${1}"
+
+    # don't filter by context when navigating.
+    # XXX: validate before blindly executing ${mode}
+    echo "${top}" \
+        | neighbors \
+        | filter test "${top}" !=
+}
+
+function __interactive_items_from_query {
+    local filters
+    read filters < <(prefs path 'filter_contexts')
+
+    # re-run the stored query, saving query results for the preview
+    # window.
+    prefs read 'interactive/query' \
+      | apply dispatch > "${DATA_DIR}/query_results"
+
+    if test -s "${filters}"
+    then
+        # filter according to context preferences
+        local -a ctxts
+        readarray -t ctxts < "${filters}"
+        graph reachable_from contexts outgoing "${ctxts[@]}" \
+          < "${DATA_DIR}/query_results"
+    else
+        cat "${DATA_DIR}/query_results"
+    fi
 }
 
 function __interactive_items {
-    local top mode filters
-    read mode < <(prefs read 'interactive/mode' neighbors)
-    read filters < <(prefs path 'filter_contexts')
-
+    local top
     # check whether the navigation stack is non-empty, and display
     # from top-of-stack in that case.
     if read top < <(__interactive_top)
     then
-        # don't filter by context when navigating.
-        # XXX: validate before blindly executing ${mode}
-        echo "${top}" \
-          |  "${mode}" \
-          | filter test "${top}" !=
+        __interactive_items_from_stack "${top}"
     else
-        # if nav stack is empty, re-run the stored query, saving the
-        # query results for the preview window.
-        prefs read 'interactive/query' \
-          | apply dispatch \
-          | tee -p "${DATA_DIR}/query_results" \
-          | if test -s "${filters}"
-        then
-            # filter according to context preferences
-            local -a ctxts
-            readarray -t ctxts < "${filters}"
-            graph reachable_from contexts outgoing "${ctxts[@]}" | summarize -d '|'
-        else
-            summarize -d '|'
-        fi
-    fi
+        __interactive_items_from_query
+    fi | summarize -d '|'
 }
 
 # one-line capture for the interactive menu
@@ -2914,6 +2941,7 @@ function __interactive_node_submenu {
     fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
     fzf_bind_action "t"      "Triage"       "become(${selected} $0 __interactive_triage)" "${rls}"
     fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
+    fzf_bind_sexec  "S"      "Unschedule"   "${selected} $0 stdin unschedule"   "${rls}"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
     fzf_bind_sexec  "r"      "Remember"     "${selected} $0 stdin remember"     "${rls}"
     fzf_bind_sexec  "F"      "Make Focus"   "${selected} $0 stdin focus"        "${rls}"
@@ -2923,21 +2951,12 @@ function __interactive_node_submenu {
     fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
 }
 
-function __interactive_nav_submenu {
+function __interactive_view_submenu {
     local rls="reload-sync($0 __interactive_items)"
     local setpref="$0 prefs write"
-    fzf_bind_sexec  "backspace" "Back"      "$0 __interactive_pop"                    "${rls}"
-    fzf_bind_sexec  "enter"     "Goto"      "$0 __interactive_push {1}"               "${rls}"
-    fzf_bind_action "c"         "Capture"   "become($0 __interactive_capture)"        "${rls}"
-    fzf_bind_sexec  "f"         "Family"    "${setpref} 'interactive/mode' family"    "${rls}"
-    fzf_bind_sexec  "n"         "Neighbors" "${setpref} 'interactive/mode' neighbors" "${rls}"
-    fzf_bind_sexec  "p"         "Parents"   "${setpref} 'interactive/mode' parents"   "${rls}"
-    fzf_bind_sexec  "C"         "Children"  "${setpref} 'interactive/mode' children"  "${rls}"
-}
 
-function __interactive_view_submenu {
-    prefs_bind_toggle "c" "Contents" "details/show_contents"
-
+    prefs_bind_toggle "a"     "Agenda"   "details/show_agenda"
+    prefs_bind_toggle "c"     "Contents" "details/show_contents"
     prefs_bind_toggle "alt-s" "Schedule" "details/show_schedule"
 
     prefs_bind_toggle "b" "Buckets"  "details/show_buckets"
@@ -2981,21 +3000,11 @@ function __interactive_graph_submenu {
     fzf_bind_action "B" "Clear Bucket"               "become($0 __interactive_bucket --clear)" "${rls}"
 }
 
-function __interactive_agenda_submenu {
-    local -r rls="reload-sync($0 __interactive_items)"
-    fzf_bind_sexec  "enter"  "Complete"   "$0 splat {+1} | $0 stdin complete"   "${rls}"
-    fzf_bind_sexec  "delete" "Drop"       "$0 splat {+1} | $0 stdin drop"       "${rls}"
-    fzf_bind_sexec  "d"      "Defer"      "$0 splat {+1} | $0 stdin defer"      "${rls}"
-    fzf_bind_exec   "s"      "Schedule"   "$0 splat {+1} | $0 stdin schedule"   "${rls}"
-    fzf_bind_sexec  "X"      "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "${rls}"
-    fzf_bind_exec   "w"      "Wait For"   "$0 __interactive_wf {+1}"            "${rls}"
-}
-
 function __interactive_search_bindings {
     fzf_bind_action "backspace"     "--" "backward-delete-char"
     fzf_bind_sexec  "enter"         "--" "$0 __interactive_mode exit-search"
     fzf_bind_sexec  "esc"           "--" "$0 __interactive_mode exit-search"
-    fzf_bind_action "alt-backspace" "--" "backward-delete-word"
+    fzf_bind_action "alt-backspace" "--" "backward-kill-word"
     fzf_bind_action "ctrl-k"        "--" "kill-line"
 }
 
@@ -3037,25 +3046,23 @@ function __interactive_bindings {
     # move graph to external viewer
     fzf_bind_sexec "ctrl-x"     "XDot"            "$0 __interactive_xdot_run" "refresh-preview"
 
+    # navigation commands
+    fzf_bind_sexec "left"       "Back"            "$0 __interactive_pop"              "${rls}"
+    fzf_bind_sexec "right"      "Goto Node"       "$0 __interactive_push {1}"         "${rls}"
+
     # menu system bindings
-    fzf_bind_sexec  "1"          "--"              "$0 __interactive_mode node"
-    fzf_bind_sexec  "2"          "--"              "$0 __interactive_mode nav"
-    fzf_bind_sexec  "3"          "--"              "$0 __interactive_mode graph"
-    fzf_bind_sexec  "4"          "--"              "$0 __interactive_mode view"
-    fzf_bind_sexec  "5"          "--"              "$0 __interactive_mode agenda"
+    fzf_bind_sexec  "1"          "--"             "$0 __interactive_mode node"
+    fzf_bind_sexec  "2"          "--"             "$0 __interactive_mode graph"
+    fzf_bind_sexec  "3"          "--"             "$0 __interactive_mode view"
     case "${menu}" in
         node)   __interactive_node_submenu;;
-        nav)    __interactive_nav_submenu;;
         graph)  __interactive_graph_submenu;;
         view)   __interactive_view_submenu;;
-        agenda) __interactive_agenda_submenu;;
         all)
             __interactive_node_submenu
-            __interactive_nav_submenu
             __interactive_graph_submenu
             __interactive_view_submenu
             __interactive_search_bindings
-            __interactive_agenda_submenu
         ;;
     esac
 
@@ -3071,11 +3078,9 @@ function __interactive_bindings {
 function __interactive_header {
     local tabs
     case "${1}" in
-        node)   tabs="[_ Node] [2 Nav] [3 Graph] [4 View] [5 Agenda]";;
-        nav)    tabs="[1 Node] [_ Nav] [3 Graph] [4 View] [5 Agenda]";;
-        graph)  tabs="[1 Node] [2 Nav] [_ Graph] [4 View] [5 Agenda]";;
-        view)   tabs="[1 Node] [2 Nav] [3 Graph] [_ View] [5 Agenda]";;
-        agenda) tabs="[1 Node] [2 Nav] [3 Graph] [4 View] [_ Agenda]";;
+        node)   tabs="[_ Node] [2 Graph] [3 View]";;
+        graph)  tabs="[1 Node] [_ Graph] [3 View]";;
+        view)   tabs="[1 Node] [2 Graph] [_ View]";;
         search) tabs="Search Mode";;
         *) debug "wtf" $1;;
     esac
