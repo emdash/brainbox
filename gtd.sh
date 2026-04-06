@@ -835,6 +835,11 @@ function task_details {
     esac
     echo
 
+    if prefs_bool_test "details/show_agenda" 1
+    then
+        __agenda_preview "${@}"
+    fi
+
     if prefs_bool_test "details/show_contents" 1
     then
       task_contents read "${1}" \
@@ -2811,12 +2816,10 @@ function __interactive_preview {
     else
         echo "Path: [Root]"
         top="${1}"
+        shift
     fi
 
-    case "${menu}" in
-        agenda) __agenda_preview "${@}";;
-        *) task_details "${top}";;
-    esac
+    task_details "${top}" "${@}"
 }
 
 function __interactive_items_from_stack {
@@ -2923,6 +2926,7 @@ function __interactive_node_submenu {
     fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
     fzf_bind_action "t"      "Triage"       "become(${selected} $0 __interactive_triage)" "${rls}"
     fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
+    fzf_bind_sexec  "S"      "Unschedule"   "${selected} $0 stdin unschedule"   "${rls}"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
     fzf_bind_sexec  "r"      "Remember"     "${selected} $0 stdin remember"     "${rls}"
     fzf_bind_sexec  "F"      "Make Focus"   "${selected} $0 stdin focus"        "${rls}"
@@ -2936,7 +2940,8 @@ function __interactive_view_submenu {
     local rls="reload-sync($0 __interactive_items)"
     local setpref="$0 prefs write"
 
-    prefs_bind_toggle "c" "Contents" "details/show_contents"
+    prefs_bind_toggle "a"     "Agenda"   "details/show_agenda"
+    prefs_bind_toggle "c"     "Contents" "details/show_contents"
     prefs_bind_toggle "alt-s" "Schedule" "details/show_schedule"
 
     prefs_bind_toggle "b" "Buckets"  "details/show_buckets"
@@ -2978,16 +2983,6 @@ function __interactive_graph_submenu {
     fzf_bind_action "p" "Plan Project"               "become($0 __interactive_plan {1})"       "${rls}"
     fzf_bind_action "b" "Bucket"                     "become($0 __interactive_bucket {+1})"    "${rls}"
     fzf_bind_action "B" "Clear Bucket"               "become($0 __interactive_bucket --clear)" "${rls}"
-}
-
-function __interactive_agenda_submenu {
-    local -r rls="reload-sync($0 __interactive_items)"
-    fzf_bind_sexec  "enter"  "Complete"   "$0 splat {+1} | $0 stdin complete"   "${rls}"
-    fzf_bind_sexec  "delete" "Drop"       "$0 splat {+1} | $0 stdin drop"       "${rls}"
-    fzf_bind_sexec  "d"      "Defer"      "$0 splat {+1} | $0 stdin defer"      "${rls}"
-    fzf_bind_exec   "s"      "Schedule"   "$0 splat {+1} | $0 stdin schedule"   "${rls}"
-    fzf_bind_sexec  "X"      "Unschedule" "$0 splat {+1} | $0 stdin unschedule" "${rls}"
-    fzf_bind_exec   "w"      "Wait For"   "$0 __interactive_wf {+1}"            "${rls}"
 }
 
 function __interactive_search_bindings {
@@ -3044,18 +3039,15 @@ function __interactive_bindings {
     fzf_bind_sexec  "1"          "--"             "$0 __interactive_mode node"
     fzf_bind_sexec  "2"          "--"             "$0 __interactive_mode graph"
     fzf_bind_sexec  "3"          "--"             "$0 __interactive_mode view"
-    fzf_bind_sexec  "4"          "--"             "$0 __interactive_mode agenda"
     case "${menu}" in
         node)   __interactive_node_submenu;;
         graph)  __interactive_graph_submenu;;
         view)   __interactive_view_submenu;;
-        agenda) __interactive_agenda_submenu;;
         all)
             __interactive_node_submenu
             __interactive_graph_submenu
             __interactive_view_submenu
             __interactive_search_bindings
-            __interactive_agenda_submenu
         ;;
     esac
 
@@ -3071,10 +3063,9 @@ function __interactive_bindings {
 function __interactive_header {
     local tabs
     case "${1}" in
-        node)   tabs="[_ Node] [2 Graph] [3 View] [4 Agenda]";;
-        graph)  tabs="[1 Node] [_ Graph] [3 View] [4 Agenda]";;
-        view)   tabs="[1 Node] [2 Graph] [_ View] [4 Agenda]";;
-        agenda) tabs="[1 Node] [2 Graph] [3 View] [_ Agenda]";;
+        node)   tabs="[_ Node] [2 Graph] [3 View]";;
+        graph)  tabs="[1 Node] [_ Graph] [3 View]";;
+        view)   tabs="[1 Node] [2 Graph] [_ View]";;
         search) tabs="Search Mode";;
         *) debug "wtf" $1;;
     esac

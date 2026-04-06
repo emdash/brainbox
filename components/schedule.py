@@ -1280,15 +1280,6 @@ def agenda(
   ))
   print()
 
-  # print the unscheduled tasks
-  print("Unscheduled Tasks")
-  print(tabulate.tabulate(
-    ((graph.task_state(id), show_gloss(id)) for id in todo),
-    headers=["State", "Task"],
-    tablefmt="simple"
-  ))
-  print()
-
 def datum_read_json(datum, id):
   """Read the given datum and try to decode it as JSON."""
   return json.load(open(graph.datum_path(datum, id)))
