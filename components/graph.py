@@ -635,52 +635,12 @@ def dot(*selection):
       projects.add(node)
     nodes.add(node)
 
-  match subtasks_mode:
-    case "cluster":
-      for project in projects:
-        subtasks = set(get_subtasks(project))
-        subtasks.add(project)
-        nodes |= subtasks
-        dot_subgraph(task_gloss(project), subtasks, id=project)
-    case "label":
-      for project in projects:
-        subtasks = set(get_subtasks(project))
-        subtasks.add(project)
-        nodes |= subtasks
-        label = task_gloss(project)
-        for subtask in subtasks:
-          dict_append(node_labels, subtask, label)
-    case "hidden":
-        pass
-    case invalid:
-        raise ValueError(f"Invalid Mode: {invalid}")
-
-  match bucket_mode:
-    case "cluster":
-      for bucket in buckets:
-        contents = bucket_list(bucket)
-        for node in contents:
-          if node not in projects:
-            nodes.add(node)
-        dot_subgraph(bucket, contents)
-    case "label":
-      for bucket in buckets:
-        contents = bucket_list(bucket)
-        for node in contents:
-          if not node in projects:
-            nodes.add(node)
-          dict_append(node_labels, node, bucket)
-    case "node":
-      for bucket in buckets:
-        contents = bucket_list(bucket)
-        print(dot_node(bucket, shape="house"))
-        for c in contents:
-          nodes.add(c)
-          print(dot_edge(bucket, c, "dashed", "grey"))
-    case "hidden":
-      pass
-    case invalid:
-      raise ValueError(f"Invalid mode: {invalid}")
+  for bucket in buckets:
+    contents = bucket_list(bucket)
+    print(dot_node(bucket, shape="house"))
+    for c in contents:
+      nodes.add(c)
+      print(dot_edge(bucket, c, "dashed", "grey"))
 
   nodes |= selected
 
@@ -712,8 +672,6 @@ def dot(*selection):
 
 font          =    os.getenv("GTD_GRAPH_FONT",          "monospace")
 background    =    os.getenv("GTD_GRAPH_BG",            "white")
-bucket_mode   =    os.getenv("GTD_GRAPH_BUCKET_MODE",   "cluster")
-subtasks_mode =    os.getenv("GTD_GRAPH_SUBTASKS_MODE", "cluster")
 rankdir       =    os.getenv("GTD_GRAPH_RANKDIR",       "TB")
 show_contexts = get_env_bool("GTD_GRAPH_SHOW_CONTEXTS", "1")
 show_deps     = get_env_bool("GTD_GRAPH_SHOW_DEPS",     "1")

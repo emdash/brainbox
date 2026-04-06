@@ -615,8 +615,6 @@ function graph {
     prefs_export_env \
         "graph/font"          GTD_GRAPH_FONT          "monospace" \
         "graph/bg"            GTD_GRAPH_BG            "white"     \
-        "graph/bucket_mode"   GTD_GRAPH_BUCKET_MODE   "cluster"   \
-        "graph/subtasks_mode" GTD_GRAPH_SUBTASKS_MODE "cluster"   \
         "graph/rankdir"       GTD_GRAPH_RANKDIR       "TB"        \
         "graph/show_contexts" GTD_GRAPH_SHOW_CONTEXTS "1"         \
         "graph/show_deps"     GTD_GRAPH_SHOW_DEPS     "1"         \
@@ -775,27 +773,10 @@ function graph_node_delete {
 # Common keybindings for graph views
 function __graph_bindings {
     prefs_bind_cycle \
-      "alt-b" \
-      "Bucket Mode" \
-      "graph/bucket_mode" \
-      "cluster" \
-      "label" \
-      "node" \
-      "hidden"
-
-    prefs_bind_cycle \
         "alt-r" \
         "Rankdir" \
         "graph/rankdir" \
         "TB" "LR" "RL" "BT"
-
-    prefs_bind_cycle \
-       "alt-s" \
-       "Subtasks Mode" \
-       "graph/subtasks_mode" \
-       "cluster" \
-       "label" \
-       "hidden"
 
     fzf_bind_exec \
         "shift-delete" \
@@ -2658,14 +2639,6 @@ function plan {
         export SUBTASK_ID
     fi
 
-    # save current settings
-    read bm < <(prefs read 'graph/bucket_mode'   'hidden')
-    read sm < <(prefs read 'graph/subtasks_mode' 'hidden')
-
-    # turn off subtasks and buckets
-    prefs write 'graph/bucket_mode' 'cluster'
-    prefs write 'graph/subtasks_mode' 'hidden'
-
     # run mainloop
     fzf_menu \
       "Edit Project Subtasks" \
@@ -2674,10 +2647,6 @@ function plan {
       --preview="$0 __plan_preview {+1}" \
       --with-nth='{2} {3}' \
       -d '|'
-
-    # restore settings
-    prefs write 'graph/bucket_mode' "${bm}"
-    prefs write 'graph/subtasks_mode' "${sm}"
 }
 
 # Interactive Mode ************************************************************
@@ -2990,27 +2959,10 @@ function __interactive_view_submenu {
         "details/graph_nodes" "selected" "query"
 
     prefs_bind_cycle \
-      "B" \
-      "Bucket Mode" \
-      "graph/bucket_mode" \
-      "cluster" \
-      "label" \
-      "node" \
-      "hidden"
-
-    prefs_bind_cycle \
         "r" \
         "Rankdir" \
         "graph/rankdir" \
         "TB" "LR" "RL" "BT"
-
-    prefs_bind_cycle \
-       "S" \
-       "Subtasks Mode" \
-       "graph/subtasks_mode" \
-       "cluster" \
-       "label" \
-       "hidden"
 }
 
 function __interactive_graph_submenu {
