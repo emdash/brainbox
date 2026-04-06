@@ -347,69 +347,51 @@ def flipped(edges):
   for (u, v, *rest) in edges:
     yield (v, u, *rest)
 
-def adjacency_list(edges, direction):
+def adjacency_list(edges):
   """Build forward edge adjacency list."""
+  ret = {id: set() for id in nodes()}
+  for (u, v, *rest) in edges:
+    if u not in ret:
+      ret[u] = set()
+    ret[u].add(v)
+  return ret
+
+def reachability_set(edges, nodes, mem=None):
+  """Return the reachability set for the given node."""
+  adj = adjacency_list(edges)
+  mem = mem if mem is not None else {}
+  empty = set()
+
+  def rec(n):
+    if n not in mem:
+      mem[n] = {n}
+      for a in adj.get(n, empty):
+        mem[n] |= rec(a)
+    return mem[n]
+
+  return reduce(set.__ior__, (rec(n) for n in nodes))
+
+def reachable_from(edges, direction, *nodes):
+  """Keep nodes reachable via `edges` along `direction` from the given set of nodes."""
 
   match direction:
     case "outgoing": edges = edge_list(edges)
     case "incoming": edges = flipped(edge_list(edges))
     case invalid: raise ValueError(f"{invalid} is not one of incoming or outgoing")
 
-  ret = {id: set() for id in nodes()}
-  for (u, v, *rest) in edges:
-    try:
-      ret[u].add(v)
-    except KeyError:
-      debug(f"Dangling reference to node {u}")
-  return ret
-
-def reachable_from(edges, direction, *nodes):
-  """Keep nodes reachable via `edges` along `direction` from the given set of nodes."""
-
-  # Recursively-construct reachability map.
-  adj = adjacency_list(edges, direction)
-  mem = {}
-
-  def rec(n):
-    if n not in mem:
-      mem[n] = {n}
-      for a in adj[n]:
-        mem[n] |= rec(a)
-    return mem[n]
-
-  reachable = reduce(set.__ior__, (rec(n) for n in nodes))
+  reachable = reachability_set(edges, nodes)
   filter_nodes(lambda n: n in reachable)
-
-  # reachable =
-
-  # for n in nodes:
-
-  # ret = {}
-
-  # def rec(n):
-  #   if n in ret: return
-  #   else:
-  #     for node in adjacent(e
-
-  # edges = edge_list(edges)
-  # seen = set()
-  # return {node: rec(n) for node in nodes}
-
-  #   for subtask in traverse(node, edges, direction, set(), seen):
-  #     if subtask not in seen:
-  #       seen.add(subtask)
-  #       print(subtask)
-
 
 def reachable(edges, direction):
   """Expand the incoming node set to include nodes reachable from the input set."""
-  edges = edge_list(edges)
-  seen = set()
-  for node in read_ids():
-    for subtask in traverse(node, edges, direction, set(), seen):
-      if subtask not in seen:
-        seen.add(subtask)
-        print(subtask)
+  match direction:
+    case "outgoing": edges = edge_list(edges)
+    case "incoming": edges = flipped(edge_list(edges))
+    case invalid: raise ValueError(f"{invalid} is not one of incoming or outgoing")
+
+  nodes = set(read_ids())
+  for node in reachability_set(edges, nodes):
+    print(node)
 
 def dangling_contexts():
   """List nodes still linked to deleted nodes."""
@@ -479,7 +461,7 @@ def touches(*edge_sets):
     edge_sets = ('contexts', 'dependencies')
   nodes = set(read_ids())
   for edge_set in edge_sets:
-    for (u, v, *_) in read_edges(edge_set):
+    for (u, v, *_) in edge_list(edge_set):
       if edge_touches(u, v, nodes):
         print(f"{u} {v} {edge_set}")
 
@@ -489,7 +471,7 @@ def contained(*edge_sets):
     edge_sets = ('contexts', 'dependencies')
   nodes = set(read_ids())
   for edge_set in edge_sets:
-    for (u, v, *_) in read_edges(edge_set):
+    for (u, v, *_) in edge_list(edge_set):
       if edge_contained(u, v, nodes):
         print(f"{u} {v} {edge_set}")
 
@@ -568,13 +550,13 @@ def dot_node(id, node_labels={}, shape="box"):
   )
   return f"{dot_quote(id)} {formatted_attrs};"
 
-def dot_edge(u, v, style, color):
+def dot_edge(u, v, style, color, arrow="normal"):
   """Return a formatted edge in dot syntax.
 
   Context edges are dashed, dependency edges are solid.
   """
   return f"{dot_quote(u)} -> {dot_quote(v)}" \
-         f"[style={dot_quote(style)}, color={dot_quote(color)}];"
+         f"[style={dot_quote(style)}, color={dot_quote(color)}, arrowhead={arrow}];"
 
 def dot_edges(edges, nodes, color):
   """Format the given edge sets to stdout"""
@@ -583,18 +565,22 @@ def dot_edges(edges, nodes, color):
       case (u, v):
         if edge_contained(u, v, nodes):
           print(dot_edge(u, v, "solid", color))
-      case (u, v, "implicit"):
+      case (u, v, "subtask"):
         if edge_contained(u, v, nodes):
           print(dot_edge(u, v, "dashed", color))
+      case (u, v, "leaf"):
+        if edge_contained(u, v, nodes):
+          print(dot_edge(u, v, "dashed", color, "empty"))
+      case (u, v, "sibling"):
+        if edge_contained(u, v, nodes):
+          print(dot_edge(u, v, "dashed", color, "odot"))
 
 def dot(*selection):
   """Read nodes from stdin, write dot syntax to stdout."""
   selected = set(selection)
   nodes = set([])
   node_labels = {}
-
   buckets = set(os.listdir(BUCKET_DIR))
-
   projects = set()
 
   print( "digraph {")
