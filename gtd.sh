@@ -1413,7 +1413,7 @@ function choose {
     esac
 
     fzf_menu \
-      "Choose Node: ${SAVED_ARGV[*]}" \
+      "${GTD_CHOOSE_PROMPT:-"Choose Node: ${SAVED_ARGV[*]}"}" \
       __choose_bindings \
       __choose_items \
       -d '|' \
@@ -2759,20 +2759,30 @@ function __interactive_triage {
         splat "${tasks[@]}" | into target
 
         # choose a context
-        if all | is_context | choose -m | into source
+        if all \
+                | is_context \
+                | GTD_CHOOSE_PROMPT="Context" choose -m \
+                | into source
         then
             assign
         fi
 
         # choose an existing node to add to as a subtask
-        if read proj < <(all | graph filter_state NEW TODO | choose)
+        if read proj < <(
+                all \
+                    | graph filter_state NEW TODO SOMEDAY \
+                    | GTD_CHOOSE_PROMPT="Add to Existing Project" choose \
+                )
         then
             splat "${tasks[@]}" | graph_datum subtasks append "${proj}"
             plan "${proj}"
         fi
 
         # choose an area of focus
-        if all | is_focus | choose -m | into source
+        if all \
+                | is_focus \
+                | GTD_CHOOSE_PROMPT="Area of Focus" choose -m \
+                | into source
         then
             add
         fi
