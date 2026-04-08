@@ -591,7 +591,7 @@ def dot_state_colors(state):
     case _:         return ("grey95",   "grey50" )
 
 
-def dot_node(id, node_labels={}, shape="box"):
+def dot_node(id, shape="box"):
   """Return a formatted node in dot syntax.
 
   Node attributes are set according to the task state.
@@ -604,8 +604,7 @@ def dot_node(id, node_labels={}, shape="box"):
     ("color",     fill),
     ("penwidth",  "2"),
     ("fillcolor", fill),
-    ("fontcolor", label),
-    ("xlabel",    " ".join(node_labels.get(id, ())))
+    ("fontcolor", label)
   )
   return f"{dot_quote(id)} {formatted_attrs};"
 
@@ -633,12 +632,14 @@ def dot_edges(edges, nodes, color):
       case (u, v, "sibling"):
         if edge_contained(u, v, nodes):
           print(dot_edge(u, v, "dashed", color, "odot"))
+      case (u, v, "suspect"):
+        if edge_contained(u, v, nodes):
+          print(dot_edge(u, v, "dashed", color, "odiamond"))
 
 def dot(*selection):
   """Read nodes from stdin, write dot syntax to stdout."""
   selected = set(selection)
   nodes = set([])
-  node_labels = {}
   buckets = set(os.listdir(BUCKET_DIR))
   projects = set()
 
@@ -654,6 +655,7 @@ def dot(*selection):
       if show_virtual:
         nodes.add(f"{node}-start")
     nodes.add(node)
+
 
   for bucket in buckets:
     contents = bucket_list(bucket)
@@ -675,9 +677,11 @@ def dot(*selection):
 
   for node in sorted(nodes):
     if node in projects:
-      print(dot_node(node, node_labels=node_labels, shape="folder"))
+      print(dot_node(node, shape="folder"))
+    elif is_start_node(node):
+      print(dot_node(node, shape="cds"))
     else:
-      print(dot_node(node, node_labels))
+      print(dot_node(node))
 
   if show_deps:
     dot_edges(
@@ -707,6 +711,12 @@ show_virtual   = get_env_bool("GTD_GRAPH_SHOW_VIRTUAL",  "1")
 show_subtasks  = get_env_bool("GTD_GRAPH_SHOW_SUBTASKS", "1")
 debug_edges    = get_env_bool("GTD_GRAPH_DEBUG_EDGES",   "0")
 
+def printall(f):
+  def printall_(*args):
+    for i in f(*args):
+      print(i)
+  return printall_
+
 if __name__ == "__main__":
   dispatch = {
     "adjacent":       adjacent,
@@ -727,4 +737,5 @@ if __name__ == "__main__":
     "contained":      contained,
     "summary":        summary,
     "dangling":       dangling,
+    "dependencies":   printall(lambda *unused: dependencies(False))
   }[sys.argv[1]](*sys.argv[2:])
