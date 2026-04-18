@@ -17,6 +17,7 @@ always exactly 1/86,400 of a solar day.
 from datetime import date, datetime, time, timedelta
 from dataclasses import dataclass, replace, InitVar, field
 from functools import reduce
+
 import graph
 import itertools
 import json

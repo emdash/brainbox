@@ -2589,23 +2589,54 @@ function agenda_items {
 # Project-Subtasks Editor *****************************************************
 
 function __plan_modify {
+    local -r subtasks="${GTD_DIR}/components/subtasks.py"
     read path < <(graph_datum subtasks path "${SUBTASK_ID}")
-    case "${1}" in
+    local cmd="${1}"
+    case "${cmd}" in
         add)
             all | choose >> "${path}"
-            database_commit "added from project planner"
+            database_commit "add subtask (planner)"
             ;;
         capture)
             echo | xargs -o "$0" capture --oneline
             last_captured >> "${path}"
             last_captured | activate
-            database_commit "capture from project planner"
+            database_commit "capture (planner)"
             ;;
         edit)
-            echo "${2}" | edit;;
+            echo "${2}" | edit
+            ;;
+        "move-subtask")
+            local target="${2}"
+            shift 2
+            read -r target < <("${subtasks}" "${path}" get "${target}")
+            read -r target_path < <(graph_datum subtasks path "${target}")
+            debug moving "${@}" into "${target_path}"
+            for id in "${@}"
+            do
+                echo         >> "${target_path}"
+                echo "${id}" >> "${target_path}"
+            done
+            "${subtasks}" "${path}" remove "${@}"
+            database_commit "move into subtask (planner)"
+            plan "${target}"
+            ;;
+        "move-parent")
+            shift 1
+            read -r parent_path < <(graph_datum subtasks path "${PARENT_ID}")
+            debug moving "${@}" into "${parent_path}"
+            for id in "${@}"
+            do
+                echo         >> "${parent_path}"
+                echo "${id}" >> "${parent_path}"
+            done
+            "${subtasks}" "${path}" remove "${@}"
+            database_commit "move into parent (planner)"
+            plan "${target}"
+            ;;
         *)
-            "${GTD_DIR}/components/subtasks.py" "${path}" "${@}"
-            database_commit "project planner: ${*}"
+            "${subtasks}" "${path}" "${@}"
+            database_commit "${*} (planner)"
             ;;
     esac
 }
@@ -2631,23 +2662,44 @@ function __plan_preview {
 function __plan_bindings {
     local rls="reload-sync($0 __plan_items)"
     local plm="$0 __plan_modify"
-    local -r selected="$0 splat {+1} |"
-    fzf_bind_sexec  "u"          "Undo"            "$0 undo"       "${rls}"
-    fzf_bind_sexec  "U"          "Redo"            "$0 redo"       "${rls}"
-    fzf_bind_sexec  "shift-up"   "Move Up"     "${plm} up     {n}" "${rls}" "up"
-    fzf_bind_sexec  "shift-down" "Move Down"   "${plm} down   {n}" "${rls}" "down"
-    fzf_bind_sexec  "space"      "Split Group" "${plm} split  {n}" "${rls}" "down"
-    fzf_bind_sexec  "delete"     "Delete"      "${plm} delete {n}" "${rls}"
-    fzf_bind_exec   "e"          "Edit"        "${plm} edit   {1}" "${rls}"
-    fzf_bind_exec   "enter"      "Plan Subprj" "$0 plan {1}"       "${rls}"
-    fzf_bind_exec   "a"          "Add"         "${plm} add"        "${rls}"
-    fzf_bind_exec   "c"          "Capture"     "${plm} capture"    "${rls}" "last"
-    fzf_bind_action "q"          "Quit"        "accept"        "${rls}"
+    local -r selected="$0 splat {+1} | $0 stdin"
+    fzf_bind_sexec  "u"          "Undo"        "$0 undo"              "${rls}"
+    fzf_bind_sexec  "U"          "Redo"        "$0 redo"              "${rls}"
+    fzf_bind_sexec  "shift-up"   "Move Up"     "${plm} up     {n}"    "${rls}" "up"
+    fzf_bind_sexec  "shift-down" "Move Down"   "${plm} down   {n}"    "${rls}" "down"
+    fzf_bind_sexec  "space"      "Split Group" "${plm} split  {n}"    "${rls}" "down"
+    fzf_bind_sexec  "backspace"  "Delete"      "${plm} delete {n}"    "${rls}"
+    fzf_bind_exec   "e"          "Edit"        "${plm} edit   {1}"    "${rls}"
+    fzf_bind_exec   "right"      "Plan Subprj" "$0 plan {1}"          "${rls}"
+
+    fzf_bind_exec \
+        "shift-right" \
+        "Move to Subtask" \
+        "${plm} move-subtask {n} {+1}" \
+        "${rls}"
+
+    fzf_bind_exec \
+        "shift-left" \
+        "Move to Parent" \
+        "${plm} move-parent {+1}" \
+        "${rls}"
+
+    fzf_bind_sexec  "enter"      "Complete"    "${selected} complete" "${rls}"
+    fzf_bind_sexec  "delete"     "Complete"    "${selected} drop"     "${rls}"
+    fzf_bind_exec   "a"          "Add"         "${plm} add"           "${rls}"
+    fzf_bind_exec   "c"          "Capture"     "${plm} capture"       "${rls}" "last"
+    fzf_bind_action "q"          "Quit"        "accept"               "${rls}"
+    fzf_bind_action "left"       "--"          "accept"
     fzf_bind_action "?"          "Toggle Help" "toggle-header" "${rls}"
 }
 
 command_declare plan
 function plan {
+    if test -v SUBTASK_ID
+    then
+        export PARENT_ID="${SUBTASK_ID}"
+    fi
+
     if test -v 1
     then
        export SUBTASK_ID="${1}"
@@ -2662,6 +2714,7 @@ function plan {
       "Edit Project Subtasks" \
       __plan_bindings \
       __plan_items \
+      --multi \
       --preview="$0 __plan_preview {+1}" \
       --with-nth='{2} {3}' \
       -d '|'
