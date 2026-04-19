@@ -455,14 +455,21 @@ def dangling_contexts():
       case (True, False): print(v)
       case (False, True): print(u)
 
-def dangling_subtasks():
+def dangling_subtasks(*args):
   """Keep nodes which have subtasks referring to deleted nodes."""
   existing = set(nodes())
 
-  def has_dangling_subtask(node):
-    return any(st not in existing for st in get_subtasks(node))
-
-  return filter_nodes(has_dangling_subtask)
+  match args:
+    case []:
+      filter_nodes(
+        lambda node:
+        any(st not in existing for st in get_subtasks(node))
+      )
+    case ["edges"]:
+      for node in read_ids():
+        for st in get_subtasks(node):
+          if st not in existing:
+            print(f"{node}:{st}")
 
 def dangling(*args):
   match args:

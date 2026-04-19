@@ -2127,9 +2127,11 @@ function set_ {
     database_commit "${SAVED_ARGV[*]}"
 }
 
-command_declare                delete bucket
+command_declare delete bucket
 function delete {
     local -r bucket="${1:-trash}"
+    local -r subtasks="${GTD_DIR}/components/subtasks.py"
+
     from "${bucket}" | graph touches | while read u v edge_set
     do
         graph_edge_delete "${u}" "${v}" "${edge_set}"
@@ -2138,6 +2140,13 @@ function delete {
     from "${bucket}" | while read node
     do
         graph_node_delete "${node}"
+    done
+
+    local subtasks_path
+    all | graph dangling subtasks edges | while IFS=':' read u v
+    do
+        read subtasks_path < <(graph_datum subtasks path "${u}")
+        "${subtasks}" "${subtasks_path}" remove "${v}"
     done
 
     database_commit "${SAVED_ARGV[*]}"
