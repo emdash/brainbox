@@ -47,49 +47,87 @@ If you want a graph like:
 subtasks of x, rather than project.
 """
 
-
 import sys
+import os
 
-def swap(a, b):
+def swap(lines, a, b):
   (lines[a], lines[b]) = (lines[b], lines[a])
+  save(lines)
 
-def up(row):
-    swap(row, (row - 1) % len(lines))
+def up(lines, row):
+  swap(lines, row, (row - 1) % len(lines))
+  save(lines)
 
-def down(row):
-    swap(row, (row + 1) % len(lines))
+def down(lines, row):
+  swap(lines, row, (row + 1) % len(lines))
+  save(lines)
 
-def separate(row):
+def separate(lines, row):
   # don't insert a separator on the first line.
   if row != 0:
     lines.insert(row, '')
+  save(lines)
 
-# read the file into a list lists
-print(sys.argv, file=sys.stderr)
-lines = list(map(str.strip, open(sys.argv[1], "r")))
+def delete(lines, row):
+  del lines[row]
+  save(lines)
 
-match sys.argv[2:]:
-  case ["up",     row]: up(int(row))
-  case ["down",   row]: down(int(row))
-  case ["delete", row]: del lines[int(row)]
-  case ["split",  row]: separate(int(row))
-  case invalid: raise ValueError("Invalid command:", invalid)
+def remove(lines, ids):
+  for id in ids:
+    try:
+      lines.remove(id)
+    except ValueError:
+      print("{id} is not a subtask", file=sys.stderr)
+  save(lines)
 
-with open(sys.argv[1], "w") as output:
-  blank = False
+def save(lines):
+  # instead of writing an empty file, delete a blank file.
+  if not lines:
+    os.unlink(sys.argv[1])
+    return
 
-  # don't allow separators at the beginning or end of the file
-  if lines[0] == '':
-    del lines[0]
-  if lines[-1] == '':
-    del lines[-1]
+  with open(sys.argv[1], "w") as output:
+    blank = False
 
-  # print output, merging consecutive blank lines into a single line.
-  for line in lines:
-    if line == '':
-      if not blank:
+    # don't allow separators at the beginning or end of the file
+    if lines[0] == '':
+      del lines[0]
+      if not lines:
+        os.unlink(sys.argv[1])
+        return
+
+    if lines[-1] == '':
+      del lines[-1]
+      if not lines:
+        os.unlink(sys.argv[1])
+        return
+
+    # print output, merging consecutive blank lines into a single line.
+    for line in lines:
+      if line == '':
+        if not blank:
+          print(line.strip(), file=output)
+          blank = True
+      else:
+        blank = False
         print(line.strip(), file=output)
-        blank = True
-    else:
-      blank = False
-      print(line.strip(), file=output)
+
+def main():
+  # read the file into a list lists
+  print(sys.argv, file=sys.stderr)
+  lines = list(map(str.strip, open(sys.argv[1], "r")))
+
+  if not lines:
+    return
+
+  match sys.argv[2:]:
+    case ["up",     row]:  up(lines, int(row))
+    case ["down",   row]:  down(lines, int(row))
+    case ["delete", row]:  delete(lines, int(row))
+    case ["split",  row]:  separate(lines, int(row))
+    case ["remove", *ids]: remove(lines, ids)
+    case ["get",    row]:  print(lines[int(row)])
+    case invalid: raise ValueError("Invalid command:", invalid)
+
+if __name__ == "__main__":
+  main()
