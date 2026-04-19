@@ -141,6 +141,12 @@ def subtask_groups(node):
 
   return ret
 
+def subtask_edge(u, v, kind, projects):
+  if u in projects:
+    return (f"{u}-start", v, kind)
+  else:
+    return (u, v, kind)
+
 def subtask_edges(node, groups, projects):
   """Generate the edges for a set of subtask groups.
 
@@ -149,16 +155,42 @@ def subtask_edges(node, groups, projects):
   on-disk format.
 
   """
-  for group in groups:
+
+  if debug_edges:
+    debug("STE: project start", node, repr(task_gloss(node)))
+    def debug_edge(msg, edge):
+      u, v, kind = edge
+      debug(f"{msg}: {repr(task_gloss(u))} -> {repr(task_gloss(v))} ({kind})")
+      return edge
+  else:
+    def debug_edge(msg, edge):
+      return edge
+
+  start_node = f"{node}-start"
+
+  if not groups:
+    yield debug_edge("STE: empty", (node, start_node, "leaf"))
+
+  for (i, group) in enumerate(groups):
+    if debug_edges:
+      debug(f"STE: group({i})")
     match group:
+      case []:
+        yield debug_edge("STE: empty", (node, start_node, "leaf"))
+      case [single]:
+        yield debug_edge("STE: single", (node, single, "subtask"))
+        yield debug_edge("STE: single", subtask_edge(single, start_node, "leaf", projects))
       case [prev, *rest] as subtasks:
-        yield (node, prev, "subtask")
+        yield debug_edge("STE: chain start", (node, prev, "subtask"))
         for next in rest:
-          if prev in projects:
-            yield (f"{prev}-start", f"{node}-start", "sibling")
-          yield (prev, next, "sibling")
+          yield debug_edge("STE: chain link", subtask_edge(prev, next, "sibling", projects))
           prev = next
-        yield (prev, f"{node}-start", "leaf")
+        yield debug_edge("STE: end chain", subtask_edge(prev, start_node, "leaf", projects))
+      case wtf:
+        debug("STE: wtf", wtf)
+
+  if debug_edges:
+    debug("STE: project end", node, repr(task_gloss(node)))
 
 def get_subtasks(node):
   """Get all the subtasks of a project.
@@ -183,10 +215,7 @@ def project_subgraph(projects):
     yield from subtask_edges(node, groups, projects)
 
   for (u, v) in read_edges("dependencies"):
-    if u in projects:
-      yield (f"{u}-start", v, "leaf")
-    else:
-      yield (u, v)
+    yield subtask_edge(u, v, "explicit", projects)
 
 def merge_start_nodes_iter(edges):
   """Remove one layer of virtual nodes, preserving connectivity.
@@ -202,33 +231,19 @@ def merge_start_nodes_iter(edges):
     vs = outgoing.get(v, empty) if is_start_node(v) else {v}
     for u in us:
       for v in vs:
-        yield (u, v, *rest)
+        if u != v:
+          yield (u, v, *rest)
 
 def merge_start_nodes(edges):
-  """Recursively remove start nodes from the graph.
+  recurse = False
+  ret = set(merge_start_nodes_iter(edges))
 
-  We need to the full edge list in order to do this correctly, so it
-  has to be a distinct pass.
-
-  If any start nodes remain in the output, we recursively perform
-  another pass.
-  """
-
-  iter = False
-  ret = set()
-
-  for edge in merge_start_nodes_iter(edges):
-    (u, v, *rest) = edge
-    if is_start_node(u) or is_start_node(v):
-      iter = True
-    ret.add(edge)
-
-  if iter:
-    return merge_start_nodes(ret)
+  if any((is_start_node(u) or is_start_node(v) for (u, v, *_) in ret)):
+    yield from merge_start_nodes(ret)
   else:
-    return ret
+    yield from iter(ret)
 
-def dependencies():
+def dependencies(show_virtual=False):
   """A generator which yields all dependency edges.
 
   We have to special-case "Project" nodes to get the correct
@@ -271,9 +286,12 @@ def dependencies():
     if has("subtasks", node)
   }
 
-  yield from merge_start_nodes(project_subgraph(projects))
+  if show_virtual:
+    yield from project_subgraph(projects)
+  else:
+    yield from merge_start_nodes(project_subgraph(projects))
 
-def edge_list(edge_set, subtasks=True):
+def edge_list(edge_set, subtasks=True, show_virtual=False):
   """Get the set of edges for the given edge set.
 
   Client code should call this function to so that project subtasks
@@ -282,7 +300,7 @@ def edge_list(edge_set, subtasks=True):
   try:
     match edge_set:
       case "dependencies" if subtasks:
-        return set(dependencies())
+        return set(dependencies(show_virtual))
       case _: return set(read_edges(edge_set))
   except OSError as e:
     print(e, sys.stderr)
@@ -487,7 +505,7 @@ def task_gloss(ref):
         return "[no contents]"
 
   match ref.split("-start"):
-    case [id, '']: return gloss(id) + "::start"
+    case [id, '']: return gloss(id) + "\nΦ"
     case [id]:     return gloss(id)
 
 def task_state(id):
@@ -573,7 +591,7 @@ def dot_state_colors(state):
     case _:         return ("grey95",   "grey50" )
 
 
-def dot_node(id, node_labels={}, shape="box"):
+def dot_node(id, shape="box"):
   """Return a formatted node in dot syntax.
 
   Node attributes are set according to the task state.
@@ -586,8 +604,7 @@ def dot_node(id, node_labels={}, shape="box"):
     ("color",     fill),
     ("penwidth",  "2"),
     ("fillcolor", fill),
-    ("fontcolor", label),
-    ("xlabel",    " ".join(node_labels.get(id, ())))
+    ("fontcolor", label)
   )
   return f"{dot_quote(id)} {formatted_attrs};"
 
@@ -603,7 +620,7 @@ def dot_edges(edges, nodes, color):
   """Format the given edge sets to stdout"""
   for e in sorted(edges):
     match e:
-      case (u, v):
+      case (u, v) | (u, v, "explicit"):
         if edge_contained(u, v, nodes):
           print(dot_edge(u, v, "solid", color))
       case (u, v, "subtask"):
@@ -615,12 +632,14 @@ def dot_edges(edges, nodes, color):
       case (u, v, "sibling"):
         if edge_contained(u, v, nodes):
           print(dot_edge(u, v, "dashed", color, "odot"))
+      case (u, v, "suspect"):
+        if edge_contained(u, v, nodes):
+          print(dot_edge(u, v, "dashed", color, "odiamond"))
 
 def dot(*selection):
   """Read nodes from stdin, write dot syntax to stdout."""
   selected = set(selection)
   nodes = set([])
-  node_labels = {}
   buckets = set(os.listdir(BUCKET_DIR))
   projects = set()
 
@@ -633,7 +652,10 @@ def dot(*selection):
   for node in read_ids():
     if has("subtasks", node):
       projects.add(node)
+      if show_virtual:
+        nodes.add(f"{node}-start")
     nodes.add(node)
+
 
   for bucket in buckets:
     contents = bucket_list(bucket)
@@ -655,12 +677,22 @@ def dot(*selection):
 
   for node in sorted(nodes):
     if node in projects:
-      print(dot_node(node, node_labels=node_labels, shape="folder"))
+      print(dot_node(node, shape="folder"))
+    elif is_start_node(node):
+      print(dot_node(node, shape="cds"))
     else:
-      print(dot_node(node, node_labels))
+      print(dot_node(node))
 
   if show_deps:
-    dot_edges(edge_list("dependencies"), nodes, "red")
+    dot_edges(
+      edge_list(
+        "dependencies",
+        show_subtasks,
+        show_virtual
+      ),
+      nodes,
+      "red"
+    )
 
   if show_contexts:
     dot_edges(edge_list("contexts"), nodes, "green")
@@ -670,11 +702,20 @@ def dot(*selection):
 
   print("}")
 
-font          =    os.getenv("GTD_GRAPH_FONT",          "monospace")
-background    =    os.getenv("GTD_GRAPH_BG",            "white")
-rankdir       =    os.getenv("GTD_GRAPH_RANKDIR",       "TB")
-show_contexts = get_env_bool("GTD_GRAPH_SHOW_CONTEXTS", "1")
-show_deps     = get_env_bool("GTD_GRAPH_SHOW_DEPS",     "1")
+font           =    os.getenv("GTD_GRAPH_FONT",          "monospace")
+background     =    os.getenv("GTD_GRAPH_BG",            "white")
+rankdir        =    os.getenv("GTD_GRAPH_RANKDIR",       "TB")
+show_contexts  = get_env_bool("GTD_GRAPH_SHOW_CONTEXTS", "1")
+show_deps      = get_env_bool("GTD_GRAPH_SHOW_DEPS",     "1")
+show_virtual   = get_env_bool("GTD_GRAPH_SHOW_VIRTUAL",  "1")
+show_subtasks  = get_env_bool("GTD_GRAPH_SHOW_SUBTASKS", "1")
+debug_edges    = get_env_bool("GTD_GRAPH_DEBUG_EDGES",   "0")
+
+def printall(f):
+  def printall_(*args):
+    for i in f(*args):
+      print(i)
+  return printall_
 
 if __name__ == "__main__":
   dispatch = {
@@ -696,4 +737,5 @@ if __name__ == "__main__":
     "contained":      contained,
     "summary":        summary,
     "dangling":       dangling,
+    "dependencies":   printall(lambda *unused: dependencies(False))
   }[sys.argv[1]](*sys.argv[2:])

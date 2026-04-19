@@ -618,6 +618,8 @@ function graph {
         "graph/rankdir"       GTD_GRAPH_RANKDIR       "TB"        \
         "graph/show_contexts" GTD_GRAPH_SHOW_CONTEXTS "1"         \
         "graph/show_deps"     GTD_GRAPH_SHOW_DEPS     "1"         \
+        "graph/show_subtasks" GTD_GRAPH_SHOW_SUBTASKS "1"         \
+        "graph/show_virtual"  GTD_GRAPH_SHOW_VIRTUAL  "1"         \
         -- "${GTD_DIR}/components/graph.py" "$@"
 }
 
@@ -782,6 +784,12 @@ function __graph_bindings {
         "shift-delete" \
         "Clear Buckets" \
         "$0 buckets clear" \
+        "refresh-preview"
+
+    prefs_bind_toggle \
+        "alt-v" \
+        "Show Virtual Nodes" \
+        "graph/show_virtual" \
         "refresh-preview"
 }
 
@@ -2965,6 +2973,12 @@ function __interactive_view_submenu {
     prefs_bind_toggle "d" "Depends"  "details/show_deps"
     prefs_bind_toggle "D" "Blocks"   "details/show_rdeps"
     prefs_bind_toggle "g" "Graph"    "details/show_graph"
+
+    prefs_bind_toggle \
+        "alt-v" \
+        "Show Virtual Nodes" \
+        "graph/show_virtual" \
+        "refresh-preview"
 
     prefs_bind_cycle "alt-S" "Schedule Style" "details/schedule_style" \
         "week" \
