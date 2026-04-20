@@ -3009,7 +3009,7 @@ function __interactive_node_submenu {
     fzf_bind_action "e"      "Edit"         "become($0 __interactive_edit {1})" "${rls}"
     fzf_bind_action "p"      "Plan Project" "become($0 __interactive_plan {1})" "${rls}"
     fzf_bind_sexec  "a"      "Activate"     "${selected} $0 stdin activate"     "${rls}"
-    fzf_bind_action "t"      "Triage"       "become(${selected} $0 __interactive_triage)" "${rls}"
+    fzf_bind_action "t"      "Triage"       "become(${selected} $0 __interactive_triage)"   "${rls}"
     fzf_bind_action "s"      "Schedule"     "become(${selected} $0 __interactive_schedule)" "refresh-preview"
     fzf_bind_sexec  "S"      "Unschedule"   "${selected} $0 stdin unschedule"   "${rls}"
     fzf_bind_sexec  "C"      "Make Context" "${selected} $0 stdin make_context" "${rls}"
@@ -3019,6 +3019,18 @@ function __interactive_node_submenu {
     fzf_bind_sexec  "delete" "Drop"         "${selected} $0 stdin drop"         "${rls}"
     fzf_bind_action "w"      "Wait For"     "become($0 __interactive_wf {+1})"  "${rls}"
     fzf_bind_sexec  "d"      "defer"        "${selected} $0 stdin defer"        "${rls}"
+
+    fzf_bind_sexec  "ctrl-s"     "Select as Source"           "${selected} $0 stdin into --union source"     "refresh-preview"
+    fzf_bind_sexec  "ctrl-alt-s" "Deselect as Source"         "${selected} $0 stdin into --subtract source"  "refresh-preview"
+    fzf_bind_sexec  "ctrl-t"     "Select as Target"           "${selected} $0 stdin into --union target"     "refresh-preview"
+    fzf_bind_sexec  "ctrl-alt-t" "Deselect as Target"         "${selected} $0 stdin into --subtract target"  "refresh-preview"
+    fzf_bind_sexec  "ctrl-a"     "Assign Source to Target"    "$0 assign"                                    "${rls}"
+    fzf_bind_sexec  "ctrl-alt-a" "Unassign Source and Target" "$0 unassign"                                  "${rls}"
+    fzf_bind_sexec  "alt-s"      "Swap Source and Target"     "$0 swap"                                      "refresh-preview"
+    fzf_bind_sexec  "ctrl-d"     "Link Source and Target"     "$0 add"                                       "${rls}"
+    fzf_bind_sexec  "ctrl-alt-d" "Unlink Source and Target"   "$0 remove"                                    "${rls}"
+    fzf_bind_action "b"          "Bucket"                     "become($0 __interactive_bucket {+1})"
+    fzf_bind_action "B"          "Clear Bucket"               "become($0 __interactive_bucket --clear)"
 }
 
 function __interactive_view_submenu {
@@ -3060,22 +3072,6 @@ function __interactive_view_submenu {
         "TB" "LR" "RL" "BT"
 }
 
-function __interactive_graph_submenu {
-    local -r rls="reload-sync($0 __interactive_items)"
-    local -r selected="$0 splat {+1} |"
-    fzf_bind_action "c" "Capture"                    "become($0 __interactive_capture)"        "${rls}"
-    fzf_bind_sexec  "s" "Set Source"                 "${selected} $0 stdin into source"        "refresh-preview"
-    fzf_bind_sexec  "t" "Set Target"                 "${selected} $0 stdin into target"        "refresh-preview"
-    fzf_bind_sexec  "a" "Assign Source to Target"    "$0 assign"                               "${rls}"
-    fzf_bind_sexec  "A" "Unassign Source and Target" "$0 unassign"                             "${rls}"
-    fzf_bind_sexec  "S" "Swap Source and Target"     "$0 swap"                                 "refresh-preview"
-    fzf_bind_sexec  "d" "Link Source and Target"     "$0 add"                                  "${rls}"
-    fzf_bind_sexec  "D" "Unlink Source and Target"   "$0 remove"                               "${rls}"
-    fzf_bind_action "p" "Plan Project"               "become($0 __interactive_plan {1})"       "${rls}"
-    fzf_bind_action "b" "Bucket"                     "become($0 __interactive_bucket {+1})"    "${rls}"
-    fzf_bind_action "B" "Clear Bucket"               "become($0 __interactive_bucket --clear)" "${rls}"
-}
-
 function __interactive_search_bindings {
     fzf_bind_action "backspace"     "--" "backward-delete-char"
     fzf_bind_sexec  "enter"         "--" "$0 __interactive_mode exit-search"
@@ -3108,7 +3104,7 @@ function __interactive_bindings {
     # global bindings that appear at the top
     fzf_bind_action "ctrl-f"     "Filter Contexts" "become($0 __interactive_set_context_filter)"
     fzf_bind_action "Q"          "Change Query"    "become($0 __interactive_change_query)"
-    fzf_bind_sexec  "ctrl-s,/"   "Search"          "$0 __interactive_mode search"
+    fzf_bind_sexec  "/"          "Search"          "$0 __interactive_mode search"
 
     # global undo / redo
     fzf_bind_sexec  "u"          "Undo"            "$0 undo" "${rls}"
@@ -3128,15 +3124,12 @@ function __interactive_bindings {
 
     # menu system bindings
     fzf_bind_sexec  "1"          "--"             "$0 __interactive_mode node"
-    fzf_bind_sexec  "2"          "--"             "$0 __interactive_mode graph"
-    fzf_bind_sexec  "3"          "--"             "$0 __interactive_mode view"
+    fzf_bind_sexec  "2"          "--"             "$0 __interactive_mode view"
     case "${menu}" in
         node)   __interactive_node_submenu;;
-        graph)  __interactive_graph_submenu;;
         view)   __interactive_view_submenu;;
         all)
             __interactive_node_submenu
-            __interactive_graph_submenu
             __interactive_view_submenu
             __interactive_search_bindings
         ;;
@@ -3154,9 +3147,8 @@ function __interactive_bindings {
 function __interactive_header {
     local tabs
     case "${1}" in
-        node)   tabs="[_ Node] [2 Graph] [3 View]";;
-        graph)  tabs="[1 Node] [_ Graph] [3 View]";;
-        view)   tabs="[1 Node] [2 Graph] [_ View]";;
+        node)   tabs="[_ Node] [2  View]";;
+        view)   tabs="[1 Node] [_  View]";;
         search) tabs="Search Mode";;
         *) debug "wtf" $1;;
     esac
