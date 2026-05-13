@@ -598,7 +598,7 @@ def dot_state_colors(state):
     case _:         return ("grey95",   "grey50" )
 
 
-def dot_node(id, shape="box"):
+def dot_node(id, shape="box", style="filled"):
   """Return a formatted node in dot syntax.
 
   Node attributes are set according to the task state.
@@ -606,7 +606,7 @@ def dot_node(id, shape="box"):
   fill, label = dot_state_colors(task_state(id))
   formatted_attrs = dot_attrs(
     ("label"  ,   task_gloss(id)),
-    ("style",     "filled"),
+    ("style",     style),
     ("shape",     shape),
     ("color",     fill),
     ("penwidth",  "2"),
@@ -623,25 +623,30 @@ def dot_edge(u, v, style, color, arrow="normal"):
   return f"{dot_quote(u)} -> {dot_quote(v)}" \
          f"[style={dot_quote(style)}, color={dot_quote(color)}, arrowhead={arrow}];"
 
+def style_edge(u, v, kind, color):
+  match kind:
+    case []:           return dot_edge(u, v, "solid",  color)
+    case ["explicit"]: return dot_edge(u, v, "solid",  color)
+    case ["subtask"]:  return dot_edge(u, v, "dashed", color)
+    case ["leaf"]:     return dot_edge(u, v, "dashed", color, "empty")
+    case ["sibling"]:  return dot_edge(u, v, "dashed", color, "odot")
+    case ["suspect"]:  return dot_edge(u, v, "dashed", color, "odiamond")
+
 def dot_edges(edges, nodes, color):
   """Format the given edge sets to stdout"""
+
+  reachable = reachability_set(edges, nodes)
+  disjoint = set()
+
   for e in sorted(edges):
-    match e:
-      case (u, v) | (u, v, "explicit"):
-        if edge_contained(u, v, nodes):
-          print(dot_edge(u, v, "solid", color))
-      case (u, v, "subtask"):
-        if edge_contained(u, v, nodes):
-          print(dot_edge(u, v, "dashed", color))
-      case (u, v, "leaf"):
-        if edge_contained(u, v, nodes):
-          print(dot_edge(u, v, "dashed", color, "empty"))
-      case (u, v, "sibling"):
-        if edge_contained(u, v, nodes):
-          print(dot_edge(u, v, "dashed", color, "odot"))
-      case (u, v, "suspect"):
-        if edge_contained(u, v, nodes):
-          print(dot_edge(u, v, "dashed", color, "odiamond"))
+    (u, v, *kind) = e
+    if edge_contained(u, v, reachable):
+      print(style_edge(u, v, kind, color))
+      if u not in nodes:
+        disjoint.add(u)
+      if v not in nodes:
+        disjoint.add(v)
+  return disjoint
 
 def dot(*selection):
   """Read nodes from stdin, write dot syntax to stdout."""
@@ -673,6 +678,21 @@ def dot(*selection):
 
   nodes |= selected
 
+  disjoint = set()
+  if show_deps:
+    disjoint |= dot_edges(
+      edge_list(
+        "dependencies",
+        show_subtasks,
+        show_virtual
+      ),
+      nodes,
+      "red"
+    )
+
+  if show_contexts:
+    disjoint |= dot_edges(edge_list("contexts"), nodes, "green")
+
   # show implicit edges from source and target
   source = bucket_list("source")
   target = bucket_list("target")
@@ -690,19 +710,8 @@ def dot(*selection):
     else:
       print(dot_node(node))
 
-  if show_deps:
-    dot_edges(
-      edge_list(
-        "dependencies",
-        show_subtasks,
-        show_virtual
-      ),
-      nodes,
-      "red"
-    )
-
-  if show_contexts:
-    dot_edges(edge_list("contexts"), nodes, "green")
+  for node in disjoint:
+    print(dot_node(node, shape="box", style="filled,dashed"))
 
   # draw selection as a cluster, regardless of bucket style
   dot_subgraph("Selection", selection)

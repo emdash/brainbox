@@ -843,6 +843,7 @@ class Monthly(Implicit):
   days_in   : InitVar[set[int]]
   months_in : InitVar[set[int]]   = None
   months    : Dict[int, set(int)] = field(init=False)
+  multi_day : bool = False
 
   def __post_init__(self, days_in, months_in=None):
     self.months = {}
@@ -889,11 +890,22 @@ class Monthly(Implicit):
   # XXX this fails on an edge case where the largest interval will be
   # clamped to the calendar year of dt, and will not "wrap around"
   # january first even if the dates would be contiguous.
-  def largestIntervalContaining(self, dt):
+  def _handle_months(self, dt):
     if self.months:
-      return Explicit(list(self.forMonths(dt.year))).largestIntervalContaining(dt)
+      return self.forMonths(dt.year)
     else:
-      return Explicit(list(self.forDays(dt.year, dt.month))).largestIntervalContaining(dt)
+      return self.forDays(dt.year, dt.month)
+
+  # whatever underlying pattern, handle whether or not we split the
+  # intervals on day boundaries or fuse them into multi-day intervals.
+  def _handle_multi(self, dt):
+    if self.multi_day:
+      return Interval.mergeConsecutive(self._handle_months(dt))
+    else:
+      return self._handle_months(dt)
+
+  def largestIntervalContaining(self, dt):
+    return Explicit(list(self._handle_multi(dt))).largestIntervalContaining(dt)
 
   def invert(self):
     raise NotImplemented
@@ -1009,7 +1021,7 @@ def fromJSON(decoded):
     case ["weekly", *days]:
       return Weekly({d for d in days})
     case ["monthly", "all", *months]:
-      return Monthly(set(range(1, 32)), set(months))
+      return Monthly(set(range(1, 32)), set(months), multi_day=True)
     case ["monthly", [*days], [*months]]:
       return Monthly(parseDays(days), set(months))
     case ["monthly", *days]:
@@ -1034,6 +1046,8 @@ def fromJSON(decoded):
       return fromJSON(subexpr).invert()
     case ["except", a, b]:
       return Intersection([fromJSON(a), fromJSON(b).invert()])
+    case ["daily", subexpr]:
+      return Daily(fromJSON[subexpr])
     case ["+", a, b]:
       return fromJSON(a) + fromJSON(b)
     case ["-", a, b]:
@@ -1080,6 +1094,9 @@ def parse_window(args):
     case ():           return Interval.fromDate(today)
     case (start,):     return Interval.fromDate(datetime.fromisoformat(start))
     case (start, end): return Interval.fromDate(datetime.fromisoformat(start), datetime.fromisoformat(end))
+    case (start, "-", dur):
+      start = datetime.fromisoformat(start).replace(tzinfo=None)
+      return Interval.fromStartDuration(start, parseDuration(dur))
     case invalid:      raise ValueError("Expected one - 3 arguments")
 
 def parse_datetime(args):
@@ -1509,6 +1526,9 @@ def foreach(f, *args):
   for node in graph.read_ids():
     print(f(*args, node))
 
+def test(*args):
+  pass
+
 if __name__ == "__main__":
   match sys.argv[1:]:
     case ["is_upcoming", *args]:   filter_window(is_upcoming, *args)
@@ -1526,5 +1546,6 @@ if __name__ == "__main__":
     case ["preview", *args]:       preview_dateset(*args)
     case ["validate"]:             print(fromJSON(json.load(sys.stdin)))
     case ["agenda", *args]:        agenda(*args)
+    case ["test", *args]:          test(*args)
     case invalid:
       raise ValueError("Invalid Command:", invalid)
