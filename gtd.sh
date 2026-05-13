@@ -2479,6 +2479,7 @@ function __schedule_builder_preview {
     echo "Previewing for: ${start} ${duration}"
     echo "${@}" | _schedule preview month "${start}"
     echo "${@}" | _schedule preview week  "${start}"
+    echo "${@}" | _schedule preview list  "${start}" - "${duration}"
 }
 
 function __schedule_builder_items {
