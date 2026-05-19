@@ -3447,6 +3447,16 @@ function reassign {
         interactive
 }
 
+# Haskell entry point *********************************************************
+
+function haskell {
+    runhaskell \
+        -XGHC2021 \
+        -i"${GTD_DIR}/components" \
+        "${GTD_DIR}/components/Graph.hs" \
+        "${@}"
+}
+
 # Syntax-directed completion **************************************************
 
 # bash completion hook
