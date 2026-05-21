@@ -1460,22 +1460,22 @@ function has {
 query_declare_type             is_task filter
 query_declare_default_producer is_task all
 function is_task {
-    graph filter_state NEW TODO WAIT SOMEDAY
+    haskell filter_state NEW TODO WAIT SOMEDAY
 }
 
 # keep nodes states which track tasks.
 query_declare_type             is_todo filter
 query_declare_default_producer is_todo all
-function is_todo { graph filter_state TODO | query_filter_chain "$@" ; }
+function is_todo { haskell filter_state TODO | query_filter_chain "$@" ; }
 
 # Keep only active nodes that should not be remove from the graph.
 query_declare_type             is_active filter
 query_declare_default_producer is_active all
 function is_active {
-    graph filter_state \
+    haskell filter_state \
         NEW \
         TODO \
-        WAITING \
+        WAIT \
         INFO \
         FOCUS \
         CONTEXT \
@@ -1487,23 +1487,23 @@ function is_active {
 query_declare_type             inactive filter
 query_declare_default_producer inactive all
 function inactive {
-    graph filter_state DONE DROPPED | query_filter_chain "$@"
+    haskell filter_state DONE DROPPED | query_filter_chain "$@"
 }
 
 # Keep only context nodes
 query_declare_type             is_context filter
 query_declare_default_producer is_context all
-function is_context { graph filter_state CONTEXT | query_filter_chain "$@" ; }
+function is_context { haskell filter_state CONTEXT | query_filter_chain "$@" ; }
 
 # Keep only deferred nodes
 query_declare_type             is_deferred filter
 query_declare_default_producer is_deferred all
-function is_deferred {  graph filter_state SOMEDAY | query_filter_chain "$@" ; }
+function is_deferred {  haskell filter_state SOMEDAY | query_filter_chain "$@" ; }
 
 # keep only new tasks
 query_declare_type             is_new filter
 query_declare_default_producer is_new all
-function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
+function is_new { haskell filter_state NEW | query_filter_chain "$@" ; }
 
 # Keep only next actions
 query_declare_type             is_next filter
@@ -1524,14 +1524,14 @@ function single_tasks { is_orphan | is_next "${@}"; }
 query_declare_type             is_info filter
 query_declare_default_producer is_info all
 function is_info {
-    graph filter_state INFO | query_filter_chain "$@"
+    haskell filter_state INFO | query_filter_chain "$@"
 }
 
 # Keeop only tasks marked as FOCUS
 query_declare_type             is_focus filter
 query_declare_default_producer is_focus all
 function is_focus {
-    graph filter_state FOCUS | query_filter_chain "$@"
+    haskell filter_state FOCUS | query_filter_chain "$@"
 }
 
 # Keep only tasks which are considered projects
@@ -1559,7 +1559,7 @@ function is_unassigned {
 # Keep only waiting tasks
 query_declare_type             is_waiting filter
 query_declare_default_producer is_waiting all
-function is_waiting { graph filter_state WAIT | query_filter_chain "$@" ; }
+function is_waiting { haskell filter_state WAIT | query_filter_chain "$@" ; }
 
 # adjacent incoming dependencies of input set
 query_declare_type             parents filter
@@ -2845,7 +2845,7 @@ function __interactive_triage {
         # choose an existing node to add to as a subtask
         if read proj < <(
                 all \
-                    | graph filter_state NEW TODO SOMEDAY \
+                    | haskell filter_state NEW TODO SOMEDAY \
                     | GTD_CHOOSE_PROMPT="Add to Existing Project" choose \
                 )
         then
