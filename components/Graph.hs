@@ -29,7 +29,7 @@
 -- list of external dependencies:
 -- - split
 -- - conduit (to replace python generators)
-
+-- - MissingH (strip)
 module Brainbox.Graph where
 
 -- local imports
@@ -38,6 +38,7 @@ import Util
 -- 3rd party
 import Conduit
 import Data.List.Split
+import Data.String.Utils
 
 -- standard lib imports
 import Control.Monad
@@ -264,7 +265,7 @@ taskState env id = do
   result <- readDatum env (Datum "state") id
   pure $ case result of
     Left  _   -> Nothing
-    Right val -> parseState val
+    Right val -> parseState $ strip val
 
 -- | A top-level filter which filters according to node state.
 --
@@ -371,7 +372,13 @@ main = do
   args <- getArgs
 
   case args of
+    ("filter_state" : states) -> case validateStates states of
+      Left  err    -> error err
+      Right states -> filterState (Set.fromList states) env stdin
     ["subtasks", node] -> do
       subtasks <- getSubtasks env (Id node)
       for_ subtasks printId
     _ -> putStrLn "not implemented"
+  where
+    validateStates states = validate states parseState onErr
+    onErr invalid = "Invalid state: " ++ invalid

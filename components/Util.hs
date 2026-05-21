@@ -1,6 +1,7 @@
 module Util (
   getEnvStr,
-  getEnvBool
+  getEnvBool,
+  validate
 ) where
 
 import Data.Maybe
@@ -19,3 +20,11 @@ getEnvBool var def = do
     Just "1" -> pure $ True
     Just "0" -> pure $ False
     Just invalid -> error $ "Invalid Bool: " ++ invalid
+
+validate :: [a] -> (a -> Maybe b) -> (a -> e) -> Either e [b]
+validate [] _ _ = Right []
+validate (x : xs) f onErr = case validate xs f onErr of
+  Left err -> Left err
+  Right xs -> case f x of
+    Nothing -> Left $ onErr x
+    Just x  -> Right $ x : xs
