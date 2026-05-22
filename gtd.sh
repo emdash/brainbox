@@ -1869,9 +1869,9 @@ function union {
 
     if test -z "${consumer[*]}"
     then
-	graph union <("${query[@]}")
+	haskell union <("${query[@]}")
     else
-	graph union <("${query[@]}") | "${consumer[@]}"
+	haskell union <("${query[@]}") | "${consumer[@]}"
     fi
 }
 

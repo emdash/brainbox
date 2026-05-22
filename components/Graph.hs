@@ -352,7 +352,6 @@ subtaskEdges (Id node) groups projects = do
             yield $ subtaskEdge prev (Node n) Sibling projects
             loop next rest
 
-
 -- | Get all the subtasks of a project.
 --
 -- This will filter the blank lines separating subtask groups.
@@ -378,6 +377,9 @@ main = do
     ["subtasks", node] -> do
       subtasks <- getSubtasks env (Id node)
       for_ subtasks printId
+    ["union", rhs] -> do
+      rhs <- openFile rhs ReadMode
+      Brainbox.Graph.union stdin rhs
     _ -> putStrLn "not implemented"
   where
     validateStates states = validate states parseState onErr
