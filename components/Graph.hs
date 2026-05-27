@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ExtendedDefaultRules #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- | This file contains optimized implementations of graph functions.
 --
@@ -28,7 +29,7 @@
 -- XXX: write proper stack / cabal build file for this
 -- list of external dependencies:
 -- - split
--- - conduit (to replace python generators)
+-- - pipes
 -- - MissingH (strip)
 module Brainbox.Graph where
 
@@ -36,7 +37,8 @@ module Brainbox.Graph where
 import Util
 
 -- 3rd party
-import Conduit
+import Pipes
+import qualified Pipes.Prelude as P
 import Data.List.Split
 import Data.String.Utils
 
@@ -77,7 +79,7 @@ newtype Id = Id String deriving (Eq, Ord, Show)
 newtype Datum = Datum String deriving Eq
 
 -- | An adjacency-list graph representation.
-type Graph a = Map a [a]
+type Graph = Map INode (Set INode)
 
 -- | The type of edge, for display purposes
 data EdgeType
@@ -93,12 +95,6 @@ type Edge = (Id, Id)
 -- | A graph edge annotated with a type for display.
 type TypedEdge = (Id, Id, EdgeType)
 
--- | A set of graph edges
-type EdgeList = [Edge]
-
--- | A set of edges for dot output
-type TypedEdgeList = [TypedEdge]
-
 -- | A canonical edge set
 data EdgeSet = Contexts | Dependencies
 
@@ -106,10 +102,10 @@ data EdgeSet = Contexts | Dependencies
 type Predicate = Env -> Id -> IO Bool
 
 -- | An effectful predicate which also considers an edgelist.
-type EdgePredicate = Env -> Id -> EdgeList -> IO Bool
+type EdgePredicate = Env -> Id -> [Edge] -> IO Bool
 
 -- | Type of Intermediate node Id which distinguishes start nodes
-data INode = Node String | Start String
+data INode = Node String | Start String deriving (Ord, Eq, Show)
 
 -- | Type of intermediate edges
 type IEdge = (INode, INode, EdgeType)
@@ -130,6 +126,9 @@ data State
 -- | Result of a fallible operation
 type Result a = IO (Either IOException a)
 
+idOf :: Id -> String
+idOf (Id x) = x
+
 -- | Parse an edge set from a user-supplied string
 -- Some shorthand names are also allowed here.
 parseEdgeSet :: String -> Maybe EdgeSet
@@ -141,7 +140,7 @@ parseEdgeSet _              = Nothing
 
 -- | Get the canonical path for an edge set
 canonical :: EdgeSet -> FilePath
-canonical Contexts = "contexts"
+canonical Contexts     = "contexts"
 canonical Dependencies = "dependencies"
 
 -- | Parse the node state from the DB representation.
@@ -189,41 +188,39 @@ has (Datum datum) env (Id id) = do
 
 -- | Read all the ids from the given handle.
 --
--- This assumes that the handle will print one Id per line, and that
--- each line contains a valid node ide.
-readIds :: Handle -> IO [Id]
-readIds handle = do
-  contents <- hGetContents handle
-  return $ Id <$> lines contents
+-- XXX: This assumes that the handle yields one Id per line, and that
+-- each line contains a valid node ID.
+readIds :: Handle -> Producer Id IO ()
+readIds handle = P.fromHandle handle >-> P.map Id
 
 -- | Filter nodes from the input file handle to stdout.
-filterNodes :: Env -> Handle -> Predicate -> IO ()
-filterNodes state handle predicate = do
-  ids <- readIds handle
-  filter_ ids
-  where
-    filter_ :: [Id] -> IO ()
-    filter_ []            = pure ()
-    filter_ (id@(Id x) : xs) = do
-      pred <- predicate state id
-      case pred of
-        True -> putStrLn x
-        False -> pure ()
-      filter_ xs
+filterNodes :: Env -> Predicate -> Pipe Id Id IO ()
+filterNodes env predicate = P.filterM (predicate env)
+
+{-
+-- | Read the given edge set from the database.
+edgeList :: Env -> EdgeSet -> IO [Edge]
+edgeList env edgeset =
+  let dir = env.state_dir ++ "/" ++ canonical edgeset
+  in do
+    edges <- listDirectory $ trace ("XXX" ++ dir) dir
+    return $ mapMaybe parseEdge edges
+-}
 
 -- | Like filterNodes, but also considers the given edge set.
 --
--- Constructing edge sets is potentially expensive, so we avoid it
--- mostly.
+-- Constructing edge sets is potentially expensive, so the edge set is
+-- explicit.
 filterNodesWithEdges
   :: Env
-  -> Handle
   -> EdgeSet
   -> EdgePredicate
-  -> IO ()
-filterNodesWithEdges state handle edges predicate = do
-  edges <- edgeList edges
-  filterNodes state handle (\state id -> predicate state id edges)
+  -> Pipe Id Id IO ()
+filterNodesWithEdges env edges predicate = do
+  edges <- lift $ P.toListM $ readEdges env edges
+  filterNodes env (pred edges)
+  where
+    pred edges env id = predicate env id edges
 
 -- | Read bucket contents into a list.
 readBucket :: Env -> String -> IO [Id]
@@ -235,43 +232,37 @@ readBucket state bucket =
     return $ Id <$> ids
 
 -- | Try to Read the Datum from the given node id
-readDatum :: Env -> Datum -> Id -> Result String
+readDatum :: Env -> Datum -> Id -> Producer String IO ()
 readDatum env (Datum d) (Id i) =
   let path = env.node_dir ++ "/" ++ i ++ "/" ++ d
-  in try $ readFile path
+  in do
+    handle <- lift $ openFile path ReadMode
+    P.fromHandle handle
 
--- | Read the Datum from the given node id
---
--- Like `readDatum`, but returns `[no contents]` on error, which is
--- useful in some contexts.
-readDatum' :: Env -> Datum -> Id -> IO String
-readDatum' env datum id = do
-  result <- readDatum env datum id
-  pure $ case result of
-    Left _ -> "[no contents]"
-    Right val -> val
+-- | Flip every edge in the input stream.
+flipped :: Monad m => Pipe IEdge IEdge m ()
+flipped = P.map $ \(u, v, k) -> (v, u, k)
 
--- | Get the given task contents, preserving errors.
-readContents :: Env -> Id -> Result String
-readContents env id = readDatum env (Datum "contents") id
-
--- | Get the given task contents, ignoring errors.
-readContents' :: Env -> Id -> IO String
-readContents' env id = readDatum' env (Datum "contents") id
+-- | Construct a graph from a Producer of edges.
+adjacencyMap :: Monad m => Producer IEdge m () -> m Graph
+adjacencyMap edges = P.fold insertEdge Map.empty id edges
+  where
+    insertEdge :: Graph -> IEdge -> Graph
+    insertEdge g (u, v, _) = case Map.lookup u g of
+      Nothing -> Map.insert u (Set.singleton v) g
+      Just vs -> Map.insert u (Set.insert v vs) g
 
 -- | Get the task state, if it exists and is valid.
 taskState :: Env -> Id -> IO (Maybe State)
 taskState env id = do
-  result <- readDatum env (Datum "state") id
-  pure $ case result of
-    Left  _   -> Nothing
-    Right val -> parseState $ strip val
+  line <- P.head $ readDatum env (Datum "state") id
+  return $ Control.Monad.join $ parseState <$> line
 
 -- | A top-level filter which filters according to node state.
 --
 -- Those whose state is in the given set are considered valid.
-filterState :: Set State -> Env -> Handle -> IO ()
-filterState states env handle = filterNodes env handle pred
+filterState :: Set State -> Env -> Pipe Id Id IO ()
+filterState states env = filterNodes env pred
   where
     pred :: Predicate
     pred env id = do
@@ -282,54 +273,46 @@ filterState states env handle = filterNodes env handle pred
 
 -- | Print the given node id to stdout.
 printId :: Id -> IO ()
-printId (Id id) = putStrLn id
+printId = putStrLn . idOf
 
 -- | Print the union of the two input file handle stdout.
-union :: Handle -> Handle -> IO ()
+union :: Handle -> Handle -> Producer Id IO ()
 union lhs rhs = do
-  lhs <- readIds lhs
-  rhs <- readIds rhs
-  for_ (Data.List.union lhs rhs) printId
+  readIds lhs
+  readIds rhs
 
 -- | Return all the nodes in the database
-nodes :: Env -> IO [Id]
+nodes :: Env -> Producer Id IO ()
 nodes env = do
-  ids <- listDirectory env.node_dir
-  pure $ Id <$> ids
-
--- | Read the subtasks datum for the given node
-readSubtasks :: Env -> Id -> IO [String]
-readSubtasks env id = do
-  result <- readDatum env (Datum "subtasks") id
-  pure $ case result of
-    Left _    -> []
-    Right val -> lines val
+  ids <- lift $ listDirectory env.node_dir
+  each ids >-> P.map (Id . strip)
 
 -- | Read the explicit edges from the database
-readEdges :: Env -> EdgeSet -> IO EdgeList
+readEdges :: Env -> EdgeSet -> Producer Edge IO ()
 readEdges env edges =
   let path = env.state_dir ++ "/" ++ canonical edges
   in do
-    raw <- listDirectory path
-    pure $ mapMaybe parseEdge raw
+    raw <- lift $ listDirectory path
+    each raw >-> P.mapMaybe parseEdge
 
 -- | Group input into clusters of serial tasks
 subtaskGroups :: Env -> Id -> IO [[Id]]
 subtaskGroups env id = do
-  st <- readSubtasks env id
-  return $ (Id <$>) <$> splitOn [""] st
+  lines <- P.toListM $ readDatum env (Datum "subtasks") id
+  return $ (Id <$>) <$> splitOn [""] lines
 
 -- | A helper function for subtaskEdges
 --
 -- This will link to the start node of any node listed in the given project set.
-subtaskEdge :: Id -> INode -> EdgeType -> Set String -> IEdge
+subtaskEdge :: Id -> INode -> EdgeType -> Map String [[Id]] -> IEdge
 subtaskEdge (Id u) v kind projects =
-  if Set.member u projects
+  if Map.member u projects
   then (Start u, v, kind)
   else (Node  u, v, kind)
 
+
 -- | Generate the edges for a set of subtask groups
-subtaskEdges :: Id -> [[Id]] -> Set String -> ConduitT () IEdge IO ()
+subtaskEdges :: Id -> [[Id]] -> Map String [[Id]] -> Producer IEdge IO ()
 subtaskEdges (Id node) groups projects = do
   let start_node = Start node
 
@@ -346,41 +329,174 @@ subtaskEdges (Id node) groups projects = do
         yield (Node node, Node prev, Subtask)
         loop p rest
         where
-          loop :: Id -> [Id] -> ConduitT () IEdge IO ()
+          loop :: Id -> [Id] -> Producer IEdge IO ()
           loop prev [] = yield $ subtaskEdge prev start_node Leaf projects
           loop prev (next@(Id n) : rest) = do
             yield $ subtaskEdge prev (Node n) Sibling projects
             loop next rest
 
+-- | Construct the intermediate project taskgraph.
+--
+-- This is the union of all subtask edges and all the explicit edges,
+-- with project-level dependencies blocking the project start node.
+projectSubgraph :: Env -> Map String [[Id]] -> Producer IEdge IO ()
+projectSubgraph env projects = do
+  edges <- lift $ P.toListM $ readEdges env Dependencies
+
+  for (each (Map.assocs projects)) $ \(node, groups) -> do
+    subtaskEdges (Id node) groups projects
+
+  for (each edges) $ \(u, (Id v)) -> do
+    yield $ subtaskEdge u (Node v) Explicit projects
+
+-- | One iteration of merging start nodes into the graph.
+mergeStartNodesIter :: Monad m => Producer IEdge m () -> Producer IEdge m ()
+mergeStartNodesIter edges =
+  do
+    edges    <- lift $ P.toListM edges
+    outgoing <- lift $ adjacencyMap (each edges)
+    incoming <- lift $ adjacencyMap $ (each edges) >-> flipped
+    for (each edges) $ \(u, v, kind) -> do
+      let us = mergeSet u incoming
+      let vs = mergeSet v outgoing
+      for (each us) $ \u -> do
+        for (each vs) $ \v -> do
+          unless (u == v) $ yield (u, v, kind)
+  where
+    mergeSet :: INode -> Graph -> Set INode
+    mergeSet u g = case u of
+      Node  _ -> Set.singleton u
+      Start _ -> fromMaybe Set.empty $ Map.lookup u g
+
+-- | Merge start nodes back into the graph by combining their edges.
+mergeStartNodes :: Monad m => Producer IEdge m () -> Producer IEdge m ()
+mergeStartNodes edges = do
+  edges <- lift $ P.toListM $ mergeStartNodesIter edges
+  if any touchesStartNode edges
+    then mergeStartNodes (each edges)
+    else each edges
+  where
+    touchesStartNode :: IEdge -> Bool
+    touchesStartNode (Start _, _, _) = True
+    touchesStartNode (_, Start _, _) = True
+    touchesStartNode _               = False
+
+-- | Yield all the project nodes in the DB.
+projects :: Env -> Producer Id IO ()
+projects env = nodes env >-> filterNodes env (has (Datum "subtasks"))
+
+-- | A generator which yields all dependency edges.
+--
+-- We have to special-case "Project" nodes to get the correct
+-- graph.
+--
+-- Complexity arises from the "outline format" of the substasks file
+-- and the naive interpretation of a tree as an explicit DAG. Outline
+-- format implies:
+--
+--  1. Reverse ordering, with the first subtask in a group considered a leaf.
+--  2. Implicit chaining, with each successive sibling depending on the previous.
+--  3. Project-level dependencies implicitly block project leaves.
+--
+-- This requires a multi-pass approach. The first pass constructs an
+-- incomplete project dag from the subtasks file for each
+-- project. During this pass, we in insert virtual start nodes which
+-- implicitly block the leaves of each project.
+--
+-- We then process the explicit edges of the graph, adjusting any
+-- project-level dependencies to block to the virtual start node,
+-- rather than the project node itself.
+--
+-- Finally, the virtual nodes are removed by merging edges with their
+-- neighbors. We could skip this step, but this breaks the invariant
+-- that node IDs always refer to a valid path in the DB, resulting in
+-- numerous downstream issues.
+--
+-- Earlier approaches were simpler, but incorrectly treated
+-- project-level dependencies as leaves in some cases. The intention is
+-- that as a task expands into a project, any explicit dependencies it
+-- might have continue to depend on the task as a whole, including its
+-- transitive dependencies.
+dependencies :: Env -> Bool -> Producer IEdge IO ()
+dependencies env show_virtual =
+  do
+    nodes    <- lift $ P.toListM $ projects env
+    projects <- lift $ foldM insertGroups Map.empty (idOf <$> nodes)
+    if show_virtual
+      then projectSubgraph env projects
+      else mergeStartNodes $ projectSubgraph env projects
+  where
+    insertGroups :: Map String [[Id]] -> String -> IO (Map String [[Id]])
+    insertGroups projects node = do
+      groups <- subtaskGroups env (Id node)
+      return $ Map.insert node groups projects
+
+-- | Get the stream of edges for the given edge set.
+--
+-- Client code should call this function, rather than lower-level
+-- functions, to ensure project subtasks are handled correctly.
+edgeList :: Env -> EdgeSet -> Bool -> Bool -> Producer IEdge IO ()
+edgeList env edges subtasks show_virtual = case (edges, subtasks) of
+  (Dependencies, True) -> dependencies env show_virtual
+  _                    -> readEdges env edges >-> P.map extend
+  where
+    extend :: Edge -> IEdge
+    extend (Id u, Id v) = (Node u, Node v, Explicit)
+
 -- | Get all the subtasks of a project.
 --
 -- This will filter the blank lines separating subtask groups.
-getSubtasks :: Env -> Id -> IO [Id]
-getSubtasks env id = subtaskGroups env id >>= pure . concat
+getSubtasks :: Env -> Id -> Producer Id IO ()
+getSubtasks env id = do
+  groups <- lift $ subtaskGroups env id
+  each $ Data.List.concat groups
 
--- | Read the given edge set from the database.
-edgeList :: EdgeSet -> IO [Edge]
-edgeList _ = error "not implemented"
+-- | Result of dispatching on command arguments.
+data Cmd
+  -- | A node Id filter
+  = Filter (Pipe Id Id IO ())
+  -- | A stream of node ids, but doesn't consume from stdin.
+  | Stream (Producer Id IO ())
+  -- | A pipeleine run for its effect
+  | Eff    (Effect IO ())
+  -- | A result to be printed to stdout, with normal exit status.
+  | Result String
+  -- | An error messge to be printe to stderr, with failing exit status.
+  | Error  String
 
--- | Read
+-- | Determine which command to run based on argv.
+dispatch :: Env -> [String] -> Cmd
+dispatch env ("filter_state" : states) = case validateStates states of
+  Left  err    -> Error err
+  Right states -> Filter $ filterState (Set.fromList states) env
+  where
+    validateStates states = validate states parseState onErr
+    onErr invalid = "Invalid state: " ++ invalid
+dispatch env ["subtasks", node] = Stream $ getSubtasks env (Id node)
+dispatch env ["is_project", node] =
+  Filter $ has (Datum "subtasks")
+dispatch env ["union", rhs] =
+  Eff $ do
+  rhs <- lift $ openFile rhs ReadMode
+  for (Brainbox.Graph.union stdin rhs) (lift . printId)
+dispatch env _ = Error "not implemented"
+
+-- | Abstract common code for streams of nodes.
+runStream :: Producer Id IO () -> IO ()
+runStream stream = runEffect $ for stream (lift . printId)
+
+-- | Abstract common code for running node filters.
+runFilter :: Pipe Id Id IO () -> IO ()
+runFilter pipeline = runStream (readIds stdin >-> pipeline)
 
 -- | Main entry point.
 main :: IO ()
 main = do
   env  <- getEnvState
   args <- getArgs
-
-  case args of
-    ("filter_state" : states) -> case validateStates states of
-      Left  err    -> error err
-      Right states -> filterState (Set.fromList states) env stdin
-    ["subtasks", node] -> do
-      subtasks <- getSubtasks env (Id node)
-      for_ subtasks printId
-    ["union", rhs] -> do
-      rhs <- openFile rhs ReadMode
-      Brainbox.Graph.union stdin rhs
-    _ -> putStrLn "not implemented"
-  where
-    validateStates states = validate states parseState onErr
-    onErr invalid = "Invalid state: " ++ invalid
+  case dispatch env args of
+    Filter f -> runFilter f
+    Stream s -> runStream s
+    Eff    e -> runEffect e
+    Result s -> putStrLn  s
+    Error  e -> error     e
