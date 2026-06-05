@@ -3,6 +3,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ExtendedDefaultRules #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- | This file contains optimized implementations of graph functions.
 --
@@ -72,14 +74,11 @@ data Env = Env {
   debug_edges   :: Bool
 }
 
--- | A node ID.
-newtype Id = Id String deriving (Eq, Ord, Show)
-
 -- | A node datum identifier.
 newtype Datum = Datum String deriving Eq
 
 -- | An adjacency-list graph representation.
-type Graph = Map INode (Set INode)
+type Graph idT = Map idT (Set idT)
 
 -- | The type of edge, for display purposes
 data EdgeType
@@ -88,27 +87,29 @@ data EdgeType
   | Leaf
   | Sibling
   | Suspect
+  deriving (Ord, Eq, Show)
 
 -- | A general graph edge.
-type Edge = (Id, Id)
-
--- | A graph edge annotated with a type for display.
-type TypedEdge = (Id, Id, EdgeType)
+type Edge idT = (idT, idT, EdgeType)
 
 -- | A canonical edge set
 data EdgeSet = Contexts | Dependencies
 
+-- | Edge direction relative to the current node.
+data Direction = Incoming | Outgoing | All
+
 -- | An effectful predicate over node Ids.
-type Predicate = Env -> Id -> IO Bool
+type Predicate idT = Env -> idT -> IO Bool
 
 -- | An effectful predicate which also considers an edgelist.
-type EdgePredicate = Env -> Id -> [Edge] -> IO Bool
+type EdgePredicate idT = Graph idT -> Predicate idT
 
--- | Type of Intermediate node Id which distinguishes start nodes
+-- | A plain node ID.
+newtype Id = Id String deriving (Eq, Ord, Show)
+
+-- | Type of Intermediate node Id which distinguishes start nodes from
+-- ordinary nodes.
 data INode = Node String | Start String deriving (Ord, Eq, Show)
-
--- | Type of intermediate edges
-type IEdge = (INode, INode, EdgeType)
 
 -- | The current state of a node
 data State
@@ -126,8 +127,15 @@ data State
 -- | Result of a fallible operation
 type Result a = IO (Either IOException a)
 
-idOf :: Id -> String
-idOf (Id x) = x
+class IdOf idT where
+  idOf :: idT -> String
+
+instance IdOf Id where
+  idOf (Id x) = x
+
+instance IdOf INode where
+  idOf (Node x) = x
+  idOf (Start x) = x ++ "::start"
 
 -- | Parse an edge set from a user-supplied string
 -- Some shorthand names are also allowed here.
@@ -159,10 +167,13 @@ parseState _         = Nothing
 -- | Parse an edge from a string
 --
 -- the expected format is u:v
-parseEdge :: String -> Maybe Edge
+parseEdge :: String -> Maybe (Edge Id)
 parseEdge edge = case splitOn ":" edge of
-  [u, v] -> Just (Id u, Id v)
+  [u, v] -> Just (Id u, Id v, Explicit)
   _      -> Nothing
+
+idToINode :: Edge Id -> Edge INode
+idToINode (Id u, Id v, k) = (Node u, Node v, k)
 
 -- | Pull in our state from the environment
 getEnvState :: IO Env
@@ -181,7 +192,7 @@ getEnvState = do
   return Env{..}
 
 -- | True if the given node Id has the given datum
-has :: Datum -> Predicate
+has :: Datum -> Predicate Id
 has (Datum datum) env (Id id) = do
   let path = env.node_dir ++ "/" ++ id ++ "/" ++ datum
   doesPathExist path
@@ -194,33 +205,55 @@ readIds :: Handle -> Producer Id IO ()
 readIds handle = P.fromHandle handle >-> P.map Id
 
 -- | Filter nodes from the input file handle to stdout.
-filterNodes :: Env -> Predicate -> Pipe Id Id IO ()
+filterNodes :: Env -> Predicate idT -> Pipe idT idT IO ()
 filterNodes env predicate = P.filterM (predicate env)
 
-{-
--- | Read the given edge set from the database.
-edgeList :: Env -> EdgeSet -> IO [Edge]
-edgeList env edgeset =
-  let dir = env.state_dir ++ "/" ++ canonical edgeset
-  in do
-    edges <- listDirectory $ trace ("XXX" ++ dir) dir
-    return $ mapMaybe parseEdge edges
--}
+-- | Flip every edge in the input stream.
+flipped :: Monad m => Pipe (Edge idT) (Edge idT) m ()
+flipped = P.map $ \(u, v, k) -> (v, u, k)
 
--- | Like filterNodes, but also considers the given edge set.
+-- | Construct a graph from a Producer of edges.
+adjacencyMap
+  :: Monad m
+  => (Eq idT, Ord idT)
+  => Producer (Edge idT) m ()
+  -> m (Graph idT)
+adjacencyMap edges = P.fold insertEdge Map.empty id edges
+  where
+    insertEdge g (u, v, _) = case Map.lookup u g of
+      Nothing -> Map.insert u (Set.singleton v) g
+      Just vs -> Map.insert u (Set.insert v vs) g
+
+readGraph
+  :: forall idT . (Eq idT, Ord idT)
+  => Dependencies (Edge idT)
+  => ReadEdges (Edge idT)
+  => Env
+  -> EdgeSet
+  -> Direction
+  -> IO (Graph idT)
+readGraph env edges direction = adjacencyMap $ edges' direction
+  where
+    edges' :: Direction -> Producer (Edge idT) IO ()
+    edges' Outgoing = edgeList env edges
+    edges' Incoming = edgeList env edges >-> flipped
+    edges' All      = do
+      edgeList env edges
+      edgeList env edges >-> flipped
+
+-- | Helper for constructing predicates that rely on sets of edges.
 --
--- Constructing edge sets is potentially expensive, so the edge set is
--- explicit.
-filterNodesWithEdges
+-- Constructing edge sets is expensive, so we read the graph into
+-- memory up-front, re-using this map for each node.
+withEdges
   :: Env
   -> EdgeSet
-  -> EdgePredicate
-  -> Pipe Id Id IO ()
-filterNodesWithEdges env edges predicate = do
-  edges <- lift $ P.toListM $ readEdges env edges
-  filterNodes env (pred edges)
-  where
-    pred edges env id = predicate env id edges
+  -> Direction
+  -> EdgePredicate INode
+  -> IO (Predicate INode)
+withEdges env edges direction pred = do
+  g <- readGraph env edges direction
+  return $ pred g
 
 -- | Read bucket contents into a list.
 readBucket :: Env -> String -> IO [Id]
@@ -239,19 +272,6 @@ readDatum env (Datum d) (Id i) =
     handle <- lift $ openFile path ReadMode
     P.fromHandle handle
 
--- | Flip every edge in the input stream.
-flipped :: Monad m => Pipe IEdge IEdge m ()
-flipped = P.map $ \(u, v, k) -> (v, u, k)
-
--- | Construct a graph from a Producer of edges.
-adjacencyMap :: Monad m => Producer IEdge m () -> m Graph
-adjacencyMap edges = P.fold insertEdge Map.empty id edges
-  where
-    insertEdge :: Graph -> IEdge -> Graph
-    insertEdge g (u, v, _) = case Map.lookup u g of
-      Nothing -> Map.insert u (Set.singleton v) g
-      Just vs -> Map.insert u (Set.insert v vs) g
-
 -- | Get the task state, if it exists and is valid.
 taskState :: Env -> Id -> IO (Maybe State)
 taskState env id = do
@@ -261,18 +281,15 @@ taskState env id = do
 -- | A top-level filter which filters according to node state.
 --
 -- Those whose state is in the given set are considered valid.
-filterState :: Set State -> Env -> Pipe Id Id IO ()
-filterState states env = filterNodes env pred
-  where
-    pred :: Predicate
-    pred env id = do
-      state <- taskState env id
-      pure $ case state of
-        Nothing -> False
-        Just state -> Set.member state states
+filterState :: Set State -> Predicate Id
+filterState states env id = do
+  state <- taskState env id
+  return $ case state of
+    Nothing -> False
+    Just state -> Set.member state states
 
 -- | Print the given node id to stdout.
-printId :: Id -> IO ()
+printId :: IdOf idT => idT -> IO ()
 printId = putStrLn . idOf
 
 -- | Print the union of the two input file handle stdout.
@@ -287,13 +304,19 @@ nodes env = do
   ids <- lift $ listDirectory env.node_dir
   each ids >-> P.map (Id . strip)
 
--- | Read the explicit edges from the database
-readEdges :: Env -> EdgeSet -> Producer Edge IO ()
-readEdges env edges =
-  let path = env.state_dir ++ "/" ++ canonical edges
-  in do
-    raw <- lift $ listDirectory path
-    each raw >-> P.mapMaybe parseEdge
+class ReadEdges edgeT where
+  readEdges :: Env -> EdgeSet -> Producer edgeT IO ()
+
+instance ReadEdges (Edge Id) where
+  -- | Read the explicit edges from the database
+  readEdges env edges =
+    let path = env.state_dir ++ "/" ++ canonical edges
+    in do
+      raw <- lift $ listDirectory path
+      each raw >-> P.mapMaybe parseEdge
+
+instance ReadEdges (Edge INode) where
+  readEdges env edges = readEdges @(Edge Id) env edges >-> P.map idToINode
 
 -- | Group input into clusters of serial tasks
 subtaskGroups :: Env -> Id -> IO [[Id]]
@@ -304,15 +327,14 @@ subtaskGroups env id = do
 -- | A helper function for subtaskEdges
 --
 -- This will link to the start node of any node listed in the given project set.
-subtaskEdge :: Id -> INode -> EdgeType -> Map String [[Id]] -> IEdge
+subtaskEdge :: Id -> INode -> EdgeType -> Map String [[Id]] -> Edge INode
 subtaskEdge (Id u) v kind projects =
   if Map.member u projects
   then (Start u, v, kind)
   else (Node  u, v, kind)
 
-
 -- | Generate the edges for a set of subtask groups
-subtaskEdges :: Id -> [[Id]] -> Map String [[Id]] -> Producer IEdge IO ()
+subtaskEdges :: Id -> [[Id]] -> Map String [[Id]] -> Producer (Edge INode) IO ()
 subtaskEdges (Id node) groups projects = do
   let start_node = Start node
 
@@ -329,7 +351,7 @@ subtaskEdges (Id node) groups projects = do
         yield (Node node, Node prev, Subtask)
         loop p rest
         where
-          loop :: Id -> [Id] -> Producer IEdge IO ()
+          loop :: Id -> [Id] -> Producer (Edge INode) IO ()
           loop prev [] = yield $ subtaskEdge prev start_node Leaf projects
           loop prev (next@(Id n) : rest) = do
             yield $ subtaskEdge prev (Node n) Sibling projects
@@ -339,21 +361,23 @@ subtaskEdges (Id node) groups projects = do
 --
 -- This is the union of all subtask edges and all the explicit edges,
 -- with project-level dependencies blocking the project start node.
-projectSubgraph :: Env -> Map String [[Id]] -> Producer IEdge IO ()
+projectSubgraph :: Env -> Map String [[Id]] -> Producer (Edge INode) IO ()
 projectSubgraph env projects = do
-  edges <- lift $ P.toListM $ readEdges env Dependencies
+  edges <- lift $ P.toListM $ readEdges @(Edge Id) env Dependencies
 
   for (each (Map.assocs projects)) $ \(node, groups) -> do
     subtaskEdges (Id node) groups projects
 
-  for (each edges) $ \(u, (Id v)) -> do
+  for (each edges) $ \(u, (Id v), _) -> do
     yield $ subtaskEdge u (Node v) Explicit projects
 
 -- | One iteration of merging start nodes into the graph.
-mergeStartNodesIter :: Monad m => Producer IEdge m () -> Producer IEdge m ()
+mergeStartNodesIter
+  :: Monad m
+  => Set (Edge INode)
+  -> Producer (Edge INode) m ()
 mergeStartNodesIter edges =
   do
-    edges    <- lift $ P.toListM edges
     outgoing <- lift $ adjacencyMap (each edges)
     incoming <- lift $ adjacencyMap $ (each edges) >-> flipped
     for (each edges) $ \(u, v, kind) -> do
@@ -363,27 +387,47 @@ mergeStartNodesIter edges =
         for (each vs) $ \v -> do
           unless (u == v) $ yield (u, v, kind)
   where
-    mergeSet :: INode -> Graph -> Set INode
+    mergeSet :: INode -> Graph INode -> Set INode
     mergeSet u g = case u of
       Node  _ -> Set.singleton u
       Start _ -> fromMaybe Set.empty $ Map.lookup u g
 
+-- | Intermediate graph type
+--
+-- This is a set of edges that either touches start nodes or a set
+-- that provably doesn't.
+type IGraph = Either (Set (Edge INode)) (Set (Edge Id))
+
 -- | Merge start nodes back into the graph by combining their edges.
-mergeStartNodes :: Monad m => Producer IEdge m () -> Producer IEdge m ()
-mergeStartNodes edges = do
-  edges <- lift $ P.toListM $ mergeStartNodesIter edges
-  if any touchesStartNode edges
-    then mergeStartNodes (each edges)
-    else each edges
+--
+-- Any edge which touches a start node is replaced by a subgraph which
+-- connects its neighbors in both directions.
+mergeStartNodes
+  :: Monad m
+  => Set (Edge INode)
+  -> Producer (Edge Id) m ()
+mergeStartNodes edges =
+  do
+    edges <- lift $ P.fold collectNodes (Right Set.empty) id $ mergeStartNodesIter edges
+    case edges of
+      Left hasStartNodes -> mergeStartNodes hasStartNodes
+      Right done -> each done
   where
-    touchesStartNode :: IEdge -> Bool
-    touchesStartNode (Start _, _, _) = True
-    touchesStartNode (_, Start _, _) = True
-    touchesStartNode _               = False
+    -- | Fold an edges into the set.
+    --
+    -- We start by assuming we have finished (Right). If our assumption is wrong, we bail (Left).
+    collectNodes :: IGraph -> Edge INode -> IGraph
+    collectNodes (Right g) e@(Node u, Node v, k) = Right $ Set.insert (Id u, Id v, k) g
+    collectNodes (Right g) e                     = Left  $ Set.insert e $ Set.map idToINode g
+    collectNodes (Left  g) e                     = Left  $ Set.insert e g
 
 -- | Yield all the project nodes in the DB.
 projects :: Env -> Producer Id IO ()
 projects env = nodes env >-> filterNodes env (has (Datum "subtasks"))
+
+-- | Abstract over the edge type.
+class Dependencies edgeT where
+  dependencies :: Env -> Producer edgeT IO ()
 
 -- | A generator which yields all dependency edges.
 --
@@ -406,42 +450,46 @@ projects env = nodes env >-> filterNodes env (has (Datum "subtasks"))
 -- We then process the explicit edges of the graph, adjusting any
 -- project-level dependencies to block to the virtual start node,
 -- rather than the project node itself.
+instance Dependencies (Edge INode) where
+  dependencies env =
+    do
+      nodes    <- lift $ P.toListM $ projects env
+      projects <- lift $ foldM insertGroups Map.empty (idOf <$> nodes)
+      projectSubgraph env projects
+    where
+      insertGroups :: Map String [[Id]] -> String -> IO (Map String [[Id]])
+      insertGroups projects node = do
+        groups <- subtaskGroups env (Id node)
+        return $ Map.insert node groups projects
+
+-- | Instance for `Id`
 --
--- Finally, the virtual nodes are removed by merging edges with their
--- neighbors. We could skip this step, but this breaks the invariant
--- that node IDs always refer to a valid path in the DB, resulting in
--- numerous downstream issues.
+-- Since the output cannot contain start nodes, these are merged.
 --
--- Earlier approaches were simpler, but incorrectly treated
--- project-level dependencies as leaves in some cases. The intention is
--- that as a task expands into a project, any explicit dependencies it
--- might have continue to depend on the task as a whole, including its
--- transitive dependencies.
-dependencies :: Env -> Bool -> Producer IEdge IO ()
-dependencies env show_virtual =
-  do
-    nodes    <- lift $ P.toListM $ projects env
-    projects <- lift $ foldM insertGroups Map.empty (idOf <$> nodes)
-    if show_virtual
-      then projectSubgraph env projects
-      else mergeStartNodes $ projectSubgraph env projects
-  where
-    insertGroups :: Map String [[Id]] -> String -> IO (Map String [[Id]])
-    insertGroups projects node = do
-      groups <- subtaskGroups env (Id node)
-      return $ Map.insert node groups projects
+-- Downstream code has the invariant that node IDs always refer to a
+-- valid path in the DB.
+instance Dependencies (Edge Id) where
+  dependencies env =
+    do
+      edges <- lift collect
+      mergeStartNodes edges
+    where
+      collect :: IO (Set (Edge INode))
+      collect = P.fold (flip Set.insert) Set.empty id $ dependencies @(Edge INode) env
 
 -- | Get the stream of edges for the given edge set.
 --
 -- Client code should call this function, rather than lower-level
 -- functions, to ensure project subtasks are handled correctly.
-edgeList :: Env -> EdgeSet -> Bool -> Bool -> Producer IEdge IO ()
-edgeList env edges subtasks show_virtual = case (edges, subtasks) of
-  (Dependencies, True) -> dependencies env show_virtual
-  _                    -> readEdges env edges >-> P.map extend
-  where
-    extend :: Edge -> IEdge
-    extend (Id u, Id v) = (Node u, Node v, Explicit)
+edgeList
+  :: Dependencies edgeT
+  => ReadEdges edgeT
+  => Env
+  -> EdgeSet
+  -> Producer edgeT IO ()
+edgeList env edges = case (edges, env.show_subtasks) of
+  (Dependencies, True) -> dependencies env
+  _                    -> readEdges env edges
 
 -- | Get all the subtasks of a project.
 --
@@ -451,14 +499,78 @@ getSubtasks env id = do
   groups <- lift $ subtaskGroups env id
   each $ Data.List.concat groups
 
+-- | True if the given edge touches any of the given nodes.
+edgeTouches
+  :: (Eq idT, Ord idT)
+  => Edge idT
+  -> Set idT
+  -> Bool
+edgeTouches (u, v, _) nodes = (Set.member u nodes) || (Set.member v nodes)
+
+-- | True if the given edge is completely within the given nodes.
+edgeContained
+  :: (Eq idT, Ord idT)
+  => Edge idT
+  -> Set idT
+  -> Bool
+edgeContained (u, v, _) nodes = (Set.member u nodes) && (Set.member v nodes)
+
+-- | Stream of all the nodes adjacent to the given input set.
+nodeAdjacent :: (Eq idT, Ord idT) => idT -> Direction -> Pipe (Edge idT) idT IO ()
+nodeAdjacent node direction = forever $ do
+  (u, v, _) <- await
+  case direction of
+    Outgoing -> when (node == u) (yield v)
+    Incoming -> when (node == v) (yield u)
+    All      -> when ((node == u) || (node == v)) $ do
+      yield u
+      yield v
+
+-- | True if a node has any edges in the given direction.
+hasAdjacent :: (Eq idT, Ord idT) => EdgePredicate idT
+hasAdjacent graph _ id = do
+  return $ case Map.lookup id graph of
+    Nothing -> False
+    Just neighbors  -> Set.size neighbors > 0
+
+-- | Expands the input stream to include adjacent neighbors.
+adjacent :: Env -> EdgeSet -> Direction -> Producer Id IO ()
+adjacent env edges direction = do
+  graph <- lift $ readGraph env edges direction
+  readIds stdin >-> go graph
+  where
+    go :: Graph INode -> Pipe Id Id IO ()
+    go graph = do
+      id@(Id node) <- await
+      yield id
+      case Map.lookup (Node node) graph of
+        Nothing        -> go graph
+        Just neighbors -> do
+          each neighbors >-> P.map (Id . idOf)
+          go graph
+
+-- | Helper to invert predicates, which is verbose because of monads.
+invert :: EdgePredicate idT -> EdgePredicate idT
+invert pred graph env id = do
+  res <- pred graph env id
+  return $ not res
+
+-- |
+
+-- | True if a node has edges in the given direction
+
 -- | Result of dispatching on command arguments.
+--
+-- Limit the number of cases we need to handle in top-level main.
 data Cmd
   -- | A node Id filter
-  = Filter (Pipe Id Id IO ())
+  = Filter (Predicate Id)
+  -- | A filter which includes graph data.
+  | EdgeFilter EdgeSet Direction (EdgePredicate Id)
   -- | A stream of node ids, but doesn't consume from stdin.
   | Stream (Producer Id IO ())
   -- | A pipeleine run for its effect
-  | Eff    (Effect IO ())
+  | Eff    (IO ())
   -- | A result to be printed to stdout, with normal exit status.
   | Result String
   -- | An error messge to be printe to stderr, with failing exit status.
@@ -466,28 +578,38 @@ data Cmd
 
 -- | Determine which command to run based on argv.
 dispatch :: Env -> [String] -> Cmd
-dispatch env ("filter_state" : states) = case validateStates states of
-  Left  err    -> Error err
-  Right states -> Filter $ filterState (Set.fromList states) env
-  where
+dispatch env ("filter_state" : states) =
+  case validateStates states of
+    Left  err    -> Error err
+    Right states -> Filter $ filterState (Set.fromList states)
+   where
     validateStates states = validate states parseState onErr
     onErr invalid = "Invalid state: " ++ invalid
-dispatch env ["subtasks", node] = Stream $ getSubtasks env (Id node)
-dispatch env ["is_project", node] =
-  Filter $ has (Datum "subtasks")
-dispatch env ["union", rhs] =
-  Eff $ do
+dispatch env ["subtasks", node]   = Stream $ getSubtasks env (Id node)
+dispatch env ["is_root"]          = EdgeFilter Dependencies Incoming (invert hasAdjacent)
+dispatch env ["is_leaf"]          = EdgeFilter Dependencies Outgoing (invert hasAdjacent)
+dispatch env ["is_orphan"]        = EdgeFilter Dependencies All      (invert hasAdjacent)
+dispatch env ["is_nonterminal"]   = EdgeFilter Dependencies All      hasAdjacent
+dispatch env ["is_project", node] = Filter $ has (Datum "subtasks")
+dispatch env ["union", rhs]       = Stream $ do
   rhs <- lift $ openFile rhs ReadMode
-  for (Brainbox.Graph.union stdin rhs) (lift . printId)
+  Brainbox.Graph.union stdin rhs
 dispatch env _ = Error "not implemented"
 
 -- | Abstract common code for streams of nodes.
 runStream :: Producer Id IO () -> IO ()
 runStream stream = runEffect $ for stream (lift . printId)
 
--- | Abstract common code for running node filters.
-runFilter :: Pipe Id Id IO () -> IO ()
-runFilter pipeline = runStream (readIds stdin >-> pipeline)
+-- | Abstract common code for running node filters, which also process
+-- data from stdin.
+runFilter :: Env -> Predicate Id -> IO ()
+runFilter env predicate = runStream (readIds stdin >-> filterNodes env predicate)
+
+-- | Run filters that require access to the graph structure.
+runEdgeFilter :: Env -> EdgeSet -> Direction -> EdgePredicate Id -> IO ()
+runEdgeFilter env edges direction predicate = do
+  edges <- readGraph env edges direction
+  runFilter env (predicate edges)
 
 -- | Main entry point.
 main :: IO ()
@@ -495,8 +617,9 @@ main = do
   env  <- getEnvState
   args <- getArgs
   case dispatch env args of
-    Filter f -> runFilter f
+    Filter f -> runFilter env f
+    EdgeFilter e d p -> runEdgeFilter env e d p
     Stream s -> runStream s
-    Eff    e -> runEffect e
+    Eff    e -> e
     Result s -> putStrLn  s
     Error  e -> error     e
