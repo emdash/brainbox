@@ -1,11 +1,15 @@
 module Util (
   getEnvStr,
   getEnvBool,
+  pad,
   validate
 ) where
 
 import Data.Maybe
 import System.Environment
+
+pad :: Int -> Char -> String -> String
+pad n c str = replicate (n - length str) c ++ str
 
 getEnvStr :: String -> String -> IO String
 getEnvStr var def = do

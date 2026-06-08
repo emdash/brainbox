@@ -43,6 +43,7 @@ import Pipes
 import qualified Pipes.Prelude as P
 import Data.List.Split
 import Data.String.Utils
+import Data.Foldable.Extra
 
 -- standard lib imports
 import Control.Monad
@@ -272,11 +273,20 @@ readDatum env (Datum d) (Id i) =
     handle <- lift $ openFile path ReadMode
     P.fromHandle handle
 
+withFirstLine :: (String -> Maybe a) -> Datum -> Env -> Id -> IO (Maybe a)
+withFirstLine parser datum env id = do
+  line <- P.head $ readDatum env datum id
+  return $ Control.Monad.join $ parser <$> line
+
+taskContents :: Env -> Id -> Producer String IO ()
+taskContents env = readDatum env (Datum "contents")
+
+taskGloss :: Env -> Id -> IO (Maybe String)
+taskGloss = withFirstLine Just (Datum "contents")
+
 -- | Get the task state, if it exists and is valid.
 taskState :: Env -> Id -> IO (Maybe State)
-taskState env id = do
-  line <- P.head $ readDatum env (Datum "state") id
-  return $ Control.Monad.join $ parseState <$> line
+taskState = withFirstLine parseState (Datum "state")
 
 -- | A top-level filter which filters according to node state.
 --
@@ -287,6 +297,19 @@ filterState states env id = do
   return $ case state of
     Nothing -> False
     Just state -> Set.member state states
+
+printSummary :: Env -> Maybe String -> IO ()
+printSummary env delimiter =
+  let d = fromMaybe " " delimiter
+  in runEffect $ for (readIds stdin) $ \id -> do
+    state <- lift $ taskState env id
+    gloss <- lift $ taskGloss env id
+    lift $ putStrLn $
+         show id
+      ++ d
+      ++ pad 7 ' ' (fromMaybe "[no contents]" $ show <$> state)
+      ++ d
+      ++ (fromMaybe "[no contents]" gloss)
 
 -- | Print the given node id to stdout.
 printId :: IdOf idT => idT -> IO ()
@@ -555,9 +578,63 @@ invert pred graph env id = do
   res <- pred graph env id
   return $ not res
 
--- |
+type BinPred idT =
+     Predicate idT
+  -> Predicate idT
+  -> Predicate idT
 
--- | True if a node has edges in the given direction
+-- | Helper to take the logical conjunction of two predicates
+binop :: (Bool -> Bool -> Bool) -> BinPred idT
+binop op a b env id = do
+  a <- a env id
+  b <- b env id
+  return $ op a b
+
+-- | Take the logical and of two predicates.
+and :: BinPred idT
+and = binop (&&)
+
+-- | Take the logical or of two predicates.
+or :: BinPred idT
+or = binop (||)
+
+-- | True if the the given node is a next-action node.
+isNext :: Graph Id -> Predicate Id
+isNext g env id = do
+  state_valid  <- filterState (Set.fromList [New, Todo]) env id
+  case state_valid of
+    True -> case Map.lookup id g of
+      Nothing -> return True
+      Just n  -> do
+        res <- anyM (filterState (Set.fromList [New, Todo, Wait, Someday]) env) n
+        return $ not res
+    False -> return False
+
+reachabilitySet :: Graph Id -> Set Id -> Set Id
+reachabilitySet g nodes = Set.unions $ Set.map (reachable g) nodes
+  where
+    reachable :: Graph Id -> Id -> Set Id
+    reachable g n = case Map.lookup n g of
+      Nothing -> Set.empty
+      Just neighbors -> Set.unions $ Set.map (reachable g) neighbors
+
+reachableFrom :: Set Id -> EdgePredicate Id
+reachableFrom nodes g _ id =
+  let reachable = reachabilitySet g nodes
+  in return $ Set.member id reachable
+
+reachable :: Graph Id -> Pipe Id Id IO ()
+reachable g = do
+  nodes <- lift $ P.fold (flip Set.insert) Set.empty id $ readIds stdin
+  each $ reachabilitySet g nodes
+
+danglingContexts :: Env -> Producer Id IO ()
+danglingContexts env = do
+  existing <- lift $ P.fold (flip Set.insert) Set.empty id $ nodes env
+  for (edgeList @(Edge Id) env Contexts) $ \(u, v, _) -> do
+    case (Set.member u existing, Set.member v existing) of
+      (True, False) -> yield u
+      (False, True) -> yield v
 
 -- | Result of dispatching on command arguments.
 --
@@ -578,23 +655,29 @@ data Cmd
 
 -- | Determine which command to run based on argv.
 dispatch :: Env -> [String] -> Cmd
-dispatch env ("filter_state" : states) =
-  case validateStates states of
-    Left  err    -> Error err
-    Right states -> Filter $ filterState (Set.fromList states)
-   where
-    validateStates states = validate states parseState onErr
-    onErr invalid = "Invalid state: " ++ invalid
-dispatch env ["subtasks", node]   = Stream $ getSubtasks env (Id node)
-dispatch env ["is_root"]          = EdgeFilter Dependencies Incoming (invert hasAdjacent)
-dispatch env ["is_leaf"]          = EdgeFilter Dependencies Outgoing (invert hasAdjacent)
-dispatch env ["is_orphan"]        = EdgeFilter Dependencies All      (invert hasAdjacent)
-dispatch env ["is_nonterminal"]   = EdgeFilter Dependencies All      hasAdjacent
-dispatch env ["is_project", node] = Filter $ has (Datum "subtasks")
-dispatch env ["union", rhs]       = Stream $ do
-  rhs <- lift $ openFile rhs ReadMode
-  Brainbox.Graph.union stdin rhs
-dispatch env _ = Error "not implemented"
+dispatch env = impl
+  where
+    impl ("filter_state" : s) = stateFilter s
+    impl ["subtasks", node]   = Stream $ getSubtasks env (Id node)
+    impl ["is_root"]          = EdgeFilter Dependencies Incoming (invert hasAdjacent)
+    impl ["is_leaf"]          = EdgeFilter Dependencies Outgoing (invert hasAdjacent)
+    impl ["is_nonterminal"]   = EdgeFilter Dependencies All      hasAdjacent
+    impl ["is_orphan"]        = EdgeFilter Dependencies All      (invert hasAdjacent)
+    impl ["is_next"]          = EdgeFilter Dependencies Outgoing isNext
+    impl ["is_project", node] = Filter $ has (Datum "subtasks")
+    impl ["is_unassigned", n] = EdgeFilter Contexts     Incoming (invert hasAdjacent)
+    impl ["union", rhs]       = Stream $ handleUnion rhs
+    impl _                    = Error "not implemented"
+
+    stateFilter states = case validateStates states of
+      Left  err    -> Error err
+      Right states -> Filter $ filterState (Set.fromList states)
+
+    validateStates states = validate states parseState ("Invalid state: " ++)
+
+    handleUnion rhs = do
+      rhs <- lift $ openFile rhs ReadMode
+      Brainbox.Graph.union stdin rhs
 
 -- | Abstract common code for streams of nodes.
 runStream :: Producer Id IO () -> IO ()
