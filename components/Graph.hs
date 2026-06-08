@@ -44,6 +44,7 @@ import qualified Pipes.Prelude as P
 import Data.List.Split
 import Data.String.Utils
 import Data.Foldable.Extra
+import Data.List.Extra (upper)
 
 -- standard lib imports
 import Control.Monad
@@ -135,6 +136,13 @@ instance IdOf Id where
 instance IdOf INode where
   idOf (Node x) = x
   idOf (Start x) = x ++ "::start"
+
+-- | Parse a direction value
+parseDirection :: String -> Maybe Direction
+parseDirection "incoming" = Just Incoming
+parseDirection "outgoing" = Just Outgoing
+parseDirection "all"      = Just All
+parseDirection _          = Nothing
 
 -- | Parse an edge set from a user-supplied string
 -- Some shorthand names are also allowed here.
@@ -303,9 +311,9 @@ printSummary env delimiter =
     state <- lift $ taskState env id
     gloss <- lift $ taskGloss env id
     lift $ putStrLn $
-         show id
+         (idOf id)
       ++ d
-      ++ pad 7 ' ' (fromMaybe "[no contents]" $ show <$> state)
+      ++ pad 7 ' ' (fromMaybe "[no contents]" $ upper . show <$> state)
       ++ d
       ++ (fromMaybe "[no contents]" gloss)
 
@@ -656,17 +664,44 @@ data Cmd
 dispatch :: Env -> [String] -> Cmd
 dispatch env = impl
   where
+    impl ["adjacent", e, d]   = handleAdjacent e d
+    impl ["from", bucket]     = Stream $ (lift $ readBucket env bucket) >>= each
+    impl ["reachable", e, d]  = handleReachable e d
+    impl ("reachable_from" : rest) = handleReachableFrom rest
+    impl ["union", rhs]       = Stream $ handleUnion rhs
     impl ("filter_state" : s) = stateFilter s
     impl ["subtasks", node]   = Stream $ getSubtasks env (Id node)
-    impl ["is_root"]          = EdgeFilter Dependencies Incoming (invert hasAdjacent)
     impl ["is_leaf"]          = EdgeFilter Dependencies Outgoing (invert hasAdjacent)
-    impl ["is_nonterminal"]   = EdgeFilter Dependencies All      hasAdjacent
-    impl ["is_orphan"]        = EdgeFilter Dependencies All      (invert hasAdjacent)
     impl ["is_next"]          = EdgeFilter Dependencies Outgoing isNext
+    impl ["is_orphan"]        = EdgeFilter Dependencies All      (invert hasAdjacent)
     impl ["is_project"]       = Filter $ has (Datum "subtasks")
+    impl ["is_root"]          = EdgeFilter Dependencies Incoming (invert hasAdjacent)
     impl ["is_unassigned"]    = EdgeFilter Contexts     Incoming (invert hasAdjacent)
-    impl ["union", rhs]       = Stream $ handleUnion rhs
+    impl ["is_nonterminal"]   = EdgeFilter Dependencies All      hasAdjacent
+    impl ["summary"]          = Eff $ printSummary env Nothing
+    impl ["summary", "-d", d] = Eff $ printSummary env $ Just d
     impl _                    = Error "not implemented"
+
+    handleAdjacent e d = case parseEdgeSet e of
+      Nothing -> Error $ "Invalid edge set: " ++ e
+      Just e -> case parseDirection d of
+        Nothing -> Error $ "Invalid direction: " ++ d
+        Just d -> Stream $ adjacent env e d
+
+    handleReachable e d = case parseEdgeSet e of
+      Nothing -> Error $ "Invalid edge set: " ++ e
+      Just e -> case parseDirection d of
+        Nothing -> Error $ "Invalid direction: " ++ d
+        Just d -> Stream $ do
+          g <- lift $ readGraph env e d
+          readIds stdin >-> reachable g
+
+    handleReachableFrom (e : d : nodes) = case parseEdgeSet e of
+      Nothing -> Error $ "Invalid edge set: " ++ e
+      Just e -> case parseDirection d of
+        Nothing -> Error $ "Invalid direction: " ++ d
+        Just d -> EdgeFilter e d $ reachableFrom $ Set.fromList $ Id <$> nodes
+    handleReachableFrom bad = Error $ "Invalid Arguments: " ++ show bad
 
     stateFilter states = case validateStates states of
       Left  err    -> Error err
