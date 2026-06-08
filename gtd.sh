@@ -3452,6 +3452,8 @@ function reassign {
 function haskell {
     runhaskell \
         -XGHC2021 \
+        -Wall \
+        -Wno-name-shadowing \
         -i"${GTD_DIR}/components" \
         "${GTD_DIR}/components/Graph.hs" \
         "${@}"

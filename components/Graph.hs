@@ -48,14 +48,12 @@ import Data.Foldable.Extra
 -- standard lib imports
 import Control.Monad
 import Control.Exception
-import Data.Foldable
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Debug.Trace
 import System.Environment
 import System.Directory
 import System.IO
@@ -440,9 +438,9 @@ mergeStartNodes edges =
     --
     -- We start by assuming we have finished (Right). If our assumption is wrong, we bail (Left).
     collectNodes :: IGraph -> Edge INode -> IGraph
-    collectNodes (Right g) e@(Node u, Node v, k) = Right $ Set.insert (Id u, Id v, k) g
-    collectNodes (Right g) e                     = Left  $ Set.insert e $ Set.map idToINode g
-    collectNodes (Left  g) e                     = Left  $ Set.insert e g
+    collectNodes (Right g) (Node u, Node v, k) = Right $ Set.insert (Id u, Id v, k) g
+    collectNodes (Right g) e                   = Left  $ Set.insert e $ Set.map idToINode g
+    collectNodes (Left  g) e                   = Left  $ Set.insert e g
 
 -- | Yield all the project nodes in the DB.
 projects :: Env -> Producer Id IO ()
@@ -635,6 +633,7 @@ danglingContexts env = do
     case (Set.member u existing, Set.member v existing) of
       (True, False) -> yield u
       (False, True) -> yield v
+      _             -> pure ()
 
 -- | Result of dispatching on command arguments.
 --
@@ -664,8 +663,8 @@ dispatch env = impl
     impl ["is_nonterminal"]   = EdgeFilter Dependencies All      hasAdjacent
     impl ["is_orphan"]        = EdgeFilter Dependencies All      (invert hasAdjacent)
     impl ["is_next"]          = EdgeFilter Dependencies Outgoing isNext
-    impl ["is_project", node] = Filter $ has (Datum "subtasks")
-    impl ["is_unassigned", n] = EdgeFilter Contexts     Incoming (invert hasAdjacent)
+    impl ["is_project"]       = Filter $ has (Datum "subtasks")
+    impl ["is_unassigned"]    = EdgeFilter Contexts     Incoming (invert hasAdjacent)
     impl ["union", rhs]       = Stream $ handleUnion rhs
     impl _                    = Error "not implemented"
 
