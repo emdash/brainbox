@@ -45,6 +45,14 @@ import Data.List.Split
 import Data.String.Utils
 import Data.Foldable.Extra
 import Data.List.Extra (upper)
+import Data.GraphViz.Types.Monadic
+import Data.GraphViz.Attributes
+import qualified Data.GraphViz.Attributes.Complete as C
+import qualified Data.GraphViz.Attributes.Colors as Colors
+import Data.GraphViz.Parsing
+import Data.GraphViz.Printing
+import qualified Data.Text.Lazy as T
+import qualified Data.Text.Lazy.IO as TIO
 
 -- standard lib imports
 import Control.Monad
@@ -65,8 +73,8 @@ data Env = Env {
   bucket_dir    :: String,
   node_dir      :: String,
   font          :: String,
-  background    :: String,
-  rankdir       :: String,
+  background    :: Colors.Color,
+  rankdir       :: C.RankDir,
   show_contexts :: Bool,
   show_virtual  :: Bool,
   show_subtasks :: Bool,
@@ -137,6 +145,10 @@ instance IdOf INode where
   idOf (Node x) = x
   idOf (Start x) = x ++ "::start"
 
+getId :: INode -> String
+getId (Start id) = id
+getId (Node  id) = id
+
 -- | Parse a direction value
 parseDirection :: String -> Maybe Direction
 parseDirection "incoming" = Just Incoming
@@ -182,6 +194,19 @@ parseEdge edge = case splitOn ":" edge of
 idToINode :: Edge Id -> Edge INode
 idToINode (Id u, Id v, k) = (Node u, Node v, k)
 
+pdot :: ParseDot a => String -> a
+pdot s = parseIt' $ T.pack $ quoted
+  where
+    -- hack alert!  hex colors fail to parse parse correctly when
+    -- unquoted. graphviz package might be more trouble than it's
+    -- worth for us.
+    quoted = "\"" ++ s ++ "\""
+
+getEnvDot :: ParseDot a => String -> String -> IO a
+getEnvDot var def = do
+  val <- lookupEnv var
+  return $ pdot $ fromMaybe def val
+
 -- | Pull in our state from the environment
 getEnvState :: IO Env
 getEnvState = do
@@ -189,8 +214,8 @@ getEnvState = do
   state_dir     <- getEnv     "STATE_DIR"
   node_dir      <- getEnv     "NODE_DIR"
   font          <- getEnvStr  "GTD_GRAPH_FONT"          "monospace"
-  background    <- getEnvStr  "GTD_GRAPH_BG"            "white"
-  rankdir       <- getEnvStr  "GTD_GRAPH_RANKDIR"       "TB"
+  background    <- getEnvDot  "GTD_GRAPH_BG"            "white"
+  rankdir       <- getEnvDot  "GTD_GRAPH_RANKDIR"       "TB"
   show_contexts <- getEnvBool "GTD_GRAPH_SHOW_CONTEXTS" True
   show_deps     <- getEnvBool "GTD_GRAPH_SHOW_DEPS"     True
   show_virtual  <- getEnvBool "GTD_GRAPH_SHOW_VIRTUAL"  True
@@ -371,7 +396,9 @@ subtaskEdges (Id node) groups projects = do
     yield (Node node, start_node, Leaf)
 
   for_ groups $ \group -> do
-    case group of
+    -- process each group in reverse to get correct sibling
+    -- dependency ordering.
+    case reverse group of
       [] -> yield (Node node, start_node, Leaf)
       [Id single] -> do
         yield (Node node, Node single, Subtask)
@@ -643,6 +670,114 @@ danglingContexts env = do
       (False, True) -> yield v
       _             -> pure ()
 
+-- this is some real bs right here.
+-- the more I use it, the less I like this graphviz API.
+parseColor :: String -> Colors.Color
+parseColor s = pdot $ '#' : s
+class HexColor a where
+  hex :: (a -> Attribute) -> String -> Attribute
+instance HexColor Colors.ColorList where
+  hex attr s = attr $ [C.toWC $ parseColor s]
+instance HexColor Colors.Color where
+  hex attr s = attr $ parseColor s
+
+-- | Dotfile export
+render :: Env -> Set INode -> IO (Dot String)
+render env selection =
+  do
+    (projects, nodes, labels, states) <- P.foldM
+      collectNodes
+      (return (Set.empty, selection, Map.empty, Map.empty))
+      (return)
+      (readIds stdin)
+
+    buckets  <- listDirectory env.bucket_dir >>= mapM rb
+    source   <- readBucket env "source"
+    target   <- readBucket env "target"
+    deps     <- P.toListM $ edgeList @(Edge INode) env Dependencies
+    contexts <- P.toListM $ edgeList @(Edge INode) env Contexts
+
+    return $ do
+      graphAttrs [
+        C.RankDir env.rankdir,
+        C.FontName $ T.pack env.font,
+        C.BgColor $ [C.toWC env.background]]
+
+      for_ buckets $ \(bucket, contents) -> do
+        node bucket [shape House, style filled, bgColor Gray95]
+        for_ contents $ \c -> do
+          edge bucket c [style dashed, color Gray]
+
+      for_ source $ \(Id u) -> do
+        for_ target $ \(Id v) -> do
+          edge u v [style dashed, color Gray]
+
+      for_ nodes $ doNode projects labels states
+      when env.show_deps     $ for_ deps     $ doEdge Red
+      when env.show_contexts $ for_ contexts $ doEdge Green
+  where
+    rb :: String -> IO (String, [String])
+    rb bucket = do
+      contents <- readBucket env bucket
+      return (bucket, idOf <$> contents)
+
+    doNode projects labels states n = node (idOf n)
+      $ style filled
+      : labelOf n
+      : shapeOf n
+      : penWidth 2
+      : colorOf n
+      where
+        labelOf (Start id) = toLabel $ (fromMaybe id $ Map.lookup id labels) ++ "\nΦ"
+        labelOf (Node id)  = toLabel $ fromMaybe id $ Map.lookup id labels
+
+        shapeOf (Start _) = shape C.CDS
+        shapeOf (Node id)  = case Set.member id projects of
+          True  -> shape Folder
+          False -> shape BoxShape
+
+        colorOf node = case Map.lookup (getId node) states of
+          Just New     -> [      fillColor DeepPink,      color DeepPink,       fontColor Black]
+          Just Todo    -> [      fillColor Gray95,        color Gray95,         fontColor Black]
+          Just Done    -> [hex C.FillColor "ccffcc",hex C.Color "ccffcc", hex C.FontColor "99cc99"]
+          Just Dropped -> [hex C.FillColor "ffdddd",hex C.Color "ffdddd", hex C.FontColor "ff9999"]
+          Just Wait    -> [      fillColor Red,           color Red,            fontColor Black]
+          Just Someday -> [hex C.FillColor "ddaaff",hex C.Color "ddaaff",       fontColor Black]
+          Just Info    -> [      fillColor Gold,          color Gold,           fontColor Black]
+          Just Focus   -> [      fillColor Green,         color Green,          fontColor Black]
+          Just Context -> [hex C.FillColor "aaffdd",hex C.Color "aaffdd",       fontColor Black]
+          _            -> [      fillColor Gray95,        color Gray95,         fontColor Gray50]
+
+    empty :: Arrow
+    empty = C.AType [(C.openMod, C.Normal)]
+
+    doEdge :: X11Color -> Edge INode -> Dot String
+    doEdge c (u, v, k) = edge (idOf u) (idOf v) $ styleEdge c k
+
+    styleEdge :: X11Color -> EdgeType -> Attributes
+    styleEdge c Explicit = [style solid,  color c]
+    styleEdge c Subtask  = [style dashed, color c]
+    styleEdge c Leaf     = [style dashed, color c, arrowTo empty]
+    styleEdge c Sibling  = [style dashed, color c, arrowTo oDot]
+    styleEdge c Suspect  = [style dashed, color c, arrowTo oDiamond]
+
+    collectNodes :: (Set String, Set INode, Map String String, Map String State) -> Id -> IO (Set String, Set INode, Map String String, Map String State)
+    collectNodes (projects, nodes, labels, states) i@(Id id) = do
+      has_subtasks <- has (Datum "subtasks") env i
+      label <- taskGloss env i
+      state <- taskState env i
+      let labels' = Map.insert id (fromMaybe "[no contents]" label) labels
+      let states' = fromMaybe states $ (\x -> Map.insert id x states) <$> state
+      return $ if has_subtasks
+        then ( Set.insert id projects
+             , Set.insert (Node id) $ Set.insert (Start id) nodes
+             , labels'
+             , states')
+        else ( projects
+             , Set.insert (Node id) nodes
+             , labels'
+             , states')
+
 -- | Result of dispatching on command arguments.
 --
 -- Limit the number of cases we need to handle in top-level main.
@@ -678,6 +813,7 @@ dispatch env = impl
     impl ["is_root"]          = EdgeFilter Dependencies Incoming (invert hasAdjacent)
     impl ["is_unassigned"]    = EdgeFilter Contexts     Incoming (invert hasAdjacent)
     impl ["is_nonterminal"]   = EdgeFilter Dependencies All      hasAdjacent
+    impl ("dot" : rest)       = Eff $ printDot rest
     impl ["summary"]          = Eff $ printSummary env Nothing
     impl ["summary", "-d", d] = Eff $ printSummary env $ Just d
     impl _                    = Error "not implemented"
@@ -712,6 +848,10 @@ dispatch env = impl
     handleUnion rhs = do
       rhs <- lift $ openFile rhs ReadMode
       Brainbox.Graph.union stdin rhs
+
+    printDot nodes = do
+      output <- render env $ Set.fromList $ Node <$> nodes
+      TIO.putStrLn $ printIt $ digraph' output
 
 -- | Abstract common code for streams of nodes.
 runStream :: Producer Id IO () -> IO ()
