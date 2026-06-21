@@ -3449,14 +3449,88 @@ function reassign {
 
 # Haskell entry point *********************************************************
 
+# XXX: I am quite proud of the shell code in this project, and so I
+# don't actually want to completely re-write it in Haskell. I only
+# want to replace the python components with ones written in Haskell.
+#
+# Haskell, unlike Python, can be ahead-of-time compiled, which brings
+# the measurable runtime overhead down to roughly the same as python,
+# as measured so far.
+#
+# So far there are only two components: graph, and scheduler. This
+# will be factored into several Haskell modules, sharing code as
+# appropriate.
+#
+# XXX: Some notions need to shuffle around.
+# - task state should be computed by the scheduler, rather than stored as a datum
+# - task state datum is re-interpreted as type/kind/class
+# - task state depend on time, task type, and completion datums.
+# - separate state and kind in haskell codebase
+# - one-time db migration from state datum to type datum
+# - this is a pretty substantial shift.
+#
+# On the other hand, I'm frustrated with the limitations of FZF as UX
+# layer, so much of the interactive codebase will ultimately be ported
+# to some kind of bespoke frontend that will be written in haskell.
+#
+# On the other other hand, I like FZF as a model for how to structure
+# a shell-friendly UI toolkit, so whatever replacement UX emerges will
+# borrow a lot from FZF.
 function haskell {
-    runhaskell \
-        -XGHC2021 \
-        -Wall \
-        -Wno-name-shadowing \
-        -i"${GTD_DIR}/components" \
-        "${GTD_DIR}/components/Graph.hs" \
-        "${@}"
+    # make sure haskell binaries are up-to-date
+    rebuild
+    prefs_export_env \
+        "graph/font"          GTD_GRAPH_FONT          "monospace" \
+        "graph/bg"            GTD_GRAPH_BG            "white"     \
+        "graph/rankdir"       GTD_GRAPH_RANKDIR       "TB"        \
+        "graph/show_contexts" GTD_GRAPH_SHOW_CONTEXTS "1"         \
+        "graph/show_deps"     GTD_GRAPH_SHOW_DEPS     "1"         \
+        "graph/show_subtasks" GTD_GRAPH_SHOW_SUBTASKS "1"         \
+        "graph/show_virtual"  GTD_GRAPH_SHOW_VIRTUAL  "1"         \
+        -- components/graph "${@}"
+}
+
+# Compile a haskell component if necessary.
+#
+# component - The name of the compiled excutable
+# module    - The name of the top-level haskell module.
+# main      - The name of the module-level entry point function.
+#
+# TBD: test for freshness before rebuilding
+# TBD: introduce `BUILD_DIR` env var to control binary placement.
+function compile {
+    local -r component="${1}"
+    local -r module="${2}"
+    local -r main="${3:-main}"
+    local -r source_file="${GTD_DIR}/components/${module}.hs"
+    local -r binary="${GTD_DIR}/components/${component}"
+
+    # binary missing or if source file is newer than binary.
+    if test ! -e "${binary}" || test "${source_file}" -nt "${binary}"
+    then
+      debug "Rebuilding ${component}"
+      ghc \
+          -XGHC2021 \
+          -Wall \
+          -Wno-name-shadowing \
+          -main-is "Brainbox.${module}.${main}" \
+          -i"${GTD_DIR}/components" \
+          -o "${binary}" \
+          "${source_file}"
+      # ghc doesn't actually update the mtime of the binary
+      touch "${binary}"
+    else
+        debug "Not rebuilding ${component}"
+    fi
+}
+
+# Rebuild all haskell components
+#
+# env var, to allow relocating binaries, if desired - haskell
+# dependencies must be installed on the system, in F43 has worked
+# OOTB, so there's no need to have stack, cabal or any other tool in the mix.
+function rebuild {
+    compile graph Graph
 }
 
 # Syntax-directed completion **************************************************
