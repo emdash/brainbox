@@ -294,21 +294,28 @@ readBucket state bucket =
   let
     path = state.bucket_dir ++ "/" ++ bucket
   in do
-    ids <- listDirectory path
-    return $ Id <$> ids
+    ids :: Either IOException [String] <- try $ listDirectory path
+    case ids of
+      Right ids -> return $ Id <$> ids
+      _         -> return []
+
+-- | Compute the datum path for the given datum
+datumPath :: Env -> Datum -> Id -> String
+datumPath env (Datum d) (Id i) = env.node_dir ++ "/" ++ i ++ "/" ++ d
 
 -- | Try to Read the Datum from the given node id
 readDatum :: Env -> Datum -> Id -> Producer String IO ()
-readDatum env (Datum d) (Id i) =
-  let path = env.node_dir ++ "/" ++ i ++ "/" ++ d
-  in do
-    handle <- lift $ openFile path ReadMode
-    P.fromHandle handle
+readDatum env datum id = do
+  handle <- lift $ openFile (datumPath env datum id) ReadMode
+  P.fromHandle handle
+  lift $ hClose handle
 
 withFirstLine :: (String -> Maybe a) -> Datum -> Env -> Id -> IO (Maybe a)
 withFirstLine parser datum env id = do
-  line <- P.head $ readDatum env datum id
-  return $ Control.Monad.join $ parser <$> line
+  line :: Either IOException String <- try $ withFile (datumPath env datum id) ReadMode hGetLine
+  case line of
+    Left  _   -> return Nothing
+    Right val -> return $ parser val
 
 taskContents :: Env -> Id -> Producer String IO ()
 taskContents env = readDatum env (Datum "contents")
