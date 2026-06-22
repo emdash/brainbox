@@ -565,19 +565,19 @@ getSubtasks env id = do
 
 -- | True if the given edge touches any of the given nodes.
 edgeTouches
-  :: (Eq idT, Ord idT)
+  :: IdOf idT
   => Edge idT
-  -> Set idT
+  -> Map String a
   -> Bool
-edgeTouches (u, v, _) nodes = (Set.member u nodes) || (Set.member v nodes)
+edgeTouches (u, v, _) nodes = (Map.member (getId u) nodes) || (Map.member (getId v) nodes)
 
 -- | True if the given edge is completely within the given nodes.
 edgeContained
-  :: (Eq idT, Ord idT)
+  :: IdOf idT
   => Edge idT
-  -> Set idT
+  -> Map String a
   -> Bool
-edgeContained (u, v, _) nodes = (Set.member u nodes) && (Set.member v nodes)
+edgeContained (u, v, _) nodes = (Map.member (getId u) nodes) && (Map.member (getId v) nodes)
 
 -- | Stream of all the nodes adjacent to the given input set.
 nodeAdjacent :: (Eq idT, Ord idT) => idT -> Direction -> Pipe (Edge idT) idT IO ()
@@ -678,32 +678,79 @@ danglingContexts env = do
       (False, True) -> yield v
       _             -> pure ()
 
--- this is some real bs right here.
--- the more I use it, the less I like this graphviz API.
-parseColor :: String -> Colors.Color
-parseColor s = pdot $ '#' : s
-class HexColor a where
-  hex :: (a -> Attribute) -> String -> Attribute
-instance HexColor Colors.ColorList where
-  hex attr s = attr $ [C.toWC $ parseColor s]
-instance HexColor Colors.Color where
-  hex attr s = attr $ parseColor s
+-- | Abstract over some obnoxious features of the dot API that make it
+-- difficult to mix named and hex colors.
+class StrColor a where
+  c :: String -> a
+instance StrColor Colors.ColorList where
+  c s = [C.toWC $ pdot s]
+instance StrColor Colors.Color where
+  c s = pdot s
+
+-- | Render one node to dot syntax
+renderNode :: Env -> (String, NodeData) -> Dot String
+renderNode env (id, data') =
+  do
+    -- also include start node when required by settings, if it exists.
+    when (env.show_virtual && data'.is_project) $
+      render (id ++ "::start") (label' ++ "\nΦ") C.CDS data'.state
+    -- render the canonical node.
+    render id label' shape' data'.state
+  where
+    label' = fromMaybe id data'.label
+    shape' = if data'.is_project then Folder else BoxShape
+
+    -- | use same color for fill as for border, plus font color.
+    fillStroke bg fg = [C.FillColor $ c bg, C.Color $ c bg, C.FontColor $ c fg]
+
+    -- | helper to render a single node with common style attributes
+    render :: String -> String -> C.Shape -> Maybe State -> Dot String
+    render id l sh st = node id
+      $ style filled
+      : toLabel l
+      : shape sh
+      : penWidth 2
+      : (fromMaybe default' (colors <$> st))
+
+    -- default color scheme for nodes of undetermined staus.
+    default' = fillStroke "Gray95" "Gray50"
+
+    -- table of colors for nodes in a known status.
+    colors New     = fillStroke "DeepPink" "Black"
+    colors Todo    = fillStroke "Gray95"   "Black"
+    colors Done    = fillStroke "#ccffcc"  "#99cc99"
+    colors Dropped = fillStroke "#ffdddd"  "#ff9999"
+    colors Wait    = fillStroke "Red"      "Black"
+    colors Someday = fillStroke "#ddaaff"  "Black"
+    colors Info    = fillStroke "Gold"     "Black"
+    colors Focus   = fillStroke "Green"    "Black"
+    colors Context = fillStroke "#aaffdd"  "Black"
+
+-- | Information needed to correctly render a node.
+data NodeData = ND {
+  is_project :: Bool,
+  label      :: Maybe String,
+  state      :: Maybe State
+}
 
 -- | Dotfile export
-render :: Env -> Set INode -> IO (Dot String)
+render
+  :: forall a. (Eq a, Ord a, IdOf a, Dependencies (Edge a), ReadEdges (Edge a))
+  => Env
+  -> Set Id
+  -> IO (Dot String)
 render env selection =
   do
-    (projects, nodes, labels, states) <- P.foldM
-      collectNodes
-      (return (Set.empty, selection, Map.empty, Map.empty))
-      (return)
-      (readIds stdin)
-
+    input    <- P.fold (flip Set.insert) selection id (readIds stdin)
     buckets  <- listDirectory env.bucket_dir >>= mapM rb
     source   <- readBucket env "source"
     target   <- readBucket env "target"
-    deps     <- P.toListM $ edgeList @(Edge INode) env Dependencies
-    contexts <- P.toListM $ edgeList @(Edge INode) env Contexts
+    deps     <- collectEdges $ edgeList @(Edge a)  env Dependencies
+    contexts <- collectEdges $ edgeList @(Edge Id) env Contexts
+
+    let bnodes = Control.Monad.join $ snd <$> buckets
+    let nodes' = foldl (flip Set.insert) input bnodes
+    data' <- foldM collectNodes Map.empty nodes'
 
     return $ do
       graphAttrs [
@@ -714,53 +761,27 @@ render env selection =
       for_ buckets $ \(bucket, contents) -> do
         node bucket [shape House, style filled, bgColor Gray95]
         for_ contents $ \c -> do
-          edge bucket c [style dashed, color Gray]
+          edge bucket (idOf c) [style dashed, color Gray]
 
-      for_ source $ \(Id u) -> do
-        for_ target $ \(Id v) -> do
-          edge u v [style dashed, color Gray]
+      for_ source $ \u -> do
+        for_ target $ \v -> do
+          edge (idOf u) (idOf v) [style dashed, color Gray]
 
-      for_ nodes $ doNode projects labels states
-      when env.show_deps     $ for_ deps     $ doEdge Red
-      when env.show_contexts $ for_ contexts $ doEdge Green
+      for_ (Map.toList data') (renderNode env)
+
+      when env.show_deps     $ for_ deps     $ doEdge data' Red
+      when env.show_contexts $ for_ contexts $ doEdge data' Green
   where
-    rb :: String -> IO (String, [String])
     rb bucket = do
       contents <- readBucket env bucket
-      return (bucket, idOf <$> contents)
-
-    doNode projects labels states n = node (idOf n)
-      $ style filled
-      : labelOf n
-      : shapeOf n
-      : penWidth 2
-      : colorOf n
-      where
-        labelOf (Start id) = toLabel $ (fromMaybe id $ Map.lookup id labels) ++ "\nΦ"
-        labelOf (Node id)  = toLabel $ fromMaybe id $ Map.lookup id labels
-
-        shapeOf (Start _) = shape C.CDS
-        shapeOf (Node id)  = case Set.member id projects of
-          True  -> shape Folder
-          False -> shape BoxShape
-
-        colorOf node = case Map.lookup (getId node) states of
-          Just New     -> [      fillColor DeepPink,      color DeepPink,       fontColor Black]
-          Just Todo    -> [      fillColor Gray95,        color Gray95,         fontColor Black]
-          Just Done    -> [hex C.FillColor "ccffcc",hex C.Color "ccffcc", hex C.FontColor "99cc99"]
-          Just Dropped -> [hex C.FillColor "ffdddd",hex C.Color "ffdddd", hex C.FontColor "ff9999"]
-          Just Wait    -> [      fillColor Red,           color Red,            fontColor Black]
-          Just Someday -> [hex C.FillColor "ddaaff",hex C.Color "ddaaff",       fontColor Black]
-          Just Info    -> [      fillColor Gold,          color Gold,           fontColor Black]
-          Just Focus   -> [      fillColor Green,         color Green,          fontColor Black]
-          Just Context -> [hex C.FillColor "aaffdd",hex C.Color "aaffdd",       fontColor Black]
-          _            -> [      fillColor Gray95,        color Gray95,         fontColor Gray50]
+      return (bucket, contents)
 
     empty :: Arrow
     empty = C.AType [(C.openMod, C.Normal)]
 
-    doEdge :: X11Color -> Edge INode -> Dot String
-    doEdge c (u, v, k) = edge (idOf u) (idOf v) $ styleEdge c k
+    doEdge :: IdOf idT => Map String NodeData -> X11Color -> Edge idT -> Dot String
+    doEdge nodes c e@(u, v, k) = when (edgeContained e nodes) $
+      edge (idOf u) (idOf v) $ styleEdge c k
 
     styleEdge :: X11Color -> EdgeType -> Attributes
     styleEdge c Explicit = [style solid,  color c]
@@ -769,22 +790,22 @@ render env selection =
     styleEdge c Sibling  = [style dashed, color c, arrowTo oDot]
     styleEdge c Suspect  = [style dashed, color c, arrowTo oDiamond]
 
-    collectNodes :: (Set String, Set INode, Map String String, Map String State) -> Id -> IO (Set String, Set INode, Map String String, Map String State)
-    collectNodes (projects, nodes, labels, states) i@(Id id) = do
-      has_subtasks <- has (Datum "subtasks") env i
-      label <- taskGloss env i
-      state <- taskState env i
-      let labels' = Map.insert id (fromMaybe "[no contents]" label) labels
-      let states' = fromMaybe states $ (\x -> Map.insert id x states) <$> state
-      return $ if has_subtasks
-        then ( Set.insert id projects
-             , Set.insert (Node id) $ Set.insert (Start id) nodes
-             , labels'
-             , states')
-        else ( projects
-             , Set.insert (Node id) nodes
-             , labels'
-             , states')
+    collectEdges :: (Eq idT, Ord idT) => Producer (Edge idT) IO () -> IO (Set (Edge idT))
+    collectEdges edges = P.fold (flip Set.insert) Set.empty id edges
+
+    collectNodes :: Map String NodeData -> Id -> IO (Map String NodeData)
+    collectNodes data' id@(Id i) = do
+      has_subtasks <- has (Datum "subtasks") env id
+      label        <- taskGloss env id
+      state        <- taskState env id
+      let is_project =
+            case state of
+              Just New     -> has_subtasks
+              Just Todo    -> has_subtasks
+              Just Done    -> has_subtasks
+              Just Dropped -> has_subtasks
+              _         -> False
+      return $ Map.insert i (ND {..}) data'
 
 -- | Result of dispatching on command arguments.
 --
@@ -824,7 +845,7 @@ dispatch env = impl
     impl ("dot" : rest)       = Eff $ printDot rest
     impl ["summary"]          = Eff $ printSummary env Nothing
     impl ["summary", "-d", d] = Eff $ printSummary env $ Just d
-    impl _                    = Error "not implemented"
+    impl bad                  = Error $ "not implemented: " ++ unwords bad
 
     handleAdjacent e d = case parseEdgeSet e of
       Nothing -> Error $ "Invalid edge set: " ++ e
@@ -857,9 +878,14 @@ dispatch env = impl
       rhs <- lift $ openFile rhs ReadMode
       Brainbox.Graph.union stdin rhs
 
-    printDot nodes = do
-      output <- render env $ Set.fromList $ Node <$> nodes
-      TIO.putStrLn $ printIt $ digraph' output
+    printDot selection =
+      do
+        rendered <- output env.show_virtual
+        TIO.putStrLn $ printIt $ digraph' $ rendered
+      where
+        selection' = Set.fromList $ Id <$> selection
+        output True  = render @INode env selection'
+        output False = render @Id    env selection'
 
 -- | Abstract common code for streams of nodes.
 runStream :: Producer Id IO () -> IO ()
