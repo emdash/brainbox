@@ -619,26 +619,6 @@ invert pred graph env id = do
   res <- pred graph env id
   return $ not res
 
-type BinPred idT =
-     Predicate idT
-  -> Predicate idT
-  -> Predicate idT
-
--- | Helper to take the logical conjunction of two predicates
-binop :: (Bool -> Bool -> Bool) -> BinPred idT
-binop op a b env id = do
-  a <- a env id
-  b <- b env id
-  return $ op a b
-
--- | Take the logical and of two predicates.
-and :: BinPred idT
-and = binop (&&)
-
--- | Take the logical or of two predicates.
-or :: BinPred idT
-or = binop (||)
-
 -- | True if the the given node is a next-action node.
 isNext :: Graph Id -> Predicate Id
 isNext g env id = do
