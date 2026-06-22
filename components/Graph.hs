@@ -603,14 +603,14 @@ adjacent env edges direction = do
   graph <- lift $ readGraph env edges direction
   readIds stdin >-> go graph
   where
-    go :: Graph INode -> Pipe Id Id IO ()
+    go :: Graph Id -> Pipe Id Id IO ()
     go graph = do
-      id@(Id node) <- await
+      id <- await
       yield id
-      case Map.lookup (Node node) graph of
+      case Map.lookup id graph of
         Nothing        -> go graph
         Just neighbors -> do
-          each neighbors >-> P.map (Id . idOf)
+          each neighbors
           go graph
 
 -- | Helper to invert predicates, which is verbose because of monads.
