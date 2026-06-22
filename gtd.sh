@@ -215,6 +215,7 @@ function fzf_help {
 # reload_fn   - function which loads the menu contents.
 # ...         - remaining arguments are forwarded to FZF.
 function fzf_menu {
+    rebuild
     local -r header="${1}"
     local -r bindings_fn="${2}"
     local -r load_fn="${3}"
@@ -612,6 +613,7 @@ function prefs_bind_cycle {
 # which we store in the prefs system, and export before executing the
 # script.
 function graph {
+    rebuild
     prefs_export_env \
         "graph/font"          GTD_GRAPH_FONT          "monospace" \
         "graph/bg"            GTD_GRAPH_BG            "white"     \
@@ -620,7 +622,7 @@ function graph {
         "graph/show_deps"     GTD_GRAPH_SHOW_DEPS     "1"         \
         "graph/show_subtasks" GTD_GRAPH_SHOW_SUBTASKS "1"         \
         "graph/show_virtual"  GTD_GRAPH_SHOW_VIRTUAL  "1"         \
-        -- "${GTD_DIR}/components/graph.py" "$@"
+        -- "${GTD_DIR}/components/graph" "$@"
 }
 
 # list all the valid edge sets
@@ -891,7 +893,7 @@ function task_details {
     then
       echo "Depends"
       echo "${1}" \
-        | graph adjacent dependencies outgoing --nost \
+        | graph adjacent dependencies outgoing \
         | tee -pa "${nodes_file}" \
         | tail -n +2 \
         | summarize -d '|' \
@@ -1460,19 +1462,19 @@ function has {
 query_declare_type             is_task filter
 query_declare_default_producer is_task all
 function is_task {
-    haskell filter_state NEW TODO WAIT SOMEDAY
+    graph filter_state NEW TODO WAIT SOMEDAY
 }
 
 # keep nodes states which track tasks.
 query_declare_type             is_todo filter
 query_declare_default_producer is_todo all
-function is_todo { haskell filter_state TODO | query_filter_chain "$@" ; }
+function is_todo { graph filter_state TODO | query_filter_chain "$@" ; }
 
 # Keep only active nodes that should not be remove from the graph.
 query_declare_type             is_active filter
 query_declare_default_producer is_active all
 function is_active {
-    haskell filter_state \
+    graph filter_state \
         NEW \
         TODO \
         WAIT \
@@ -1487,23 +1489,23 @@ function is_active {
 query_declare_type             inactive filter
 query_declare_default_producer inactive all
 function inactive {
-    haskell filter_state DONE DROPPED | query_filter_chain "$@"
+    graph filter_state DONE DROPPED | query_filter_chain "$@"
 }
 
 # Keep only context nodes
 query_declare_type             is_context filter
 query_declare_default_producer is_context all
-function is_context { haskell filter_state CONTEXT | query_filter_chain "$@" ; }
+function is_context { graph filter_state CONTEXT | query_filter_chain "$@" ; }
 
 # Keep only deferred nodes
 query_declare_type             is_deferred filter
 query_declare_default_producer is_deferred all
-function is_deferred {  haskell filter_state SOMEDAY | query_filter_chain "$@" ; }
+function is_deferred {  graph filter_state SOMEDAY | query_filter_chain "$@" ; }
 
 # keep only new tasks
 query_declare_type             is_new filter
 query_declare_default_producer is_new all
-function is_new { haskell filter_state NEW | query_filter_chain "$@" ; }
+function is_new { graph filter_state NEW | query_filter_chain "$@" ; }
 
 # Keep only next actions
 query_declare_type             is_next filter
@@ -1524,14 +1526,14 @@ function single_tasks { is_orphan | is_next "${@}"; }
 query_declare_type             is_info filter
 query_declare_default_producer is_info all
 function is_info {
-    haskell filter_state INFO | query_filter_chain "$@"
+    graph filter_state INFO | query_filter_chain "$@"
 }
 
 # Keeop only tasks marked as FOCUS
 query_declare_type             is_focus filter
 query_declare_default_producer is_focus all
 function is_focus {
-    haskell filter_state FOCUS | query_filter_chain "$@"
+    graph filter_state FOCUS | query_filter_chain "$@"
 }
 
 # Keep only tasks which are considered projects
@@ -1559,7 +1561,7 @@ function is_unassigned {
 # Keep only waiting tasks
 query_declare_type             is_waiting filter
 query_declare_default_producer is_waiting all
-function is_waiting { haskell filter_state WAIT | query_filter_chain "$@" ; }
+function is_waiting { graph filter_state WAIT | query_filter_chain "$@" ; }
 
 # adjacent incoming dependencies of input set
 query_declare_type             parents filter
@@ -1869,9 +1871,9 @@ function union {
 
     if test -z "${consumer[*]}"
     then
-	haskell union <("${query[@]}")
+	graph union <("${query[@]}")
     else
-	haskell union <("${query[@]}") | "${consumer[@]}"
+	graph union <("${query[@]}") | "${consumer[@]}"
     fi
 }
 
@@ -2765,6 +2767,7 @@ function __interactive_xdot_run {
 }
 
 function __interactive_set_context_filter {
+    rebuild
     if all \
         | is_context \
         | summarize -d '|' \
@@ -2845,7 +2848,7 @@ function __interactive_triage {
         # choose an existing node to add to as a subtask
         if read proj < <(
                 all \
-                    | haskell filter_state NEW TODO SOMEDAY \
+                    | graph filter_state NEW TODO SOMEDAY \
                     | GTD_CHOOSE_PROMPT="Add to Existing Project" choose \
                 )
         then
@@ -2958,6 +2961,7 @@ function __interactive_capture {
 
 # set bucket from interactive menu
 function __interactive_bucket {
+    rebuild
     local bucket
     read bucket < <(
         buckets | fzf \
@@ -3414,6 +3418,7 @@ function __interactive {
 query_declare_type             interactive formatter     "node|nav|graph|view"
 query_declare_default_producer interactive all is_active
 function interactive {
+    rebuild
     prefs clobber "interactive/path"
     prefs clobber "interactive/state"
 
@@ -3476,19 +3481,6 @@ function reassign {
 # On the other other hand, I like FZF as a model for how to structure
 # a shell-friendly UI toolkit, so whatever replacement UX emerges will
 # borrow a lot from FZF.
-function haskell {
-    # make sure haskell binaries are up-to-date
-    rebuild
-    prefs_export_env \
-        "graph/font"          GTD_GRAPH_FONT          "monospace" \
-        "graph/bg"            GTD_GRAPH_BG            "white"     \
-        "graph/rankdir"       GTD_GRAPH_RANKDIR       "TB"        \
-        "graph/show_contexts" GTD_GRAPH_SHOW_CONTEXTS "1"         \
-        "graph/show_deps"     GTD_GRAPH_SHOW_DEPS     "1"         \
-        "graph/show_subtasks" GTD_GRAPH_SHOW_SUBTASKS "1"         \
-        "graph/show_virtual"  GTD_GRAPH_SHOW_VIRTUAL  "1"         \
-        -- components/graph "${@}"
-}
 
 # Compile a haskell component if necessary.
 #
@@ -3519,8 +3511,6 @@ function compile {
           "${source_file}"
       # ghc doesn't actually update the mtime of the binary
       touch "${binary}"
-    else
-        debug "Not rebuilding ${component}"
     fi
 }
 
@@ -3530,7 +3520,8 @@ function compile {
 # dependencies must be installed on the system, in F43 has worked
 # OOTB, so there's no need to have stack, cabal or any other tool in the mix.
 function rebuild {
-    compile graph Graph
+    compile graph     Graph
+    compile scheduler Scheduler
 }
 
 # Syntax-directed completion **************************************************
