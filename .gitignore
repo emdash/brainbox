@@ -1,7 +1,11 @@
 gtdgraph/*
 *~
+*.o
+*.hi
 test/*
 test-run/*
 tattle/*
 __pycache__/*
 components/__pycache__/*
+components/graph
+components/scheduler
