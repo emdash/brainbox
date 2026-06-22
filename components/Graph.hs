@@ -135,14 +135,13 @@ data State
 -- | Result of a fallible operation
 type Result a = IO (Either IOException a)
 
+-- | Retrieves string value from node ID types.
 class IdOf idT where
   getId :: idT -> String
   idOf :: idT -> String
-
 instance IdOf Id where
   getId (Id x) = x
   idOf = getId
-
 instance IdOf INode where
   getId (Node x) = x
   getId (Start x) = x
@@ -192,9 +191,13 @@ parseEdge edge = case splitOn ":" edge of
   [u, v] -> Just (Id u, Id v, Explicit)
   _      -> Nothing
 
+-- | Lift an edge of plain ids to an edge of INodes.
 idToINode :: Edge Id -> Edge INode
 idToINode (Id u, Id v, k) = (Node u, Node v, k)
 
+-- | Parse a dot value from a string.
+--
+-- This will quote all values, so that the input need not be quoted.
 pdot :: ParseDot a => String -> a
 pdot s = parseIt' $ T.pack $ quoted
   where
@@ -203,6 +206,7 @@ pdot s = parseIt' $ T.pack $ quoted
     -- worth for us.
     quoted = "\"" ++ s ++ "\""
 
+-- | Get a dot-parsable value from an environment variable.
 getEnvDot :: ParseDot a => String -> String -> IO a
 getEnvDot var def = do
   val <- lookupEnv var
@@ -257,6 +261,7 @@ adjacencyMap edges = P.fold insertEdge Map.empty id edges
       Nothing -> Map.insert u (Set.singleton v) g
       Just vs -> Map.insert u (Set.insert v vs) g
 
+-- | Slurp in an entire graph for the given edge set
 readGraph
   :: forall idT . (Eq idT, Ord idT)
   => Dependencies (Edge idT)
@@ -310,6 +315,7 @@ readDatum env datum id = do
   P.fromHandle handle
   lift $ hClose handle
 
+-- | Helper function to parse the value from the first line of a task datum.
 withFirstLine :: (String -> Maybe a) -> Datum -> Env -> Id -> IO (Maybe a)
 withFirstLine parser datum env id = do
   line :: Either IOException String <- try $ withFile (datumPath env datum id) ReadMode hGetLine
@@ -317,9 +323,11 @@ withFirstLine parser datum env id = do
     Left  _   -> return Nothing
     Right val -> return $ parser val
 
+-- | Get the task contents as a stream of lines.
 taskContents :: Env -> Id -> Producer String IO ()
 taskContents env = readDatum env (Datum "contents")
 
+-- | Get the first line of the task contents.
 taskGloss :: Env -> Id -> IO (Maybe String)
 taskGloss = withFirstLine Just (Datum "contents")
 
@@ -337,6 +345,7 @@ filterState states env id = do
     Nothing -> False
     Just state -> Set.member state states
 
+-- Print task summary to stdout
 printSummary :: Env -> Maybe String -> IO ()
 printSummary env delimiter =
   let d = fromMaybe " " delimiter
@@ -366,9 +375,9 @@ nodes env = do
   ids <- lift $ listDirectory env.node_dir
   each ids >-> P.map (Id . strip)
 
+-- | Abstract over reading edges with different node ID types.
 class ReadEdges edgeT where
   readEdges :: Env -> EdgeSet -> Producer edgeT IO ()
-
 instance ReadEdges (Edge Id) where
   -- | Read the explicit edges from the database
   readEdges env edges =
@@ -376,7 +385,6 @@ instance ReadEdges (Edge Id) where
     in do
       raw <- lift $ listDirectory path
       each raw >-> P.mapMaybe parseEdge
-
 instance ReadEdges (Edge INode) where
   readEdges env edges = readEdges @(Edge Id) env edges >-> P.map idToINode
 
@@ -489,7 +497,9 @@ mergeStartNodes edges =
 projects :: Env -> Producer Id IO ()
 projects env = nodes env >-> filterNodes env (has (Datum "subtasks"))
 
--- | Abstract over the edge type.
+-- | Reading dependency graph behavior varies based on the type.
+--
+-- | See the instance documentation for details.
 class Dependencies edgeT where
   dependencies :: Env -> Producer edgeT IO ()
 
@@ -528,7 +538,8 @@ instance Dependencies (Edge INode) where
 
 -- | Instance for `Id`
 --
--- Since the output cannot contain start nodes, these are merged.
+-- Since the output cannot contain start nodes, this enforces that
+-- start nodes are properly merged.
 --
 -- Downstream code has the invariant that node IDs always refer to a
 -- valid path in the DB.
@@ -564,6 +575,8 @@ getSubtasks env id = do
   each $ Data.List.concat groups
 
 -- | True if the given edge touches any of the given nodes.
+--
+-- The map expects raw node ids, which should not include virtual start nodes.
 edgeTouches
   :: IdOf idT
   => Edge idT
@@ -572,6 +585,8 @@ edgeTouches
 edgeTouches (u, v, _) nodes = (Map.member (getId u) nodes) || (Map.member (getId v) nodes)
 
 -- | True if the given edge is completely within the given nodes.
+--
+-- The map expects raw node ids, which should not include virtual start nodes.
 edgeContained
   :: IdOf idT
   => Edge idT
@@ -631,6 +646,7 @@ isNext g env id = do
         return $ not res
     False -> return False
 
+-- Get the set of nodes reachable from the given node set, for the given graph.
 reachabilitySet :: Graph Id -> Set Id -> Set Id
 reachabilitySet g nodes = Set.unions $ Set.map (reachable g) nodes
   where
@@ -639,16 +655,19 @@ reachabilitySet g nodes = Set.unions $ Set.map (reachable g) nodes
       Nothing -> Set.empty
       Just neighbors -> Set.unions $ Set.map (reachable g) neighbors
 
+-- A predicate which will keep only edges reachable from the given input set.
 reachableFrom :: Set Id -> EdgePredicate Id
 reachableFrom nodes g _ id =
   let reachable = reachabilitySet g nodes
   in return $ Set.member id reachable
 
+-- Expands the input set to include all nodes which are reachable from it.
 reachable :: Graph Id -> Pipe Id Id IO ()
 reachable g = do
   nodes <- lift $ P.fold (flip Set.insert) Set.empty id $ readIds stdin
   each $ reachabilitySet g nodes
 
+-- A debugging function which will reveal improperly linked context nodes.
 danglingContexts :: Env -> Producer Id IO ()
 danglingContexts env = do
   existing <- lift $ P.fold (flip Set.insert) Set.empty id $ nodes env
@@ -721,6 +740,7 @@ render
   -> IO (Dot String)
 render env selection =
   do
+    -- do all our IO up-font in this block
     input    <- P.fold (flip Set.insert) selection id (readIds stdin)
     buckets  <- listDirectory env.bucket_dir >>= mapM rb
     source   <- readBucket env "source"
@@ -732,6 +752,7 @@ render env selection =
     let nodes' = foldl (flip Set.insert) input bnodes
     data' <- foldM collectNodes Map.empty nodes'
 
+    -- render collected data to dot format
     return $ do
       graphAttrs [
         C.RankDir env.rankdir,
