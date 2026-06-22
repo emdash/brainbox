@@ -136,18 +136,19 @@ data State
 type Result a = IO (Either IOException a)
 
 class IdOf idT where
+  getId :: idT -> String
   idOf :: idT -> String
 
 instance IdOf Id where
-  idOf (Id x) = x
+  getId (Id x) = x
+  idOf = getId
 
 instance IdOf INode where
+  getId (Node x) = x
+  getId (Start x) = x
+
   idOf (Node x) = x
   idOf (Start x) = x ++ "::start"
-
-getId :: INode -> String
-getId (Start id) = id
-getId (Node  id) = id
 
 -- | Parse a direction value
 parseDirection :: String -> Maybe Direction
