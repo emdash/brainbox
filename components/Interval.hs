@@ -15,6 +15,8 @@ module Interval (
     RightOpen,
     Closed
   ),
+  DateTime,
+  TimeDelta,
   second,
   minute,
   hour,

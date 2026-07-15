@@ -23,113 +23,9 @@ import Data.Time.LocalTime
 import Text.Parse
 
 import Util
-import Interval
-
-type DateTime = UTCTime
-type TimeDelta = NominalDiffTime
-
--- | Represents when an event can happen.
---
--- We can ask a date set whether or not an arbitrary interval
--- intersects it, and we can ask for the set for all the intervals it
--- contains which intersect the window.
---
--- A DateSet can be finite or infinite. For finite sets, we can find
--- the span (i.e. bounding interval, or the smallest interval that
--- contains every interval in the set).
-data DateSet
-  = Explicit (Set Interval)
-  | Union [DateSet]
-  | Intersection [DateSet]
-  | Periodic {period :: TimeDelta, duration :: TimeDelta, phase :: TimeDelta}
-  | AtTime {start :: TimeOfDay, duration' :: TimeDelta, inverted :: Bool}
-  | Weekly {which :: Set DayOfWeek, multi_day :: Bool}
-  | Monthly {months :: Map MonthOfYear (Set DayOfMonth)}
-  | NthWeekday {n :: Int, weekday :: DayOfWeek, month :: Maybe DayOfMonth}
-  | Shift {offset :: TimeDelta, subset :: DateSet}
-  deriving (Eq, Ord, Show)
-
--- | True if the dateset is finite.
-finite :: DateSet -> Bool
-finite (Explicit intervals) = all Interval.finite intervals
-finite (Union subsets) = all Brainbox.Scheduler.finite subsets
-finite (Intersection subsets) = any Brainbox.Scheduler.finite subsets
-finite (Shift _ subset) = Brainbox.Scheduler.finite subset
-finite _ = False
-
--- | True if window interesects any interval within the dateset.
-intersects :: DateSet -> Interval -> Bool
-intersects (Explicit intervals) i = any (Interval.intersects i) intervals
-intersects (Union subsets) i = any (intersecting i) subsets
-  where
-    intersecting :: Interval -> DateSet -> Bool
-    intersecting i ds  = Brainbox.Scheduler.intersects ds i
-intersecting (Intersection subsets) i = all (intersecting i) subsets
-  where
-    intersecting :: Interval -> DateSet -> Bool
-    intersecting i ds = Brainbox.Scheduler.intersects ds i
-
--- | Returns the smallest interval which contains the entire set.
-span :: DateSet -> Interval
-span _ = error "NotImplemented"
-
--- | A hint to the scheduler about the smallest time scales within the set.
-resolution :: DateSet -> Interval
-resolution _ = error "NotImplemented"
-
--- | True if the given dt is part of this set.
-within :: DateSet -> DateTime -> Bool
-within self dt = Interval.within (largestIntervalContaining self) dt
-
--- | True if the given window is completely contained by this set.
-contains :: DateSet -> Interval -> Bool
-contains _ = error "NotImplemented"
-
--- | Return an ordered sequence of intervals which intersect `window`.
---
--- If window is not given, and dateset is finite, then yields every
--- interval in the date set.
---
--- If this window is not given, and the dateset is not finite, this
--- will raise `ValueError'.
-intervals :: DateSet -> Maybe Interval -> [Interval]
-intervals _ = error "NotImplemented"
-
--- | Yield tuples of `(intervals, completed)`.
---
--- A single timestamp within an interval is considered a "completion
--- event", which discharges the obligation implied by the interval.
---
--- Multiple timestamps within an interval are ignored, as are
--- timestamps outside of a completion window.
---
--- `window` is treated the same as in `intervals`.
-completions :: DateSet -> [DateTime] -> Maybe Interval -> [(Interval, Bool)]
-completions self history window = completed <$> intervals self window
-  where
-    completed i = (i, any (Interval.within i) history)
-
--- | True if all intervals within the window have a completion event.
---
--- If `window` is `Nothing`, then:
---   - if self is finite     -- all intervals in dateset must be complete.
---   - else                  -- returns False
-isComplete :: DateSet -> [DateTime] -> Maybe Interval -> Bool
-isComplete self history window = case window of
-  Nothing -> if Interval.finite (Brainbox.Scheduler.span self)
-             then go Nothing
-             else False
-  window -> go window
-  where
-    go window = all snd $ completions self history window
-
--- | Find the largest interval within the dateset that contains the given time.
-largestIntervalContaining :: DateSet -> Interval
-largestIntervalContaining _ = error "NotImplemented"
-
--- | Return the inverse of the given date set.
-invert :: DateSet -> DateSet
-invert _ = error "Not implemented"
+import Interval (Interval, DateTime, TimeDelta)
+import qualified Interval as Interval
+import DateSet
 
 -- | Parse a string into a timedelta, using our custom notation.
 parseDuration :: TextParser TimeDelta
@@ -137,10 +33,10 @@ parseDuration = do
   quant <- parseDec
   unit  <- oneOf (literal <$> ["w", "d", "h", "m", "s"])
   case unit of
-    "d" -> return $ (fromInteger quant) * day
-    "h" -> return $ (fromInteger quant) * hour
-    "m" -> return $ (fromInteger quant) * second
-    "w" -> return $ (fromInteger quant) * week
+    "d" -> return $ (fromInteger quant) * Interval.day
+    "h" -> return $ (fromInteger quant) * Interval.hour
+    "m" -> return $ (fromInteger quant) * Interval.second
+    "w" -> return $ (fromInteger quant) * Interval.week
     _   -> failBad "Invalid Unit"
 
 -- | Parse a snippet of JSON into a time delta, using our custom
@@ -286,14 +182,14 @@ fromJSON (A [S "range", start, end]) = do
   return $ Explicit $ Set.singleton $ Interval.Closed start end
 fromJSON (A [S "until", end]) = do
   end <- parseDT end
-  return $ Explicit $ Set.singleton $ LeftOpen end
+  return $ Explicit $ Set.singleton $ Interval.LeftOpen end
 fromJSON (A [S "before", end]) = do
   end <- parseDT end
-  return $ Explicit $ Set.singleton $ LeftOpen end
+  return $ Explicit $ Set.singleton $ Interval.LeftOpen end
 fromJSON (A [S "after", start]) = do
   start <- parseDT start
-  return $ Explicit $ Set.singleton $ RightOpen start
-fromJSON (A [S "always"]) = return $ Explicit $ Set.singleton Open
+  return $ Explicit $ Set.singleton $ Interval.RightOpen start
+fromJSON (A [S "always"]) = return $ Explicit $ Set.singleton Interval.Open
 fromJSON (A (S "weekly" : days)) = do
   days <- traverse parseDay' days
   return $ Weekly (Set.fromList days) False
@@ -332,7 +228,7 @@ fromJSON (A [S "shift", offset, ds]) = do
   return $ Shift offset wrapped
 fromJSON (A [S "++", period]) = do
   period <- parseDuration' period
-  return $ Periodic period day (fromInteger 0)
+  return $ Periodic period Interval.day (fromInteger 0)
 fromJSON (A [S "++", period, duration]) = do
   period <- parseDuration' period
   duration <- parseDuration' duration
@@ -354,7 +250,7 @@ fromJSON (A (S "&" : subexprs)) = do
   return $ Intersection subexprs
 fromJSON (A [S "~", subexpr]) = do
   subexpr <- fromJSON subexpr
-  return $ Brainbox.Scheduler.invert subexpr
+  return $ DateSet.invert subexpr
 fromJSON (A [S "except", a, b]) = do
   a <- fromJSON a
   b <- fromJSON b
