@@ -33,6 +33,8 @@
 -- - split
 -- - pipes
 -- - MissingH (strip)
+-- - text
+-- - graphviz
 module Brainbox.Graph where
 
 -- local imports

@@ -41,9 +41,6 @@ yesterday = today - 1 * day
 tomorrow  = today + day
 origin    = datetime(1, 1, 1)
 
-# the length of the day in seconds, for our purposes
-ticks = 86400
-
 def debug(*args):
   print(*args, file=sys.stderr)
   return args[-1]
