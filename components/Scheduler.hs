@@ -28,6 +28,15 @@ import Interval
 type DateTime = UTCTime
 type TimeDelta = NominalDiffTime
 
+-- | Represents when an event can happen.
+--
+-- We can ask a date set whether or not an arbitrary interval
+-- intersects it, and we can ask for the set for all the intervals it
+-- contains which intersect the window.
+--
+-- A DateSet can be finite or infinite. For finite sets, we can find
+-- the span (i.e. bounding interval, or the smallest interval that
+-- contains every interval in the set).
 data DateSet
   = Explicit (Set Interval)
   | Union [DateSet]
@@ -40,9 +49,89 @@ data DateSet
   | Shift {offset :: TimeDelta, subset :: DateSet}
   deriving (Eq, Ord, Show)
 
+-- | True if the dateset is finite.
+finite :: DateSet -> Bool
+finite (Explicit intervals) = all Interval.finite intervals
+finite (Union subsets) = all Brainbox.Scheduler.finite subsets
+finite (Intersection subsets) = any Brainbox.Scheduler.finite subsets
+finite (Shift _ subset) = Brainbox.Scheduler.finite subset
+finite _ = False
+
+-- | True if window interesects any interval within the dateset.
+intersects :: DateSet -> Interval -> Bool
+intersects (Explicit intervals) i = any (Interval.intersects i) intervals
+intersects (Union subsets) i = any (intersecting i) subsets
+  where
+    intersecting :: Interval -> DateSet -> Bool
+    intersecting i ds  = Brainbox.Scheduler.intersects ds i
+intersecting (Intersection subsets) i = all (intersecting i) subsets
+  where
+    intersecting :: Interval -> DateSet -> Bool
+    intersecting i ds = Brainbox.Scheduler.intersects ds i
+
+-- | Returns the smallest interval which contains the entire set.
+span :: DateSet -> Interval
+span _ = error "NotImplemented"
+
+-- | A hint to the scheduler about the smallest time scales within the set.
+resolution :: DateSet -> Interval
+resolution _ = error "NotImplemented"
+
+-- | True if the given dt is part of this set.
+within :: DateSet -> DateTime -> Bool
+within self dt = Interval.within (largestIntervalContaining self) dt
+
+-- | True if the given window is completely contained by this set.
+contains :: DateSet -> Interval -> Bool
+contains _ = error "NotImplemented"
+
+-- | Return an ordered sequence of intervals which intersect `window`.
+--
+-- If window is not given, and dateset is finite, then yields every
+-- interval in the date set.
+--
+-- If this window is not given, and the dateset is not finite, this
+-- will raise `ValueError'.
+intervals :: DateSet -> Maybe Interval -> [Interval]
+intervals _ = error "NotImplemented"
+
+-- | Yield tuples of `(intervals, completed)`.
+--
+-- A single timestamp within an interval is considered a "completion
+-- event", which discharges the obligation implied by the interval.
+--
+-- Multiple timestamps within an interval are ignored, as are
+-- timestamps outside of a completion window.
+--
+-- `window` is treated the same as in `intervals`.
+completions :: DateSet -> [DateTime] -> Maybe Interval -> [(Interval, Bool)]
+completions self history window = completed <$> intervals self window
+  where
+    completed i = (i, any (Interval.within i) history)
+
+-- | True if all intervals within the window have a completion event.
+--
+-- If `window` is `Nothing`, then:
+--   - if self is finite     -- all intervals in dateset must be complete.
+--   - else                  -- returns False
+isComplete :: DateSet -> [DateTime] -> Maybe Interval -> Bool
+isComplete self history window = case window of
+  Nothing -> if Interval.finite (Brainbox.Scheduler.span self)
+             then go Nothing
+             else False
+  window -> go window
+  where
+    go window = all snd $ completions self history window
+
+-- | Find the largest interval within the dateset that contains the given time.
+largestIntervalContaining :: DateSet -> Interval
+largestIntervalContaining _ = error "NotImplemented"
+
+-- | Return the inverse of the given date set.
 invert :: DateSet -> DateSet
 invert _ = error "Not implemented"
 
+-- | Parse a string into a timedelta, using our custom notation.
 parseDuration :: TextParser TimeDelta
 parseDuration = do
   quant <- parseDec
@@ -54,6 +143,8 @@ parseDuration = do
     "w" -> return $ (fromInteger quant) * week
     _   -> failBad "Invalid Unit"
 
+-- | Parse a snippet of JSON into a time delta, using our custom
+-- notation and allowing for addition and subtraction of time intervals.
 parseDuration' :: JExpr -> Either String TimeDelta
 parseDuration' (S d) = fst $ runParser parseDuration d
 parseDuration' (A [S "+", a, b]) = do
@@ -66,6 +157,7 @@ parseDuration' (A [S "-", a, b]) = do
   return $ a - b
 parseDuration' e     = Left $ "Invalid duration: " ++ show e
 
+-- | Parse a day abbreviation into a DayOfWeek value.
 parseDay :: TextParser DayOfWeek
 parseDay = do
   possible <- word
@@ -79,11 +171,18 @@ parseDay = do
     "sun" -> return Sunday
     _     -> failBad "Invalid day of week"
 
--- XXX: Support Integers, but only from JSON. Enum => something something.
+-- | Parse a day abbreviation from a snippet of JSON.
+--
+-- XXX: Python weekdays set monday as 0, whereas the `time` package
+-- sets monday at 1. Watch out!!
 parseDay' :: JExpr -> Either String DayOfWeek
 parseDay' (S day) = fst $ runParser parseDay day
+parseDay' (I day) = if 0 <= day && day <= 6
+                    then return $ toEnum $ mod (day + 1) 7
+                    else Left $ "Invalid weekday: " ++ show day
 parseDay' err     = Left $ "Invalid weekday: " ++ show err
 
+-- | Parse a month abbreviation from a string.
 parseMonth :: TextParser MonthOfYear
 parseMonth = do
   possible <- word
@@ -101,7 +200,7 @@ parseMonth = do
     "nov" -> return November
     "dec" -> return December
 
--- XXX: Support Integers, but only from JSON.
+-- | Parse a month abbreviation from a string.
 parseMonth' :: JExpr -> Either String MonthOfYear
 parseMonth' (S mon) = fst $ runParser parseMonth mon
 parseMonth' err     = Left $ "Invalid month: " ++ show err
