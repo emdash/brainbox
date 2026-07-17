@@ -10,27 +10,23 @@
 --
 -- We use Text.JSON because we don't need sophisticated JSON
 -- marshalling.
-module JSONParser (JExpr(..), fromJSON, parseDT) where
+module JSONParser (JExpr(..), fromJSON, parseDT, simplify) where
 
 import Data.Ratio
 import Text.JSON
-import Data.Maybe
-import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Time.Clock
-import Data.Time.Calendar.OrdinalDate
 import Data.Time.Calendar
 import Data.Time.Format.ISO8601
 import Data.Time.LocalTime
 import Text.Parse
 
-import Util
-import Interval (Interval, DateTime, TimeDelta)
+import Interval (DateTime, TimeDelta)
 import qualified Interval as Interval
 import DateSet
-import Parser
+import qualified Parser
 
 -- | A simpler JSON representation for easier pattern matching.
 --
@@ -68,56 +64,81 @@ instance MonadFail (Either String) where
 
 -- | Parse a snippet of JSON into a time delta, using our custom
 -- notation and allowing for addition and subtraction of time intervals.
-parseDuration' :: JExpr -> Either String TimeDelta
-parseDuration' (S d) = fst $ runParser parseDuration d
-parseDuration' (A [S "+", a, b]) = do
-  a <- parseDuration' a
-  b <- parseDuration' b
+parseDuration :: JExpr -> Either String TimeDelta
+parseDuration (S d) = fst $ runParser Parser.parseDuration d
+parseDuration (A [S "+", a, b]) = do
+  a <- parseDuration a
+  b <- parseDuration b
   return $ a + b
-parseDuration' (A [S "-", a, b]) = do
-  a <- parseDuration' a
-  b <- parseDuration' b
+parseDuration (A [S "-", a, b]) = do
+  a <- parseDuration a
+  b <- parseDuration b
   return $ a - b
-parseDuration' e     = Left $ "Invalid duration: " ++ show e
+parseDuration e     = Left $ "Invalid duration: " ++ show e
 
 -- | Parse a day abbreviation from a snippet of JSON.
 --
 -- XXX: Python weekdays set monday as 0, whereas the `time` package
 -- sets monday at 1. Watch out!!
-parseDay' :: JExpr -> Either String DayOfWeek
-parseDay' (S day) = fst $ runParser parseDay day
-parseDay' (I day) = if 0 <= day && day <= 6
+parseDay :: JExpr -> Either String DayOfWeek
+parseDay (S day) = fst $ runParser Parser.parseDay day
+parseDay (I day) = if 0 <= day && day <= 6
                     then return $ toEnum $ mod (day + 1) 7
                     else Left $ "Invalid weekday: " ++ show day
-parseDay' err     = Left $ "Invalid weekday: " ++ show err
+parseDay err     = Left $ "Invalid weekday: " ++ show err
 
 -- | Parse a month abbreviation from a string.
-parseMonth' :: JExpr -> Either String MonthOfYear
-parseMonth' (S mon) = fst $ runParser parseMonth mon
-parseMonth' err     = Left $ "Invalid month: " ++ show err
+parseMonth :: JExpr -> Either String MonthOfYear
+parseMonth (S mon) = fst $ runParser Parser.parseMonth mon
+parseMonth (I mon) = if 1 <= mon && mon <= 12
+  then return $ mon
+  else Left $ "Invalid month: " ++ show mon
+parseMonth err     = Left $ "Invalid month: " ++ show err
 
 parseDT :: JExpr -> Either String DateTime
-parseDT (S date) = iso8601ParseM date
+parseDT (S date) = case iso8601ParseM date of
+  Left _ -> case iso8601ParseM date :: Either String Day of
+    Right day -> Right $ UTCTime day (fromInteger 0)
+    Left _ -> fst $ runParser Parser.parseDateTime date
+  success -> success
 parseDT e = Left $ "Invalid datetime: " ++ show e
 
 parseTime :: JExpr -> Either String TimeOfDay
-parseTime (S time) = iso8601ParseM time
+parseTime (S time) = do
+  case iso8601ParseM time of
+    Left _ -> fst $ runParser Parser.parseTimeOfDay time
+    success -> success
 parseTime (I hour) = if 0 <= hour && hour <= 23
   then Right $ TimeOfDay hour 0 0
   else Left $ "Invalid hour: " ++ show hour
 parseTime (A [S "+", a, b]) = do
   a <- parseTime a
-  b <- parseDuration' b
+  b <- parseDuration b
   case timeToDaysAndTimeOfDay $ (daysAndTimeOfDayToTime 0 a) + b of
     (0, time_) -> return time_
     (_, _)     -> Left $ "Time overflow: " ++ show b
 parseTime (A [S "-", a, b]) = do
   a <- parseTime a
-  b <- parseDuration' b
+  b <- parseDuration b
   case timeToDaysAndTimeOfDay $ (daysAndTimeOfDayToTime 0 a) - b of
     (0, time_) -> return time_
     (_, _)     -> Left $ "Time overflow: " ++ show b
 parseTime e = Left $ "Invalid time of day: " ++ show e
+
+parseDayOfMonth :: JExpr -> Either String DayOfMonth
+parseDayOfMonth (I d) = case d >= 1 && d <= 31 of
+  True  -> Right d
+  False -> Left $ "Invalid day of month: " ++ show d
+parseDayOfMonth e = Left $ "Invalid day of month: " ++ show e
+
+parseDays :: [JExpr] -> Either String (Set DayOfMonth)
+parseDays [start, S "-", end] = do
+  start <- parseDayOfMonth start
+  end   <- parseDayOfMonth end
+  return $ Set.fromList [start .. end]
+parseDays days = do
+  days <- traverse parseDayOfMonth days
+  return $ Set.fromList days
 
 -- | Entry point for parsing "legacy" JSON datetime expressions.
 fromJSON :: JExpr -> Either String DateSet
@@ -139,56 +160,46 @@ fromJSON (A [S "after", start]) = do
   return $ Explicit $ Set.singleton $ Interval.RightOpen start
 fromJSON (A [S "always"]) = return $ Explicit $ Set.singleton Interval.Open
 fromJSON (A (S "weekly" : days)) = do
-  days <- traverse parseDay' days
+  days <- traverse parseDay days
   return $ Weekly (Set.fromList days) False
 fromJSON (A ((S "monthly") : (S "all") : months)) = do
-  months <- traverse parseMonth' months
+  months <- traverse parseMonth months
   return $ Monthly $ Map.fromList $ mm <$> months
   where
     mm :: MonthOfYear -> (MonthOfYear, Set DayOfMonth)
     mm m = (m, Set.fromList [1..31])
 fromJSON (A [S "monthly", A days, A months]) = do
-  months <- traverse parseMonth' months
-  days <- traverse validateDay days
-  return $ Monthly $ Map.fromList $ mm (Set.fromList days) <$> months
+  months <- traverse parseMonth months
+  days <- parseDays days
+  return $ Monthly $ Map.fromList $ mm days <$> months
   where
-    validateDay (I d) = case d >= 1 && d <= 31 of
-      True -> Right d
-      False -> Left $ "Invalid day of month: " ++ show d
-    validateDay e = Left $ "Invalid day of month: " ++ show e
-
     mm :: Set DayOfMonth -> MonthOfYear -> (MonthOfYear, Set DayOfMonth)
     mm days m = (m, days)
 fromJSON (A (S "monthly" : days)) = do
-  days <- traverse validateDay days
-  return $ Monthly $ Map.fromList $ mm (Set.fromList days) <$> [1..12]
+  days <- parseDays days
+  return $ Monthly $ Map.fromList $ mm days <$> [1..12]
   where
-    validateDay (I d) = case d >= 1 && d <= 31 of
-      True -> Right d
-      False -> Left $ "Invalid day of month: " ++ show d
-    validateDay e = Left $ "Invalid day of month: " ++ show e
-
     mm :: Set DayOfMonth -> MonthOfYear -> (MonthOfYear, Set DayOfMonth)
     mm days m = (m, days)
 fromJSON (A [S "shift", offset, ds]) = do
-  offset <- parseDuration' offset
+  offset <- parseDuration offset
   wrapped <- fromJSON ds
   return $ Shift offset wrapped
 fromJSON (A [S "++", period]) = do
-  period <- parseDuration' period
+  period <- parseDuration period
   return $ Periodic period Interval.day (fromInteger 0)
 fromJSON (A [S "++", period, duration]) = do
-  period <- parseDuration' period
-  duration <- parseDuration' duration
+  period <- parseDuration period
+  duration <- parseDuration duration
   return $ Periodic period duration (fromInteger 0)
 fromJSON (A [S "++", period, duration, phase]) = do
-  period <- parseDuration' period
-  duration <- parseDuration' duration
-  phase <- parseDuration' phase
+  period <- parseDuration period
+  duration <- parseDuration duration
+  phase <- parseDuration phase
   return $ Periodic period duration phase
 fromJSON (A [S "@", time_, duration]) = do
   time_ <- parseTime time_
-  duration <- parseDuration' duration
+  duration <- parseDuration duration
   return $ AtTime time_ duration False
 fromJSON (A (S "|" : subexprs)) = do
   subexprs <- traverse fromJSON subexprs

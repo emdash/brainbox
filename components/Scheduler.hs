@@ -8,26 +8,35 @@
 
 module Brainbox.Scheduler where
 
-import Data.Ratio
-import Text.JSON
-import Data.Maybe
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Set (Set)
-import qualified Data.Set as Set
-import Data.Time.Clock
-import Data.Time.Calendar.OrdinalDate
-import Data.Time.Calendar
-import Data.Time.Format.ISO8601
-import Data.Time.LocalTime
-import Text.Parse
+import Data.Foldable
+import System.IO
+import System.Environment
 
-import Util
-import Interval (Interval, DateTime, TimeDelta)
-import qualified Interval as Interval
-import DateSet
+import Text.JSON
+
 import qualified JSONParser as JP
 
+validateLine :: String -> IO ()
+validateLine encoded = case decodeStrict encoded of
+  Ok val -> case JP.fromJSON $ JP.simplify val of
+    Left  err     -> pVal stderr ("A:" ++ encoded) err
+    Right decoded -> pVal stdout encoded decoded
+  Error err -> pVal stderr ("B:" ++ encoded) err
+
+pVal :: Show a => Handle -> String -> a -> IO ()
+pVal h raw decoded = do
+  hPutStr h raw
+  hPutStr h "|"
+  hPutStrLn h $ show decoded
+
+validateDS :: Handle -> IO ()
+validateDS h = do
+  encoded <- hGetContents h
+  for_ (lines encoded) validateLine
 
 main :: IO ()
-main = error "not implemented"
+main = do
+  args <- getArgs
+  case args of
+    ["validate"] -> validateDS stdin
+    _            -> error $ "Invalid cmd: " ++ show args

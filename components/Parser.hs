@@ -16,11 +16,18 @@
 module Parser (
   parseDuration,
   parseDay,
-  parseMonth
+  parseMonth,
+  parseTimeOfDay,
+  parseISODate,
+  parseDateTime
 ) where
 
+import Control.Monad
+import Data.Fixed
+import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
+
 import Data.Time.Clock
 import Data.Time.Calendar.OrdinalDate
 import Data.Time.Calendar
@@ -28,15 +35,15 @@ import Data.Time.Format.ISO8601
 import Data.Time.LocalTime
 import Text.Parse
 
-import Util
+-- import Util
 import Interval (Interval, DateTime, TimeDelta)
 import qualified Interval as Interval
-import DateSet
+-- import DateSet
 
 -- | Parse a string into a timedelta, using our custom notation.
 parseDuration :: TextParser TimeDelta
 parseDuration = do
-  quant <- parseDec
+  quant <- parseSigned parseDec
   unit  <- oneOf (literal <$> ["w", "d", "h", "m", "s"])
   case unit of
     "d" -> return $ (fromInteger quant) * Interval.day
@@ -44,6 +51,22 @@ parseDuration = do
     "m" -> return $ (fromInteger quant) * Interval.second
     "w" -> return $ (fromInteger quant) * Interval.week
     _   -> failBad "Invalid Unit"
+
+parseTimeOfDay :: TextParser TimeOfDay
+parseTimeOfDay =
+  do
+    time <- sepBy1 (parseSigned parseDec) (literal ":")
+    case time of
+      [h] -> tod h 0 0
+      [h, m] -> tod h m 0
+      [h, m, s] -> tod h m s
+  where
+    tod :: Int -> Int -> Int -> TextParser TimeOfDay
+    tod h m s = do
+      unless ((0 <= h) && (h <= 23)) $ failBad $ "Hour out of range: " ++ show h
+      unless ((0 <= m) && (m <= 59)) $ failBad $ "Min out of range: " ++ show m
+      unless ((0 <= s) && (s <= 60)) $ failBad $ "Seconds out of range: " ++ show s
+      return $ TimeOfDay h m (fromIntegral s)
 
 -- | Parse a day abbreviation into a DayOfWeek value.
 parseDay :: TextParser DayOfWeek
@@ -76,6 +99,26 @@ parseMonth = do
     "oct" -> return October
     "nov" -> return November
     "dec" -> return December
+
+parseISODate :: TextParser Day
+parseISODate = do
+  year <- parseDec
+  _ <- literal "-"
+  month <- parseDec
+  _ <- literal "-"
+  day <- parseDec
+  case fromGregorianValid year month day of
+    Nothing -> failBad $ "invalid date: " ++ show (year, month, day)
+    Just d  -> return d
+
+parseDateTime :: TextParser DateTime
+parseDateTime = do
+  date <- parseISODate
+  optional $ literal "T"
+  time <- parseTimeOfDay
+  optional $ literal "Z"
+  eof
+  return $ UTCTime date (timeOfDayToTime time)
 
 -- This one needs some work.
 {-
