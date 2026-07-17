@@ -3524,6 +3524,16 @@ function rebuild {
     compile scheduler Scheduler
 }
 
+function hshell {
+    cd "${GTD_DIR/components}"
+    ghci \
+        -XGHC2021 \
+        -Wall \
+        -Wno-name-shadowing \
+        -i"${GTD_DIR}/components" \
+        "${@}"
+}
+
 # Syntax-directed completion **************************************************
 
 # bash completion hook
