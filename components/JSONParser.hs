@@ -161,7 +161,7 @@ fromJSON (A [S "after", start]) = do
 fromJSON (A [S "always"]) = return $ Explicit $ Set.singleton Interval.Open
 fromJSON (A (S "weekly" : days)) = do
   days <- traverse parseDay days
-  return $ Weekly (Set.fromList days) False
+  return $ Weekly (Set.fromList days)
 fromJSON (A ((S "monthly") : (S "all") : months)) = do
   months <- traverse parseMonth months
   return $ Monthly $ Map.fromList $ mm <$> months

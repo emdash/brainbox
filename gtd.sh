@@ -3482,7 +3482,7 @@ function reassign {
 # a shell-friendly UI toolkit, so whatever replacement UX emerges will
 # borrow a lot from FZF.
 
-# Compile a haskell component if necessary.
+# Compile a haskell component
 #
 # component - The name of the compiled excutable
 # module    - The name of the top-level haskell module.
@@ -3497,21 +3497,17 @@ function compile {
     local -r source_file="${GTD_DIR}/components/${module}.hs"
     local -r binary="${GTD_DIR}/components/${component}"
 
-    # binary missing or if source file is newer than binary.
-    if test ! -e "${binary}" || test "${source_file}" -nt "${binary}"
-    then
-      debug "Rebuilding ${component}"
-      ghc \
-          -XGHC2021 \
-          -Wall \
-          -Wno-name-shadowing \
-          -main-is "Brainbox.${module}.${main}" \
-          -i"${GTD_DIR}/components" \
-          -o "${binary}" \
-          "${source_file}"
-      # ghc doesn't actually update the mtime of the binary
-      touch "${binary}"
-    fi
+    ghc \
+        -XGHC2021 \
+        -Wall \
+        -Wno-name-shadowing \
+        -main-is "Brainbox.${module}.${main}" \
+        -i"${GTD_DIR}/components" \
+        -o "${binary}" \
+        "${source_file}"
+
+    # ghc doesn't actually update the mtime of the binary, so we need to.
+    touch "${binary}"
 }
 
 # Rebuild all haskell components

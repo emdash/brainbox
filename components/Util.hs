@@ -2,7 +2,8 @@ module Util (
   getEnvStr,
   getEnvBool,
   pad,
-  validate
+  validate,
+  between
 ) where
 
 import Data.Maybe
@@ -32,3 +33,6 @@ validate (x : xs) f onErr = case validate xs f onErr of
   Right xs -> case f x of
     Nothing -> Left $ onErr x
     Just x  -> Right $ x : xs
+
+between :: Ord a => a -> a -> a -> Bool
+between lower x upper = lower <= x && x <= upper

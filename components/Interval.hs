@@ -8,13 +8,10 @@
 
 module Interval (
   AddDT,
-  Interval(
-    Empty,
-    Open,
-    LeftOpen,
-    RightOpen,
-    Closed
-  ),
+  (|+),
+  (|-),
+  (|-|),
+  Interval(..),
   DateTime,
   TimeDelta,
   second,
@@ -24,6 +21,10 @@ module Interval (
   week,
   now,
   startOfDay,
+  endOfDay,
+  weekday,
+  dayOfMonth,
+  monthOfYear,
   today,
   yesterday,
   tomorrow,
@@ -41,17 +42,29 @@ module Interval (
   finite,
   Interval.sequence,
   mergeConsecutive,
-  sequenceMonths
+  sequenceMonths,
+  Interval.span,
 ) where
 
 import Data.Maybe
 import Data.Time.Clock
 import Data.Time.Calendar.OrdinalDate
 import Data.Time.Calendar
+import Data.Tuple.Utils
+
 import Util
 
 type DateTime = UTCTime
 type TimeDelta = NominalDiffTime
+
+weekday :: DateTime -> DayOfWeek
+weekday (UTCTime day _) = dayOfWeek day
+
+dayOfMonth :: DateTime -> DayOfMonth
+dayOfMonth (UTCTime day _) = thd3 $ toGregorian day
+
+monthOfYear :: DateTime -> MonthOfYear
+monthOfYear (UTCTime day _) = snd3 $ toGregorian day
 
 infixl 6 |+
 infixl 6 |-
@@ -88,6 +101,9 @@ now = getCurrentTime
 
 startOfDay :: DateTime -> DateTime
 startOfDay (UTCTime day _) = UTCTime day (fromInteger 0)
+
+endOfDay :: DateTime -> DateTime
+endOfDay day = startOfDay day |+ nominalDay
 
 today :: IO DateTime
 today = startOfDay <$> now
@@ -136,7 +152,7 @@ within Empty             _  = False
 within Open              _  = True
 within (LeftOpen  end)   dt = dt <= end
 within (RightOpen start) dt = start <= dt
-within (Closed    s e)   dt = (s <= dt) && (dt <= e)
+within (Closed    s e)   dt = between s dt e
 
 -- | True if the right interval is completely contained within the left.
 contains :: Interval -> Interval -> Bool

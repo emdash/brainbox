@@ -685,7 +685,9 @@ class Intersection(Implicit):
   def largestIntervalContaining(self, dt):
     return reduce(
       lambda acc, i: acc.intersection(i.largestIntervalContaining(dt)),
-      filter(lambda s: s.within(i), self.subsets)
+      filter(
+        lambda s: s.within(i),
+        self.subsets)
     )
 
   # XXX: probably wrong
