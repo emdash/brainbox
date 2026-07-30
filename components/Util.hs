@@ -3,7 +3,8 @@ module Util (
   getEnvBool,
   pad,
   validate,
-  between
+  between,
+  (-$)
 ) where
 
 import Data.Maybe
@@ -36,3 +37,10 @@ validate (x : xs) f onErr = case validate xs f onErr of
 
 between :: Ord a => a -> a -> a -> Bool
 between lower x upper = lower <= x && x <= upper
+
+-- XXX: this is from Control.Composition, but basically just doing it
+-- here to avoid having to chase down the dependency right this
+-- second.
+infixl 8 -$
+(-$) :: (a -> b -> c) -> b -> a -> c
+(-$) f = flip f

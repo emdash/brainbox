@@ -40,12 +40,6 @@ import Util
 import Interval (Interval(..), DateTime, TimeDelta, (|+), (|-), (|-|))
 import qualified Interval as Interval
 
--- XXX: this is from Control.Composition, but basically just doing it
--- here to avoid having to chase down the dependency right this
--- second.
-infixl 8 -$
-(-$) :: (a -> b -> c) -> b -> a -> c
-(-$) f = flip f
 
 
 -- | Represents when an event can happen.
