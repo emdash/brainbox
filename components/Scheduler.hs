@@ -13,7 +13,6 @@ import System.IO
 import System.Environment
 
 import Data.Either.Extra
-import Text.JSON
 
 import DateSet
 import qualified JSONParser as JP

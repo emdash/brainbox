@@ -6,24 +6,26 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeApplications #-}
 
+
 module DateSet (
-  DateSet(..),
+  DateSet,
+  IDateSet(..),
   finite,
-  intersects,
-  DateSet.span,
-  within,
-  contains,
-  intervals,
+  explicit,
+  union,
+  intersection,
+  periodic,
+  atTime,
+  weekly,
+  monthly,
+  nthWeekday,
+  shift,
   completions,
   isComplete,
-  largestIntervalContaining,
-  invert
 ) where
 
-import Control.Monad
 import Data.Fixed
 import Data.Foldable
-import qualified Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
@@ -31,16 +33,35 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 import Data.Time.Clock
-import Data.Time.Calendar.OrdinalDate
 import Data.Time.Calendar
-import Data.Time.Format.ISO8601
+import Data.Time.Calendar.Month
 import Data.Time.LocalTime
 
 import Util
-import Interval (Interval(..), DateTime, TimeDelta, (|+), (|-), (|-|))
+import Interval (
+  IWithin(..),
+  Interval(..),
+  DateTime,
+  TimeDelta, (|+), (|-), (|-|))
 import qualified Interval as Interval
 
+-- | The methods that are supported by DateSet
+class Show a => IDateSet a where
+  -- | Return the smallest interval spanning the entire set.
+  span :: a -> Interval
+  span _ = Open
 
+  -- | True if window interesects any interval within the dateset.
+  intersects :: a -> Interval -> Bool
+
+  -- | Return the largest interval in the dateset containing the given time.
+  largestIntervalContaining :: a -> DateTime -> Interval
+
+  -- | Return an ordered sequence of intervals which intersect
+  intervals :: a -> Interval -> [Interval]
+
+  -- | Return the inverted equivalent of the given interval
+  invert :: a -> DateSet
 
 -- | Represents when an event can happen.
 --
@@ -52,101 +73,26 @@ import qualified Interval as Interval
 -- the span (i.e. bounding interval, or the smallest interval that
 -- contains every interval in the set).
 data DateSet
-  = Explicit (Set Interval)
-  | Union [DateSet]
-  | Intersection [DateSet]
-  | Periodic {period :: TimeDelta, duration :: TimeDelta, phase :: TimeDelta}
-  | AtTime {start :: TimeOfDay, duration' :: TimeDelta, inverted :: Bool}
-  | Weekly {which :: Set DayOfWeek}
-  | Monthly {months :: Map MonthOfYear (Set DayOfMonth)}
-  | NthWeekday {n :: Int, weekday :: DayOfWeek, month :: Maybe DayOfMonth}
-  | Shift {offset :: TimeDelta, subset :: DateSet}
-  deriving (Eq, Ord, Show)
+  where DateSet :: IDateSet a => a -> DateSet
+
+instance Show DateSet where
+  show (DateSet ds) = show ds
+
+instance IDateSet DateSet where
+  intersects (DateSet ds) w = intersects ds w
+  span (DateSet ds) = DateSet.span ds
+  largestIntervalContaining (DateSet ds) = largestIntervalContaining ds
+  intervals (DateSet ds) = intervals ds
+  invert (DateSet ds) = invert ds
+
+instance IWithin DateSet where
+  -- | True if the DateSet contains the given instant.
+  within :: DateSet -> DateTime -> Bool
+  within (DateSet ds) dt = within (largestIntervalContaining ds dt) dt
 
 -- | True if the dateset is finite.
 finite :: DateSet -> Bool
-finite (Explicit intervals) = all Interval.finite intervals
-finite (Union subsets) = all DateSet.finite subsets
-finite (Intersection subsets) = any DateSet.finite subsets
-finite (Shift _ subset) = DateSet.finite subset
-finite _ = False
-
--- | True if window interesects any interval within the dateset.
-intersects :: DateSet -> Interval -> Bool
-intersects (Explicit intervals) i = any (Interval.intersects i) intervals
-intersects (Union subsets) i = any (intersecting i) subsets
-  where
-    intersecting :: Interval -> DateSet -> Bool
-    intersecting i ds  = DateSet.intersects ds i
-intersecting (Intersection subsets) i = all (intersecting i) subsets
-  where
-    intersecting :: Interval -> DateSet -> Bool
-    intersecting i ds = DateSet.intersects ds i
-
--- | Returns the smallest interval which contains the entire set.
-span :: DateSet -> Interval
-span (Explicit intervals)   = foldl Interval.span Empty intervals
-span (Union subsets)        = foldl unSpan  Empty subsets
-span (Intersection subsets) = foldl intSpan Open  subsets
-span (Periodic _ _ _)       = Open
-span (AtTime _ _ _)         = Open
-span (Weekly _ )            = Open
-span (Monthly _)            = Open
-span (NthWeekday _ _ _)     = Open
-span (Shift offset subset)  = (DateSet.span subset) |+ offset
-
--- | helper for computing the span of an intersection via fold
-unSpan :: Interval -> DateSet -> Interval
-unSpan ret s = Interval.span (DateSet.span s) ret
-
--- | helper for computing the span of an intersection via fold
-intSpan :: Interval -> DateSet -> Interval
-intSpan ret s = case DateSet.span s of
-  Empty -> Empty
-  Open  -> ret
-  i     -> Interval.intersection ret i
-
--- | True if the given dt is part of this set.
-within :: DateSet -> DateTime -> Bool
-within self dt = Interval.within (largestIntervalContaining self dt) dt
-
-implicitContains :: DateSet -> Interval -> Bool
-intersecting
-
--- | True if the given window is completely contained by this set.
-contains :: DateSet -> Interval -> Bool
-contains (Explicit intervals)   w = any (Interval.contains -$ w) intervals
-contains (Union subsets)        w = any (DateSet.contains  -$ w)  subsets
-contains (Intersection subsets) w = all (DateSet.contains  -$ w)  subsets
-contains (Periodic _ _ _)       w = undefined
-contains (AtTime _ _ _)         w = undefined
-contains (Weekly _ )            w = undefined
-contains (Monthly _)            w = undefined
-contains (NthWeekday _ _ _)     w = undefined
-contains (Shift offset subset)  w = undefined
-
-
-implicitIntervals :: DateSet -> Interval -> [Interval]
-implicitIntervals self window =
-  Interval.mergeConsecutive
-  $ filter (DateSet.contains self)
-  $ Interval.sequence window Interval.minute Nothing Nothing
-
--- | Return an ordered sequence of intervals which intersect `window`.
---
--- If window is not given, and dateset is finite, then yields every
--- interval in the date set.
---
--- If this window is not given, and the dateset is not finite, this
--- will raise `ValueError'.
-intervals :: DateSet -> Maybe Interval -> [Interval]
-intervals (Explicit intervals) Nothing = Interval.mergeConsecutive
-  $ Set.toAscList intervals
-intervals (Explicit intervals) (Just w) = filter
-    (Interval.intersects w)
-  $ Interval.mergeConsecutive
-  $ Set.toAscList intervals
-intervals self (Just w) = implicitIntervals self w
+finite (DateSet ds) = Interval.finite $ DateSet.span ds
 
 -- | Yield tuples of `(intervals, completed)`.
 --
@@ -157,96 +103,223 @@ intervals self (Just w) = implicitIntervals self w
 -- timestamps outside of a completion window.
 --
 -- `window` is treated the same as in `intervals`.
-completions :: DateSet -> [DateTime] -> Maybe Interval -> [(Interval, Bool)]
+completions :: DateSet -> [DateTime] -> Interval -> [(Interval, Bool)]
 completions self history window = completed <$> intervals self window
   where
-    completed i = (i, any (Interval.within i) history)
+    completed i = (i, any (within i) history)
 
 -- | True if all intervals within the window have a completion event.
---
--- If `window` is `Nothing`, then:
---   - if self is finite     -- all intervals in dateset must be complete.
---   - else                  -- returns False
-isComplete :: DateSet -> [DateTime] -> Maybe Interval -> Bool
-isComplete self history window = case window of
-  Nothing -> if Interval.finite (DateSet.span self)
-             then go Nothing
-             else False
-  window -> go window
+isComplete :: DateSet -> [DateTime] -> Interval -> Bool
+isComplete self history window = go window
   where
     go window = all snd $ completions self history window
 
--- | Find the largest interval within the dateset that contains the given time.
-largestIntervalContaining :: DateSet -> DateTime -> Interval
-largestIntervalContaining = lic
+-------------------------------------------------------------------------------
 
-firstWeekday :: DayOfWeek -> MonthOfYear -> Year -> Day
-firstWeekday = undefined
+-- | A DateSet representing an explicit set of intervals.
+data Explicit = Explicit (Set Interval) deriving Show
 
-lastWeekday :: DayOfWeek -> MonthOfYear -> Year -> Day
-lastWeekday = undefined
+instance IDateSet Explicit where
+  intersects (Explicit intervals) i = any (Interval.intersects i) intervals
+  span (Explicit intervals) = foldl Interval.span Empty intervals
+  largestIntervalContaining (Explicit intervals) dt =
+    fromMaybe Empty $ find (within -$ dt) intervals
 
-nthWeekday :: Integer -> DayOfWeek -> MonthOfYear -> Year -> Day
-nthWeekday n weekday month year
-  | n > 0 =  ((n - 1) * 7) `addDays` (firstWeekday weekday month year)
-  | n < 0 = (((abs n) - 1) * 7) `addDays` (lastWeekday  weekday month year)
-nthWeekday _ _ _ _ = error "N cannot be 0"
+  intervals (Explicit intervals) w =
+    filter (Interval.intersects w) $ Set.toAscList intervals
 
-lic :: DateSet -> DateTime -> Interval
-lic (Explicit intervals)   dt = fromMaybe Empty $ find (Interval.within -$ dt) intervals
-lic (Union subsets)        dt = foldl Interval.span Empty $ (lic -$ dt) <$> subsets
--- xxx: probably wrong
-lic (Intersection subsets) dt = foldl go Open $ subsets
-  where
-    go acc i = Interval.intersection acc (lic i dt)
-lic (Periodic period duration phase) dt =
-  let as_delta = dt |-| Interval.origin
-      start    = Interval.origin |+ (as_delta - ((as_delta - phase) `mod'` period))
-      end      = start |+ duration
-  in if between start dt end
-     then Closed start end
-     else Empty
-lic (AtTime start duration inverted) dt =
-  let start = UTCTime dt.utctDay start.utctDayTime
-      end   = start |+ duration
-      sod   = Interval.startOfDay dt
-      eod   = Interval.endOfDay   dt
-  in if inverted
-     then handleInverted start end sod eod
-     else if between start dt end
+explicit :: [Interval] -> DateSet
+explicit intervals = DateSet
+  $ Explicit
+  $ Set.fromList
+  $ Interval.mergeConsecutive intervals
+
+-------------------------------------------------------------------------------
+
+-- | A DateSet representing the union of multiple datesets.
+data Union = Union [DateSet] deriving Show
+
+instance IDateSet Union where
+  intersects (Union subsets) i = any (intersects -$ i) subsets
+  largestIntervalContaining (Union subsets) dt =
+    foldl Interval.span Empty $ (largestIntervalContaining -$ dt) <$> subsets
+  span (Union subsets)        = foldl unSpan  Empty subsets
+    where unSpan ret s = Interval.span (DateSet.span s) ret
+
+  intervals = undefined
+
+union :: [DateSet] -> DateSet
+union = DateSet . Union
+
+-------------------------------------------------------------------------------
+
+-- | A DateSet representing the intersection of multiple datesets.
+data Intersection = Intersection [DateSet] deriving Show
+
+instance IDateSet Intersection where
+  span (Intersection subsets) = foldl intSpan Open  subsets
+    where
+      intSpan ret s = case DateSet.span s of
+        Empty -> Empty
+        Open  -> ret
+        i     -> Interval.intersection ret i
+
+  intersects (Intersection subsets) i = all (intersecting i) subsets
+    where
+      intersecting :: Interval -> DateSet -> Bool
+      intersecting i ds = DateSet.intersects ds i
+
+  largestIntervalContaining (Intersection subsets) dt = foldl go Open $ subsets
+    where go acc i = Interval.intersection acc (largestIntervalContaining i dt)
+
+  intervals = undefined
+
+intersection :: [DateSet] -> DateSet
+intersection = DateSet . Intersection
+-------------------------------------------------------------------------------
+
+-- | A DateSet representing a regular period of time.
+data Periodic = Periodic {
+  period :: TimeDelta,
+  duration :: TimeDelta,
+  phase :: TimeDelta
+} deriving Show
+
+instance IDateSet Periodic where
+  largestIntervalContaining self dt =
+    let as_delta = dt |-| Interval.origin
+        start    = Interval.origin |+
+          (as_delta - ((as_delta - self.phase) `mod'` self.period))
+        end      = start |+ self.duration
+    in if between start dt end
        then Closed start end
        else Empty
-  where
-    handleInverted start end sod eod
-      | between sod dt start = Closed sod start
-      | between end dt eod   = Closed end eod
-    handleInverted _ _ _ _   = Empty
-lic (Weekly days) dt =
-  if Set.member (dayOfWeek dt.utctDay) days
-  then Interval.fromDate dt Nothing
-  else Empty
-lic (Monthly months) dt =
-  let (year, month, day) = toGregorian (utctDay dt)
-      days               = fromMaybe Set.empty $ Map.lookup month months
-      intervals          = Interval.mergeConsecutive $
+
+  intersects self w  = not $ null $ intervals self w
+  intervals = undefined
+
+-- | A DateSet which repeats over a fixed period, for the given
+-- duration, offset by an optional phase.
+periodic :: TimeDelta -> TimeDelta -> Maybe TimeDelta -> DateSet
+periodic period duration' (Just phase) = DateSet $ Periodic period duration' phase
+periodic period duration' Nothing      = DateSet $ Periodic period duration' (fromInteger 0)
+
+-- | A special-case of periodic, which occurs at a particular time each day.
+atTime :: TimeOfDay -> TimeDelta -> Bool -> DateSet
+atTime time dur inverted =
+  let start = daysAndTimeOfDayToTime 0 time
+      base = DateSet $ Periodic Interval.day dur start
+  in if inverted then invert $ base else base
+
+-------------------------------------------------------------------------------
+
+-- | A DateSet representing a weekly pattern.
+data Weekly = Weekly {
+  which :: Set DayOfWeek
+} deriving Show
+
+instance IDateSet Weekly where
+  largestIntervalContaining self dt =
+    if Set.member (dayOfWeek dt.utctDay) self.which
+      then Interval.fromDate dt Nothing
+      else Empty
+
+  intersects self w = not $ null $ intervals self w
+  intervals = undefined
+
+weekly :: Set DayOfWeek -> DateSet
+weekly = DateSet . Weekly
+-------------------------------------------------------------------------------
+
+-- | A DateSet representing a monthly pattern.
+data Monthly = Monthly {
+  months :: Map MonthOfYear (Set DayOfMonth)
+} deriving Show
+
+instance IDateSet Monthly where
+  largestIntervalContaining self dt =
+    let
+      (y, m, _) = toGregorian (utctDay dt)
+      days      = fromMaybe Set.empty $ Map.lookup m self.months
+      intervals = Interval.mergeConsecutive $
             Interval.fromDate -$ Nothing
         <$> UTCTime -$ (fromInteger 0)
-        <$> fromGregorian year month
+        <$> fromGregorian y m
         <$> Set.toAscList days
-  in fromMaybe Empty $ find (Interval.within -$ dt) intervals
-lic (NthWeekday n wd m) dt@(UTCTime d _) =
-  if dayOfWeek d == wd
-  then
-    let
-      (year, month, day) = toGregorian d
-      month' = fromMaybe month m
-      nd = nthWeekday (toInteger n) wd month' year
-    in if d == nd
-       then Interval.fromDate dt Nothing
-       else Empty
-  else Empty
-lic (Shift offset subset)  dt = (lic subset (dt |- offset)) |+ offset
+    in fromMaybe Empty $ find (within -$ dt) intervals
 
--- | Return the inverse of the given date set.
-invert :: DateSet -> DateSet
-invert _ = error "Not implemented"
+  intersects self w = not $ null $ intervals self w
+  intervals = undefined
+
+monthly :: Map MonthOfYear (Set DayOfMonth) -> DateSet
+monthly = DateSet . Monthly
+
+-------------------------------------------------------------------------------
+
+-- | Repeats on the nth week day of the given month.
+data NthWeekday = NthWeekday {
+  n :: Int,
+  weekday :: DayOfWeek,
+  month :: Maybe DayOfMonth
+} deriving Show
+
+instance IDateSet NthWeekday where
+  largestIntervalContaining (NthWeekday n wd m) dt@(UTCTime d _) =
+    if dayOfWeek d == wd
+    then
+      let
+        (year, month, day) = toGregorian d
+        month' = fromMaybe month m
+        nd = _nthWeekday (toInteger n) wd month' year
+      in if d == nd
+         then Interval.fromDate dt Nothing
+         else Empty
+    else Empty
+
+  intersects self w = not $ null $ intervals self w
+  intervals = undefined
+
+firstWeekday :: DayOfWeek -> Month -> Day
+firstWeekday d m = go $ periodFirstDay m
+  where
+    go e = if (dayOfWeek e) == d
+      then e
+      else go $ succ e
+
+lastWeekday :: DayOfWeek -> Month -> Day
+lastWeekday d m = go $ periodLastDay m
+  where
+    go e = if (dayOfWeek e) == d
+      then e
+      else go $ pred e
+
+_nthWeekday :: Integer -> DayOfWeek -> MonthOfYear -> Year -> Day
+_nthWeekday n weekday month year
+  | n > 0 = ((n - 1) * 7) `addDays`
+            (firstWeekday weekday $ YearMonth year month)
+  | n < 0 = (((abs n) - 1) * 7) `addDays`
+            (lastWeekday  weekday $ YearMonth year month)
+_nthWeekday _ _ _ _ = error "N cannot be 0"
+
+nthWeekday :: Int -> DayOfWeek -> Maybe DayOfMonth -> DateSet
+nthWeekday n d m = DateSet $ NthWeekday n d m
+
+-------------------------------------------------------------------------------
+
+-- | Shift the given dateset by a fixed amount of time.
+data Shift = Shift {
+  offset :: TimeDelta,
+  subset :: DateSet
+} deriving Show
+
+instance IDateSet Shift where
+  largestIntervalContaining self dt =
+    largestIntervalContaining self.subset $ (dt |- self.offset) |+ self.offset
+
+  intersects self w = not $ null $ intervals self w
+  intervals = undefined
+
+shift :: TimeDelta -> DateSet -> DateSet
+shift td ds = DateSet $ Shift td ds
+
+-------------------------------------------------------------------------------

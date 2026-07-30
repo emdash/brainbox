@@ -5,6 +5,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Interval (
   AddDT,
@@ -14,6 +16,8 @@ module Interval (
   Interval(..),
   DateTime,
   TimeDelta,
+  IWithin(..),
+  Interval.span,
   second,
   minute,
   hour,
@@ -30,7 +34,6 @@ module Interval (
   tomorrow,
   origin,
   duration,
-  within,
   contains,
   intersects,
   intersection,
@@ -43,10 +46,10 @@ module Interval (
   Interval.sequence,
   mergeConsecutive,
   sequenceMonths,
-  Interval.span,
 ) where
 
 import Data.Maybe
+
 import Data.Time.Clock
 import Data.Time.Calendar.OrdinalDate
 import Data.Time.Calendar
@@ -130,6 +133,9 @@ origin =  UTCTime (fromOrdinalDate 1 1) 0
 -- RightOpen => LowerBounded
 -- Closed => Finite
 
+class IWithin a where
+  within :: a -> DateTime -> Bool
+
 -- | The time between two timestamps, or a start timestamp and duration.
 data Interval
   = Empty
@@ -139,20 +145,37 @@ data Interval
   | Closed DateTime DateTime
   deriving (Ord, Eq, Show)
 
+instance IWithin Interval where
+-- | True if the given timestamp falls within self.
+  within Empty             _  = False
+  within Open              _  = True
+  within (LeftOpen  end)   dt = dt <= end
+  within (RightOpen start) dt = start <= dt
+  within (Closed    s e)   dt = between s dt e
+
+-- | The smallest interval containing both self and i
+span :: Interval -> Interval -> Interval
+span Empty         i              = i
+span Open          _              = Open
+span left          Empty          = left
+span _             Open           = Open
+span (LeftOpen e)  (LeftOpen e')  = LeftOpen  $ max e e'
+span (LeftOpen _ ) (RightOpen _)  = Open
+span (LeftOpen e)  (Closed _ e')  = LeftOpen  $ max e e'
+span (RightOpen _) (LeftOpen _)   = Open
+span (RightOpen s) (RightOpen s') = RightOpen $ min s s'
+span (RightOpen s) (Closed s' _)  = RightOpen $ min s s'
+span (Closed _ e)  (LeftOpen e')  = LeftOpen  $ max e e'
+span (Closed s _)  (RightOpen s') = RightOpen $ min s s'
+span (Closed s e)  (Closed s' e') = Closed (min s s') (max e e')
+
+
 duration :: Interval -> Maybe TimeDelta
 duration Empty           = Just $ fromInteger 0
 duration Open            = Nothing
 duration (LeftOpen  _)   = Nothing
 duration (RightOpen _)   = Nothing
 duration (Closed    l u) = Just $ l |-| u
-
--- | True if the given timestamp falls within self.
-within :: Interval -> DateTime -> Bool
-within Empty             _  = False
-within Open              _  = True
-within (LeftOpen  end)   dt = dt <= end
-within (RightOpen start) dt = start <= dt
-within (Closed    s e)   dt = between s dt e
 
 -- | True if the right interval is completely contained within the left.
 contains :: Interval -> Interval -> Bool
@@ -169,22 +192,6 @@ contains (RightOpen s) (Closed s' _)  = s >= s'
 contains (Closed _ _)  (LeftOpen _)   = False
 contains (Closed _ _)  (RightOpen _)  = False
 contains s@(Closed _ _) (Closed s' e) = within s s' && within s e
-
--- | The smallest interval containing both self and i.
-span :: Interval -> Interval -> Interval
-span Empty         i              = i
-span Open          _              = Open
-span left          Empty          = left
-span _             Open           = Open
-span (LeftOpen e)  (LeftOpen e')  = LeftOpen  $ max e e'
-span (LeftOpen _ ) (RightOpen _)  = Open
-span (LeftOpen e)  (Closed _ e')  = LeftOpen  $ max e e'
-span (RightOpen _) (LeftOpen _)   = Open
-span (RightOpen s) (RightOpen s') = RightOpen $ min s s'
-span (RightOpen s) (Closed s' _)  = RightOpen $ min s s'
-span (Closed _ e)  (LeftOpen e')  = LeftOpen  $ max e e'
-span (Closed s _)  (RightOpen s') = RightOpen $ min s s'
-span (Closed s e)  (Closed s' e') = Closed (min s s') (max e e')
 
 -- | True if the right interval touches or is partially contained within the right.
 intersects :: Interval -> Interval -> Bool

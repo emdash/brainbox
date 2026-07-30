@@ -150,76 +150,76 @@ parseDays days = do
 fromJSON :: JExpr -> Either String DateSet
 fromJSON (A ((S "dates") : dates)) = do
   dates' <- traverse parseDT dates
-  return $ Explicit $ Set.fromList $ Interval.fromDate' <$> dates'
+  return $ explicit $ Interval.fromDate' <$> dates'
 fromJSON (A [S "range", start, end]) = do
   start <- parseDT start
   end <- parseDT end
-  return $ Explicit $ Set.singleton $ Interval.Closed start end
+  return $ explicit [Interval.Closed start end]
 fromJSON (A [S "until", end]) = do
   end <- parseDT end
-  return $ Explicit $ Set.singleton $ Interval.LeftOpen end
+  return $ explicit [Interval.LeftOpen end]
 fromJSON (A [S "before", end]) = do
   end <- parseDT end
-  return $ Explicit $ Set.singleton $ Interval.LeftOpen end
+  return $ explicit [Interval.LeftOpen end]
 fromJSON (A [S "after", start]) = do
   start <- parseDT start
-  return $ Explicit $ Set.singleton $ Interval.RightOpen start
-fromJSON (A [S "always"]) = return $ Explicit $ Set.singleton Interval.Open
+  return $ explicit [Interval.RightOpen start]
+fromJSON (A [S "always"]) = return $ explicit [Interval.Open]
 fromJSON (A (S "weekly" : days)) = do
   days <- traverse parseDay days
-  return $ Weekly (Set.fromList days)
+  return $ weekly (Set.fromList days)
 fromJSON (A ((S "monthly") : (S "all") : months)) = do
   months <- traverse parseMonth months
-  return $ Monthly $ Map.fromList $ mm <$> months
+  return $ monthly $ Map.fromList $ mm <$> months
   where
     mm :: MonthOfYear -> (MonthOfYear, Set DayOfMonth)
     mm m = (m, Set.fromList [1..31])
 fromJSON (A [S "monthly", A days, A months]) = do
   months <- traverse parseMonth months
   days <- parseDays days
-  return $ Monthly $ Map.fromList $ mm days <$> months
+  return $ monthly $ Map.fromList $ mm days <$> months
   where
     mm :: Set DayOfMonth -> MonthOfYear -> (MonthOfYear, Set DayOfMonth)
     mm days m = (m, days)
 fromJSON (A (S "monthly" : days)) = do
   days <- parseDays days
-  return $ Monthly $ Map.fromList $ mm days <$> [1..12]
+  return $ monthly $ Map.fromList $ mm days <$> [1..12]
   where
     mm :: Set DayOfMonth -> MonthOfYear -> (MonthOfYear, Set DayOfMonth)
     mm days m = (m, days)
 fromJSON (A [S "shift", offset, ds]) = do
   offset <- parseDuration offset
   wrapped <- fromJSON ds
-  return $ Shift offset wrapped
+  return $ shift offset wrapped
 fromJSON (A [S "++", period]) = do
   period <- parseDuration period
-  return $ Periodic period Interval.day (fromInteger 0)
+  return $ periodic period Interval.day Nothing
 fromJSON (A [S "++", period, duration]) = do
   period <- parseDuration period
   duration <- parseDuration duration
-  return $ Periodic period duration (fromInteger 0)
+  return $ periodic period duration Nothing
 fromJSON (A [S "++", period, duration, phase]) = do
   period <- parseDuration period
   duration <- parseDuration duration
   phase <- parseDuration phase
-  return $ Periodic period duration phase
+  return $ periodic period duration $ Just phase
 fromJSON (A [S "@", time_, duration]) = do
   time_ <- parseTime time_
   duration <- parseDuration duration
-  return $ AtTime time_ duration False
+  return $ atTime time_ duration False
 fromJSON (A (S "|" : subexprs)) = do
   subexprs <- traverse fromJSON subexprs
-  return $ Union subexprs
+  return $ union subexprs
 fromJSON (A (S "&" : subexprs)) = do
   subexprs <- traverse fromJSON subexprs
-  return $ Intersection subexprs
+  return $ intersection subexprs
 fromJSON (A [S "~", subexpr]) = do
   subexpr <- fromJSON subexpr
   return $ DateSet.invert subexpr
 fromJSON (A [S "except", a, b]) = do
   a <- fromJSON a
   b <- fromJSON b
-  return $ Intersection [a, b]
+  return $ intersection [a, b]
 fromJSON e = error $ "Illegal date expr: " ++ show e
 
 fromString :: String -> Either String DateSet
