@@ -12,16 +12,16 @@ import Data.Foldable
 import System.IO
 import System.Environment
 
+import Data.Either.Extra
 import Text.JSON
 
+import DateSet
 import qualified JSONParser as JP
 
 validateLine :: String -> IO ()
-validateLine encoded = case decodeStrict encoded of
-  Ok val -> case JP.fromJSON $ JP.simplify val of
-    Left  err     -> pVal stderr ("A:" ++ encoded) err
-    Right decoded -> pVal stdout encoded decoded
-  Error err -> pVal stderr ("B:" ++ encoded) err
+validateLine encoded = case JP.fromString encoded of
+  Right decoded -> pVal stderr ("A:" ++ encoded) decoded
+  Left  err     -> pVal stderr ("B:" ++ encoded) err
 
 pVal :: Show a => Handle -> String -> a -> IO ()
 pVal h raw decoded = do
@@ -33,6 +33,11 @@ validateDS :: Handle -> IO ()
 validateDS h = do
   encoded <- hGetContents h
   for_ (lines encoded) validateLine
+
+fromFile :: String -> IO [DateSet]
+fromFile path = do
+  cts <- readFile path
+  return $ fromRight' <$> JP.fromString <$> lines cts
 
 main :: IO ()
 main = do

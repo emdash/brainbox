@@ -10,7 +10,13 @@
 --
 -- We use Text.JSON because we don't need sophisticated JSON
 -- marshalling.
-module JSONParser (JExpr(..), fromJSON, parseDT, simplify) where
+module JSONParser (
+  JExpr(..),
+  fromJSON,
+  parseDT,
+  simplify,
+  fromString
+) where
 
 import Data.Ratio
 import Text.JSON
@@ -215,3 +221,8 @@ fromJSON (A [S "except", a, b]) = do
   b <- fromJSON b
   return $ Intersection [a, b]
 fromJSON e = error $ "Illegal date expr: " ++ show e
+
+fromString :: String -> Either String DateSet
+fromString encoded = case decodeStrict encoded of
+  Ok val -> fromJSON $ simplify val
+  Error err -> Left err
