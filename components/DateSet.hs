@@ -24,13 +24,15 @@ module DateSet (
   isComplete,
 ) where
 
+import Data.Bits (testBit, setBit, complement)
 import Data.Fixed
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Set (Set)
+import Data.Set (Set, (\\))
 import qualified Data.Set as Set
+import Data.Word
 
 import Data.Time.Clock
 import Data.Time.Calendar
@@ -128,6 +130,13 @@ instance IDateSet Explicit where
   intervals (Explicit intervals) w =
     filter (Interval.intersects w) $ Set.toAscList intervals
 
+  invert (Explicit intervals) = explicit $ go $ Set.toAscList intervals
+    where
+      go [] = []
+      go (x : xs) = case Interval.invert x of
+        Left       x' -> x' : go xs
+        Right (x', y) -> x' : y : go xs
+
 explicit :: [Interval] -> DateSet
 explicit intervals = DateSet
   $ Explicit
@@ -176,6 +185,7 @@ instance IDateSet Intersection where
 
 intersection :: [DateSet] -> DateSet
 intersection = DateSet . Intersection
+
 -------------------------------------------------------------------------------
 
 -- | A DateSet representing a regular period of time.
@@ -198,6 +208,13 @@ instance IDateSet Periodic where
   intersects self w  = not $ null $ intervals self w
   intervals = undefined
 
+  -- XXX:
+  -- swaps phase and duration, keeping period the same.
+  -- I think this works in all cases, but this needs to be tested.
+  --
+  -- good case for a property test
+  invert self = periodic self.period self.phase $ Just self.duration
+
 -- | A DateSet which repeats over a fixed period, for the given
 -- duration, offset by an optional phase.
 periodic :: TimeDelta -> TimeDelta -> Maybe TimeDelta -> DateSet
@@ -215,44 +232,61 @@ atTime time dur inverted =
 
 -- | A DateSet representing a weekly pattern.
 data Weekly = Weekly {
-  which :: Set DayOfWeek
+  which :: Word8
 } deriving Show
 
 instance IDateSet Weekly where
   largestIntervalContaining self dt =
-    if Set.member (dayOfWeek dt.utctDay) self.which
+    if testBit self.which $ fromEnum $ (dayOfWeek dt.utctDay)
       then Interval.fromDate dt Nothing
       else Empty
 
   intersects self w = not $ null $ intervals self w
   intervals = undefined
 
+  invert self = DateSet $ Weekly $ complement self.which
+
+toWord8 :: Set DayOfWeek -> Word8
+toWord8 days = foldl insert_ 0 days
+  where
+    insert_ x wd = setBit x $ fromEnum wd
+
 weekly :: Set DayOfWeek -> DateSet
-weekly = DateSet . Weekly
+weekly = DateSet . Weekly . toWord8
 -------------------------------------------------------------------------------
 
 -- | A DateSet representing a monthly pattern.
 data Monthly = Monthly {
-  months :: Map MonthOfYear (Set DayOfMonth)
+  months :: Map MonthOfYear Word32
 } deriving Show
 
 instance IDateSet Monthly where
   largestIntervalContaining self dt =
     let
       (y, m, _) = toGregorian (utctDay dt)
-      days      = fromMaybe Set.empty $ Map.lookup m self.months
+      days      = fromMaybe 0 $ Map.lookup m self.months
       intervals = Interval.mergeConsecutive $
             Interval.fromDate -$ Nothing
         <$> UTCTime -$ (fromInteger 0)
         <$> fromGregorian y m
-        <$> Set.toAscList days
+        <$> fromWord32 days
     in fromMaybe Empty $ find (within -$ dt) intervals
 
   intersects self w = not $ null $ intervals self w
   intervals = undefined
 
+  invert self = DateSet $ Monthly $ complement self.m
+
+fromWord32 :: Word32 -> [DayOfMonth]
+fromWord32 days = filter (testBit days) [1..31]
+
+toWord32 :: Set DayOfMonth -> Word32
+toWord32 days = foldl insert_ 0 days
+  where
+    insert_ x dom = setBit x $ fromEnum dom
+
 monthly :: Map MonthOfYear (Set DayOfMonth) -> DateSet
-monthly = DateSet . Monthly
+monthly months = DateSet $ Monthly $ Map.map toWord32 months
 
 -------------------------------------------------------------------------------
 
@@ -260,11 +294,12 @@ monthly = DateSet . Monthly
 data NthWeekday = NthWeekday {
   n :: Int,
   weekday :: DayOfWeek,
-  month :: Maybe DayOfMonth
+  month :: Maybe DayOfMonth,
+  inverted :: Bool
 } deriving Show
 
 instance IDateSet NthWeekday where
-  largestIntervalContaining (NthWeekday n wd m) dt@(UTCTime d _) =
+  largestIntervalContaining (NthWeekday n wd m False) dt@(UTCTime d _) =
     if dayOfWeek d == wd
     then
       let
@@ -275,6 +310,24 @@ instance IDateSet NthWeekday where
          then Interval.fromDate dt Nothing
          else Empty
     else Empty
+
+  largestIntervalContaining (NthWeekday n wd m True) dt@(UTCTime d _) =
+    let
+      (year, month, day) = toGregorian d
+      month' = fromMaybe month m
+      month'' = YearMonth year month'
+      first = periodFirstDay month''
+      last = periodLastDay month''
+      nd = _nthWeekday (toInteger n) wd month' year
+      mn = fromInteger 0
+    in case compare d nd of
+      LT -> Closed
+       (UTCTime first    mn)
+       (UTCTime (pred d) mn)
+      EQ -> Empty
+      GT -> Closed
+       (UTCTime (succ d) mn)
+       (UTCTime last     mn)
 
   intersects self w = not $ null $ intervals self w
   intervals = undefined
@@ -302,7 +355,7 @@ _nthWeekday n weekday month year
 _nthWeekday _ _ _ _ = error "N cannot be 0"
 
 nthWeekday :: Int -> DayOfWeek -> Maybe DayOfMonth -> DateSet
-nthWeekday n d m = DateSet $ NthWeekday n d m
+nthWeekday n d m = DateSet $ NthWeekday n d m False
 
 -------------------------------------------------------------------------------
 
@@ -318,6 +371,8 @@ instance IDateSet Shift where
 
   intersects self w = not $ null $ intervals self w
   intervals = undefined
+
+  invert self = shift self.offset $ invert self.subset
 
 shift :: TimeDelta -> DateSet -> DateSet
 shift td ds = DateSet $ Shift td ds

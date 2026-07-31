@@ -3498,6 +3498,7 @@ function compile {
     local -r binary="${GTD_DIR}/components/${component}"
 
     ghc \
+        --make \
         -XGHC2021 \
         -Wall \
         -Wno-name-shadowing \
