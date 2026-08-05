@@ -10,6 +10,7 @@
 module DateSet (
   DateSet,
   IDateSet(..),
+  _intervals,
   finite,
   explicit,
   union,
@@ -24,15 +25,16 @@ module DateSet (
   isComplete,
 ) where
 
-import Data.Bits (testBit, setBit, complement)
+import qualified Data.Bits as Bits
 import Data.Fixed
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Set (Set, (\\))
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Word
+-- import Debug.Trace(trace)
 
 import Data.Time.Clock
 import Data.Time.Calendar
@@ -43,8 +45,11 @@ import Util
 import Interval (
   IWithin(..),
   Interval(..),
+  TimePeriod(..),
   DateTime,
-  TimeDelta, (|+), (|-), (|-|))
+  TimeDelta,
+  (|+), (|-), (|-|),
+  toInterval)
 import qualified Interval as Interval
 
 -- | The methods that are supported by DateSet
@@ -55,15 +60,24 @@ class Show a => IDateSet a where
 
   -- | True if window interesects any interval within the dateset.
   intersects :: a -> Interval -> Bool
+  intersects self w  = case w of
+    Empty -> False
+    Closed s e -> not $ null $ intervals self $ TimePeriod s e
+    _ -> True
 
   -- | Return the largest interval in the dateset containing the given time.
   largestIntervalContaining :: a -> DateTime -> Interval
 
   -- | Return an ordered sequence of intervals which intersect
-  intervals :: a -> Interval -> [Interval]
+  intervals :: a -> TimePeriod -> [Interval]
+  intervals = _intervals
 
   -- | Return the inverted equivalent of the given interval
   invert :: a -> DateSet
+
+  -- | A hint to the scheduler about how often to sample
+  _dur :: a -> TimeDelta
+  _dur _ = 1 * Interval.minute
 
 -- | Represents when an event can happen.
 --
@@ -84,7 +98,6 @@ instance IDateSet DateSet where
   intersects (DateSet ds) w = intersects ds w
   span (DateSet ds) = DateSet.span ds
   largestIntervalContaining (DateSet ds) = largestIntervalContaining ds
-  intervals (DateSet ds) = intervals ds
   invert (DateSet ds) = invert ds
 
 instance IWithin DateSet where
@@ -96,6 +109,18 @@ instance IWithin DateSet where
 finite :: DateSet -> Bool
 finite (DateSet ds) = Interval.finite $ DateSet.span ds
 
+_intervals :: IDateSet a => a -> TimePeriod -> [Interval]
+_intervals self (TimePeriod s e) = Interval.mergeConsecutive $ go s []
+  where
+    dur = _dur self
+    go i ret | i < e = case largestIntervalContaining self i of
+      Empty       -> go (i |+ dur) ret
+      Open        -> [Open]
+      LeftOpen  e -> [LeftOpen e]
+      RightOpen s -> (RightOpen s) : ret
+      Closed  s e -> go (e |+ dur) $ (Closed s e) : ret
+    go _ ret = reverse ret
+
 -- | Yield tuples of `(intervals, completed)`.
 --
 -- A single timestamp within an interval is considered a "completion
@@ -105,13 +130,13 @@ finite (DateSet ds) = Interval.finite $ DateSet.span ds
 -- timestamps outside of a completion window.
 --
 -- `window` is treated the same as in `intervals`.
-completions :: DateSet -> [DateTime] -> Interval -> [(Interval, Bool)]
-completions self history window = completed <$> intervals self window
+completions :: DateSet -> [DateTime] -> TimePeriod -> [(Interval, Bool)]
+completions self history window = completed <$> _intervals self window
   where
     completed i = (i, any (within i) history)
 
 -- | True if all intervals within the window have a completion event.
-isComplete :: DateSet -> [DateTime] -> Interval -> Bool
+isComplete :: DateSet -> [DateTime] -> TimePeriod -> Bool
 isComplete self history window = go window
   where
     go window = all snd $ completions self history window
@@ -128,7 +153,7 @@ instance IDateSet Explicit where
     fromMaybe Empty $ find (within -$ dt) intervals
 
   intervals (Explicit intervals) w =
-    filter (Interval.intersects w) $ Set.toAscList intervals
+    filter (Interval.intersects $ toInterval w) $ Set.toAscList intervals
 
   invert (Explicit intervals) = explicit $ go $ Set.toAscList intervals
     where
@@ -155,7 +180,7 @@ instance IDateSet Union where
   span (Union subsets)        = foldl unSpan  Empty subsets
     where unSpan ret s = Interval.span (DateSet.span s) ret
 
-  intervals = undefined
+  _dur (Union subsets) = foldl min Interval.day $ _dur <$> subsets
 
 union :: [DateSet] -> DateSet
 union = DateSet . Union
@@ -181,7 +206,7 @@ instance IDateSet Intersection where
   largestIntervalContaining (Intersection subsets) dt = foldl go Open $ subsets
     where go acc i = Interval.intersection acc (largestIntervalContaining i dt)
 
-  intervals = undefined
+  _dur (Intersection subsets) = foldl min Interval.day $ _dur <$> subsets
 
 intersection :: [DateSet] -> DateSet
 intersection = DateSet . Intersection
@@ -205,8 +230,10 @@ instance IDateSet Periodic where
        then Closed start end
        else Empty
 
-  intersects self w  = not $ null $ intervals self w
-  intervals = undefined
+  intersects self w  = case w of
+    Empty -> False
+    Closed s e -> not $ null $ intervals self $ TimePeriod s e
+    _ -> True
 
   -- XXX:
   -- swaps phase and duration, keeping period the same.
@@ -214,6 +241,8 @@ instance IDateSet Periodic where
   --
   -- good case for a property test
   invert self = periodic self.period self.phase $ Just self.duration
+
+  _dur self = min self.phase $ self.duration - self.phase
 
 -- | A DateSet which repeats over a fixed period, for the given
 -- duration, offset by an optional phase.
@@ -237,22 +266,22 @@ data Weekly = Weekly {
 
 instance IDateSet Weekly where
   largestIntervalContaining self dt =
-    if testBit self.which $ fromEnum $ (dayOfWeek dt.utctDay)
+    if Bits.testBit self.which $ fromEnum $ (dayOfWeek dt.utctDay)
       then Interval.fromDate dt Nothing
       else Empty
 
-  intersects self w = not $ null $ intervals self w
-  intervals = undefined
+  invert self = DateSet $ Weekly $ Bits.complement self.which
 
-  invert self = DateSet $ Weekly $ complement self.which
+  _dur _ = Interval.day
 
 toWord8 :: Set DayOfWeek -> Word8
 toWord8 days = foldl insert_ 0 days
   where
-    insert_ x wd = setBit x $ fromEnum wd
+    insert_ x wd = Bits.setBit x $ fromEnum wd
 
 weekly :: Set DayOfWeek -> DateSet
 weekly = DateSet . Weekly . toWord8
+
 -------------------------------------------------------------------------------
 
 -- | A DateSet representing a monthly pattern.
@@ -272,18 +301,17 @@ instance IDateSet Monthly where
         <$> fromWord32 days
     in fromMaybe Empty $ find (within -$ dt) intervals
 
-  intersects self w = not $ null $ intervals self w
-  intervals = undefined
+  invert self = DateSet $ Monthly $ Map.map Bits.complement self.months
 
-  invert self = DateSet $ Monthly $ complement self.m
+  _dur _ = Interval.day
 
 fromWord32 :: Word32 -> [DayOfMonth]
-fromWord32 days = filter (testBit days) [1..31]
+fromWord32 days = filter (Bits.testBit days) [1..31]
 
 toWord32 :: Set DayOfMonth -> Word32
 toWord32 days = foldl insert_ 0 days
   where
-    insert_ x dom = setBit x $ fromEnum dom
+    insert_ x dom = Bits.setBit x $ fromEnum dom
 
 monthly :: Map MonthOfYear (Set DayOfMonth) -> DateSet
 monthly months = DateSet $ Monthly $ Map.map toWord32 months
@@ -303,7 +331,7 @@ instance IDateSet NthWeekday where
     if dayOfWeek d == wd
     then
       let
-        (year, month, day) = toGregorian d
+        (year, month, _) = toGregorian d
         month' = fromMaybe month m
         nd = _nthWeekday (toInteger n) wd month' year
       in if d == nd
@@ -311,9 +339,9 @@ instance IDateSet NthWeekday where
          else Empty
     else Empty
 
-  largestIntervalContaining (NthWeekday n wd m True) dt@(UTCTime d _) =
+  largestIntervalContaining (NthWeekday n wd m True) (UTCTime d _) =
     let
-      (year, month, day) = toGregorian d
+      (year, month, _) = toGregorian d
       month' = fromMaybe month m
       month'' = YearMonth year month'
       first = periodFirstDay month''
@@ -329,8 +357,9 @@ instance IDateSet NthWeekday where
        (UTCTime (succ d) mn)
        (UTCTime last     mn)
 
-  intersects self w = not $ null $ intervals self w
-  intervals = undefined
+  invert self = DateSet $ self {inverted = not self.inverted}
+
+  _dur _ = Interval.day
 
 firstWeekday :: DayOfWeek -> Month -> Day
 firstWeekday d m = go $ periodFirstDay m
@@ -368,9 +397,6 @@ data Shift = Shift {
 instance IDateSet Shift where
   largestIntervalContaining self dt =
     largestIntervalContaining self.subset $ (dt |- self.offset) |+ self.offset
-
-  intersects self w = not $ null $ intervals self w
-  intervals = undefined
 
   invert self = shift self.offset $ invert self.subset
 

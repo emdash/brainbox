@@ -17,6 +17,8 @@ module Interval (
   DateTime,
   TimeDelta,
   IWithin(..),
+  TimePeriod(..),
+  toInterval,
   Interval.span,
   second,
   minute,
@@ -48,6 +50,8 @@ module Interval (
   sequenceMonths,
 ) where
 
+
+import Prelude hiding (sequence)
 import Data.Maybe
 
 import Data.Time.Clock
@@ -56,6 +60,8 @@ import Data.Time.Calendar
 import Data.Tuple.Utils
 
 import Util
+
+-------------------------------------------------------------------------------
 
 type DateTime = UTCTime
 type TimeDelta = NominalDiffTime
@@ -135,6 +141,32 @@ origin =  UTCTime (fromOrdinalDate 1 1) 0
 
 class IWithin a where
   within :: a -> DateTime -> Bool
+
+-------------------------------------------------------------------------------
+
+-- | A closed interval
+data TimePeriod = TimePeriod DateTime DateTime deriving (Eq, Ord, Show)
+
+instance IWithin TimePeriod where
+  within (TimePeriod s e) x = between s x e
+
+toInterval :: TimePeriod -> Interval
+toInterval (TimePeriod s e) = Closed s e
+
+fromInterval :: Interval -> Maybe TimePeriod
+fromInterval (Closed s e) = Just $ TimePeriod s e
+fromInterval _            = Nothing
+
+sequence
+  :: DateTime
+  -> DateTime
+  -> TimeDelta
+  -> [DateTime]
+sequence i end dur
+  | i <= end = i : sequence (i |+ dur) end dur
+sequence _ _ _ = []
+
+-------------------------------------------------------------------------------
 
 -- | The time between two timestamps, or a start timestamp and duration.
 data Interval
@@ -281,25 +313,6 @@ finite :: Interval -> Bool
 finite Empty = True
 finite (Closed _ _) = True
 finite _ = False
-
-sequence
-  :: Interval
-  -> TimeDelta
-  -> Maybe TimeDelta
-  -> Maybe TimeDelta
-  -> [Interval]
-sequence Empty         _ _   _    = []
-sequence Open          _ _   _    = error "Infinite"
-sequence (LeftOpen  _) _ _   _    = error "Infinite"
-sequence (RightOpen _) _ _   _    = error "Infinite"
-sequence (Closed s  e) duration per phas = go (s |+ phase)
-  where
-    period = fromMaybe duration per
-    phase  = fromMaybe (fromInteger 0) phas
-    go i =
-      if i < e
-      then (fromStartDuration i duration) : (go $ i |+ period)
-      else []
 
 -- | Assuming the input is sorted, merges runs of interstecting
 -- intervals into a single interval.
