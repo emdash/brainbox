@@ -19,6 +19,7 @@ module Interval (
   IWithin(..),
   TimePeriod(..),
   toInterval,
+  fromInterval,
   Interval.span,
   second,
   minute,
@@ -26,11 +27,13 @@ module Interval (
   day,
   week,
   now,
+  fromDay,
   startOfDay,
   endOfDay,
   weekday,
   dayOfMonth,
   monthOfYear,
+  dayOfWeek,
   today,
   yesterday,
   tomorrow,
@@ -47,16 +50,18 @@ module Interval (
   finite,
   Interval.sequence,
   mergeConsecutive,
+  sequenceWeeks,
   sequenceMonths,
+  sequenceTime
 ) where
 
 
 import Prelude hiding (sequence)
-import Data.Maybe
 
 import Data.Time.Clock
-import Data.Time.Calendar.OrdinalDate
 import Data.Time.Calendar
+import Data.Time.Calendar.Month
+import Data.Time.Calendar.OrdinalDate
 import Data.Tuple.Utils
 
 import Util
@@ -108,8 +113,11 @@ week = day * 7
 now :: IO DateTime
 now = getCurrentTime
 
+fromDay :: Day -> DateTime
+fromDay d = UTCTime d (fromInteger 0)
+
 startOfDay :: DateTime -> DateTime
-startOfDay (UTCTime day _) = UTCTime day (fromInteger 0)
+startOfDay (UTCTime day _) = fromDay day
 
 endOfDay :: DateTime -> DateTime
 endOfDay day = startOfDay day |+ nominalDay
@@ -330,20 +338,22 @@ mergeConsecutive (x : xs) = go x xs
         RightOpen _ -> [next]
         _     -> next : (go i rest)
 
-sequenceMonths :: Interval -> [MonthOfYear]
-sequenceMonths Empty = []
-sequenceMonths Open  = error "Infinite interval no beginning."
-sequenceMonths (LeftOpen _) = error "Infinite interval with no beginning."
-sequenceMonths (RightOpen (UTCTime s _)) =
-  let (_, month, _) = toGregorian s
-  in go month
-     where
-       go m = m : (go (m + 1))
-sequenceMonths (Closed (UTCTime s _) (UTCTime e _)) = go start
+sequenceMonths :: TimePeriod -> [Month]
+sequenceMonths (TimePeriod (UTCTime s _) (UTCTime e _)) = go start
   where
-    start = let (_, start, _) = toGregorian s in start
-    end   = let (_, end,   _) = toGregorian e in end
+    start = let (y, m, _) = toGregorian s in YearMonth y m
+    end   = let (y, m, _) = toGregorian e in YearMonth y m
     go m  =
       if m <= end
-      then m : (go (m + 1))
+      then m : (go (succ m))
       else []
+
+sequenceWeeks :: TimePeriod -> [[Day]]
+sequenceWeeks (TimePeriod (UTCTime s _) (UTCTime e _)) = go $ weekFirstDay Sunday s
+  where
+    go d | d <= e = (weekAllDays Sunday d) : go (addDays 7 d)
+    go _ = []
+
+sequenceTime :: TimeDelta -> TimeDelta -> TimeDelta -> [TimeDelta]
+sequenceTime i end step | i < end = i : sequenceTime (i + step) end step
+sequenceTime _ _ _ = []

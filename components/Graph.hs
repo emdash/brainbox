@@ -39,6 +39,7 @@ module Brainbox.Graph where
 
 -- local imports
 import Util
+import Scheduler
 
 -- 3rd party
 import Pipes
@@ -827,6 +828,13 @@ data Cmd
   -- | An error messge to be printe to stderr, with failing exit status.
   | Error  String
 
+
+-- | Iterate over each line in stdin
+forLines :: Handle -> (String -> IO ()) -> IO ()
+forLines h f = do
+  encoded <- hGetContents h
+  for_ (lines encoded) f
+
 -- | Determine which command to run based on argv.
 dispatch :: Env -> [String] -> Cmd
 dispatch env = impl
@@ -848,6 +856,9 @@ dispatch env = impl
     impl ("dot" : rest)       = Eff $ printDot rest
     impl ["summary"]          = Eff $ printSummary env Nothing
     impl ["summary", "-d", d] = Eff $ printSummary env $ Just d
+    -- scheduler commands
+    impl ["validate"]         = Eff $ forLines stdin validateDS
+    impl ["preview", m, w]    = Eff $ forLines stdin $ preview m w
     impl bad                  = Error $ "not implemented: " ++ unwords bad
 
     handleAdjacent e d = case parseEdgeSet e of

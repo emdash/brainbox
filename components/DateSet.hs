@@ -11,6 +11,7 @@ module DateSet (
   DateSet,
   IDateSet(..),
   _intervals,
+  within,
   finite,
   explicit,
   union,

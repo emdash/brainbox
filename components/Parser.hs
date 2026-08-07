@@ -30,7 +30,7 @@ import Control.Monad
 import Data.Time.Clock
 import Data.Time.Calendar.OrdinalDate
 import Data.Time.Calendar
-import Data.Time.Format.ISO8601
+--import Data.Time.Format.ISO8601
 import Data.Time.LocalTime
 import Text.Parse
 
@@ -46,10 +46,11 @@ parseDuration = do
   unit  <- oneOf (literal <$> ["w", "d", "h", "m", "s"])
   let q = fromInteger quant
   case unit of
+    "w"   -> return $ q * Interval.week
     "d"   -> return $ q * Interval.day
     "h"   -> return $ q * Interval.hour
     "m"   -> return $ q * Interval.minute
-    "w"   -> return $ q * Interval.week
+    "s"   -> return $ q * Interval.second
     _     -> failBad "Invalid Unit"
 
 parseTimeOfDay :: TextParser TimeOfDay

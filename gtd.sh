@@ -3517,8 +3517,7 @@ function compile {
 # dependencies must be installed on the system, in F43 has worked
 # OOTB, so there's no need to have stack, cabal or any other tool in the mix.
 function rebuild {
-    compile graph     Graph
-    compile scheduler Scheduler
+    compile graph Graph
 }
 
 function hshell {
