@@ -8,11 +8,13 @@
 
 module Scheduler (
   validateDS,
-  preview
+  preview,
+  completionGraph
 ) where
 
 import Control.Monad
 import Data.Foldable
+import Data.Functor
 import System.IO
 import System.Environment
 import Debug.Trace(trace)
@@ -118,10 +120,9 @@ preview mode window expr =
     "month" -> previewMonth expr' w
     "week"  -> previewWeek  expr' w
 
-completionGraph :: DateSet -> [DateTime] -> TimePeriod -> IO ()
+completionGraph :: DateSet -> [DateTime] -> TimePeriod -> String
 completionGraph self history window = do
-  for_ (completions self history window) $ \(i, complete) ->
+  (completions self history window) <&> \(i, complete) ->
     if complete
-      then putStr "|"
-      else putStr "."
-  putStrLn ""
+      then '|'
+      else '.'

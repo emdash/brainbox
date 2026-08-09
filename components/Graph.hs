@@ -38,24 +38,32 @@
 module Brainbox.Graph where
 
 -- local imports
-import Util
+import Interval qualified as I
+import DateSet qualified as DS
+import JSONParser qualified as JP
+import Parser qualified as Pa
 import Scheduler
+import Util
 
 -- 3rd party
-import Pipes
-import qualified Pipes.Prelude as P
 import Data.List.Split
-import Data.String.Utils
+import Data.Either.Extra
 import Data.Foldable.Extra
-import Data.List.Extra (upper)
 import Data.GraphViz.Types.Monadic
 import Data.GraphViz.Attributes
-import qualified Data.GraphViz.Attributes.Complete as C
-import qualified Data.GraphViz.Attributes.Colors as Colors
+import Data.GraphViz.Attributes.Complete qualified as C
+import Data.GraphViz.Attributes.Colors qualified as Colors
+import Data.List.Extra (upper)
 import Data.GraphViz.Parsing
+import Pipes
+import Pipes.Prelude qualified as P
 import Data.GraphViz.Printing
-import qualified Data.Text.Lazy as T
-import qualified Data.Text.Lazy.IO as TIO
+import Data.String.Utils
+import Data.Text.Lazy qualified as T
+import Data.Text.Lazy.IO qualified as TIO
+import Data.Time.Format
+import Data.Time.Format.ISO8601
+import Text.Parse qualified as TP
 
 -- standard lib imports
 import Control.Monad
@@ -811,6 +819,20 @@ render env selection =
               _         -> False
       return $ Map.insert i (ND {..}) data'
 
+-------------------------------------------------------------------------------
+
+-- | Get the task schedule if it exists
+-- XXX: would prefer either here so I could get error messges
+taskSchedule :: Env -> Id -> IO (Maybe DS.DateSet)
+taskSchedule = withFirstLine (eitherToMaybe . JP.fromString) (Datum "schedule")
+
+-- | Get the task completion history if it exists
+taskHistory :: Env -> Id -> IO [I.DateTime]
+taskHistory env id =
+  P.toListM $ readDatum env (Datum "completed") id >-> P.mapM (Pa.run Pa.parseDateTime)
+
+-------------------------------------------------------------------------------
+
 -- | Result of dispatching on command arguments.
 --
 -- Limit the number of cases we need to handle in top-level main.
@@ -857,6 +879,7 @@ dispatch env = impl
     impl ["summary"]          = Eff $ printSummary env Nothing
     impl ["summary", "-d", d] = Eff $ printSummary env $ Just d
     -- scheduler commands
+    impl ["completed", w]     = completed env w
     impl ["validate"]         = Eff $ forLines stdin validateDS
     impl ["preview", m, w]    = Eff $ forLines stdin $ preview m w
     impl bad                  = Error $ "not implemented: " ++ unwords bad
@@ -900,6 +923,16 @@ dispatch env = impl
         selection' = Set.fromList $ Id <$> selection
         output True  = render @INode env selection'
         output False = render @Id    env selection'
+
+    completed :: Env -> String -> Cmd
+    completed env window = case TP.runParser Pa.parseTimePeriod window of
+      (Left err, _) -> Error  $ "Invalid time period: " ++ err
+      (Right w,  _) -> Eff $ runEffect $ for (readIds stdin) $ \id -> do
+        sched <- lift $ taskSchedule env id
+        hist  <- lift $ taskHistory  env id
+        case sched of
+          Nothing -> pure ()
+          Just sched -> lift $ putStrLn $ completionGraph sched hist w
 
 -- | Abstract common code for streams of nodes.
 runStream :: Producer Id IO () -> IO ()

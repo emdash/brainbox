@@ -20,7 +20,8 @@ module Parser (
   parseISODate,
   parseDateTime,
   parseTimePeriod,
-  parseDuration
+  parseDuration,
+  run
 ) where
 
 import Control.Monad
@@ -117,14 +118,30 @@ parseISODate = do
 parseDateTime :: TextParser DateTime
 parseDateTime = do
   date <- parseISODate
-  time <- onFail tryParseTime (return midnight)
-  return $ UTCTime date (timeOfDayToTime time)
+  (adj, time) <- onFail tryParseTime (return (0, midnight))
+  return $ UTCTime (addDays adj date) (timeOfDayToTime time)
     where
+      tryParseTZ = do
+        intro <- oneOf $ literal <$> ["-", "+", "Z"]
+        zz <- sepBy1 parseDec (literal ":")
+        case intro of
+          "Z" -> return utc
+          "+" -> do
+            case zz of
+              [h]    -> return  $ hoursToTimeZone h
+              [h, m] -> return  $ TimeZone (h * 60 + m) False ""
+              _      -> failBad $ "invalid tz"
+          "-" -> do
+            case zz of
+              [h]    -> return $ hoursToTimeZone (-h)
+              [h, m] -> return $ TimeZone (-(h * 60 + m)) False ""
+              _      -> failBad $ "invalid tz"
+
       tryParseTime = do
         _ <- literal "T"
         time <- parseTimeOfDay
-        _ <- optional $ literal "Z"
-        return time
+        tz <- onFail tryParseTZ (return utc)
+        return $ localToUTCTimeOfDay tz time
 
 parseXY :: TextParser a -> TextParser b -> TextParser (Either a b)
 parseXY x y = onFail (Left <$> x) (Right <$> y)
@@ -153,3 +170,8 @@ parseDays = oneOf [dayRange, dayList]
       days <- sepBy1 parseDay (literal ",")
       return $ Explicit $ Set.fromList days
 -}
+
+run :: (Monad m, MonadFail m) => TextParser a -> String -> m a
+run parser input = case runParser parser input of
+  (Left err, _) -> fail err
+  (Right val, _) -> return val
