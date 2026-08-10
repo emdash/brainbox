@@ -39,6 +39,7 @@ module Brainbox.Graph where
 
 -- local imports
 import Interval qualified as I
+import Interval((|-))
 import DateSet qualified as DS
 import JSONParser qualified as JP
 import Parser qualified as Pa
@@ -61,6 +62,7 @@ import Data.GraphViz.Printing
 import Data.String.Utils
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.IO qualified as TIO
+import Data.Time.Clock
 
 -- standard lib imports
 import Control.Monad
@@ -87,7 +89,8 @@ data Env = Env {
   show_virtual  :: Bool,
   show_subtasks :: Bool,
   show_deps     :: Bool,
-  debug_edges   :: Bool
+  debug_edges   :: Bool,
+  now           :: I.DateTime
 }
 
 -- | A node datum identifier.
@@ -234,6 +237,7 @@ getEnvState = do
   show_virtual  <- getEnvBool "GTD_GRAPH_SHOW_VIRTUAL"  True
   show_subtasks <- getEnvBool "GTD_GRAPH_SHOW_SUBTASKS" True
   debug_edges   <- getEnvBool "GTD_GRAPH_DEBUG_EDGES"   False
+  now           <- getCurrentTime
   return Env{..}
 
 -- | True if the given node Id has the given datum
@@ -847,7 +851,6 @@ data Cmd
   -- | An error messge to be printe to stderr, with failing exit status.
   | Error  String
 
-
 -- | Iterate over each line in stdin
 forLines :: Handle -> (String -> IO ()) -> IO ()
 forLines h f = do
@@ -876,9 +879,12 @@ dispatch env = impl
     impl ["summary"]          = Eff $ printSummary env Nothing
     impl ["summary", "-d", d] = Eff $ printSummary env $ Just d
     -- scheduler commands
-    impl ["completed", w]     = completed env w
     impl ["validate"]         = Eff $ forLines stdin validateDS
-    impl ["preview", m, w]    = Eff $ forLines stdin $ preview m w
+    impl ("completed" : rest) = completed env $ windowArgs env.now rest
+    impl ("preview" : m : w)  = case  (windowArgs env.now w) of
+                                  Left err -> Error err
+                                  Right w -> Eff $ forLines stdin $ preview m w
+    -- default
     impl bad                  = Error $ "not implemented: " ++ unwords bad
 
     handleAdjacent e d = case parseEdgeSet e of
@@ -921,8 +927,8 @@ dispatch env = impl
         output True  = render @INode env selection'
         output False = render @Id    env selection'
 
-    completed :: Env -> String -> Cmd
-    completed env window = case Pa.run Pa.parseTimePeriod window of
+    completed :: Env -> Either String I.TimePeriod -> Cmd
+    completed env window = case window of
       Left err -> Error  $ "Invalid time period: " ++ err
       Right w -> Eff $ runEffect $ for (readIds stdin) $ \id -> do
         sched <- lift $ taskSchedule env id

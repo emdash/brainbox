@@ -9,7 +9,8 @@
 module Scheduler (
   validateDS,
   preview,
-  completionGraph
+  completionGraph,
+  windowArgs
 ) where
 
 -- import Control.Monad
@@ -25,10 +26,27 @@ import Data.Tuple.Utils
 import Data.Time.Format
 
 import DateSet
-import Interval qualified as Interval
-import Interval(DateTime, TimePeriod(..), (|+))
+import Interval qualified as I
+import Interval(DateTime, TimePeriod(..), (|+), (|-))
 import JSONParser qualified as JP
 import Parser
+import Util
+
+-- | Parse a list of strings into a TimePeriod, taking into account current time.
+windowArgs :: I.DateTime -> [String] -> Either String I.TimePeriod
+windowArgs now []                = return $ I.TimePeriod (I.startOfDay now) (I.endOfDay now)
+windowArgs now ["until", end]    = I.TimePeriod now <$> run parseDateTime end
+windowArgs now ["past",  "week"] = return $ I.TimePeriod (now |- 14 * I.day) now
+windowArgs now ["past", "month"] = return $ I.TimePeriod (I.prevMonth now) now
+windowArgs now ["past", dt]      = I.TimePeriod -$ now <$> run parseDateTime dt
+windowArgs now ["this", "week"]  = return $ I.TimePeriod (I.startOfWeek now) (I.endOfWeek now)
+windowArgs now ["this", "month"] = return $ I.TimePeriod (I.startOfMonth now) (I.endOfMonth now)
+windowArgs now ["since", dt]     = I.TimePeriod -$ now <$> run parseDateTime dt
+windowArgs _ [start, end]      =
+  pure I.TimePeriod <*> run parseDateTime start <*> run parseDateTime end
+windowArgs _ [start, "-", end] =
+  pure I.TimePeriod <*> run parseDateTime start <*> run parseDateTime end
+windowArgs _ args = Left $ "Invalid Time Window: " ++ show args
 
 validateDS :: String -> IO ()
 validateDS encoded = case JP.fromString encoded of
@@ -65,7 +83,7 @@ formatDay d =
 
 printDay :: DateSet -> Day -> IO ()
 printDay ds day = do
-  if DateSet.within ds (Interval.fromDay day)
+  if DateSet.within ds (I.fromDay day)
     then putStr $ reverseVideo $ formatDay day
     else putStr $ formatDay day
   case dayOfWeek day of
@@ -73,7 +91,7 @@ printDay ds day = do
     _      -> putStr " "
 
 previewMonth :: DateSet -> TimePeriod -> IO ()
-previewMonth ds w = for_ (Interval.sequenceMonths w) $ \month -> do
+previewMonth ds w = for_ (I.sequenceMonths w) $ \month -> do
   let (YearMonth y m) = month
   let (first : days) = periodAllDays month
   putStrLn $ showMonth m ++ " " ++ show y
@@ -85,27 +103,26 @@ previewMonth ds w = for_ (Interval.sequenceMonths w) $ \month -> do
 
 previewWeek :: DateSet -> TimePeriod -> IO ()
 previewWeek ds w = do
-  for_ (Interval.sequenceWeeks w) $ \week -> do
+  for_ (I.sequenceWeeks w) $ \week -> do
     putStrLn $ formatTime defaultTimeLocale "%Y-%m-%d" (head week)
     putStrLn "      | Su | Mo | Tu | We | Th | Fr | Sa"
-    for_ (Interval.sequenceTime
-          (Interval.hour *  8)
-          (Interval.hour * 23)
-          (Interval.minute * 30)) $ \time -> do
+    for_ (I.sequenceTime
+          (I.hour *  8)
+          (I.hour * 23)
+          (I.minute * 30)) $ \time -> do
       putStr $ formatTime defaultTimeLocale "%0H:%0M" time ++ " "
       for_ week $ \day -> do
-        if DateSet.within ds $ (Interval.fromDay day) |+ time
+        if DateSet.within ds $ (I.fromDay day) |+ time
           then putStr $ "|" ++ reverseVideo "    "
           else putStr   "|    "
       putStrLn ""
     putStrLn ""
 
-preview :: String -> String -> String -> IO ()
-preview mode window expr =
+preview :: String -> TimePeriod -> String -> IO ()
+preview mode w expr =
   let expr' = case JP.fromString expr of
         Left err -> error err
         Right e -> e
-      w = fromRight' $ Parser.run parseTimePeriod window
   in case mode of
     "list"  -> for_ (intervals expr' w) $ putStrLn . show
     "month" -> previewMonth expr' w

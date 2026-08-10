@@ -31,6 +31,12 @@ module Interval (
   startOfDay,
   endOfDay,
   weekday,
+  nextMonth,
+  prevMonth,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
   dayOfMonth,
   monthOfYear,
   dayOfWeek,
@@ -62,6 +68,7 @@ import Data.Time.Clock
 import Data.Time.Calendar
 import Data.Time.Calendar.Month
 import Data.Time.Calendar.OrdinalDate
+import Data.Time.Calendar.WeekDate
 import Data.Tuple.Utils
 
 import Util
@@ -137,6 +144,41 @@ tomorrow = do
 
 origin :: DateTime
 origin =  UTCTime (fromOrdinalDate 1 1) 0
+
+prevMonth :: DateTime -> DateTime
+prevMonth (UTCTime day time) =
+  let (y, m, d) = toGregorian day
+  in case pred m of
+    December -> UTCTime (fromGregorian (pred y) December d) time
+    m        -> UTCTime (fromGregorian y m d) time
+
+nextMonth :: DateTime -> DateTime
+nextMonth (UTCTime day time) =
+  let (y, m, d) = toGregorian day
+  in case succ m of
+    January -> UTCTime (fromGregorian (succ y) January d) time
+    m       -> UTCTime (fromGregorian y m d) time
+
+startOfWeek :: DateTime -> DateTime
+startOfWeek (UTCTime day _) =
+  let (y, w, _) = toWeekDate day
+  in (UTCTime (fromWeekDate y w 0) (fromInteger 0))
+
+endOfWeek :: DateTime -> DateTime
+endOfWeek (UTCTime day _ ) =
+  let (y, w, _) = toWeekDate day
+  in (UTCTime (fromWeekDate y w 6) (fromInteger 0))
+
+startOfMonth :: DateTime -> DateTime
+startOfMonth (UTCTime day _) =
+  let (y, m, d) = toGregorian day
+  in UTCTime (fromGregorian y m 1) (fromInteger 0)
+
+endOfMonth :: DateTime -> DateTime
+endOfMonth (UTCTime day _) =
+  let (y, m, _) = toGregorian day
+      month     = YearMonth y m
+  in UTCTime (periodFirstDay (succ month)) (fromInteger 0) |- second
 
 -- These terms differ from their common mathematical meaning, but they
 -- make sense to me. Stick with these for the ease of porting from
