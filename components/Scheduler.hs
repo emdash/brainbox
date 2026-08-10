@@ -28,9 +28,9 @@ import Data.Tuple.Utils
 import Data.Time.Format
 
 import DateSet
-import qualified Interval as Interval
-import Interval(DateTime, Interval(..), TimePeriod(..), (|+))
-import qualified JSONParser as JP
+import Interval qualified as Interval
+import Interval(DateTime, TimePeriod(..), (|+))
+import JSONParser qualified as JP
 import Parser
 
 validateDS :: String -> IO ()

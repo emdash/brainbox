@@ -26,14 +26,14 @@ module DateSet (
   isComplete,
 ) where
 
-import qualified Data.Bits as Bits
+import Data.Bits qualified as Bits
 import Data.Fixed
 import Data.Foldable
 import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Maybe
 import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.Word
 -- import Debug.Trace(trace)
 
@@ -51,7 +51,7 @@ import Interval (
   TimeDelta,
   (|+), (|-), (|-|),
   toInterval)
-import qualified Interval as Interval
+import Interval qualified as Interval
 
 -- | The methods that are supported by DateSet
 class Show a => IDateSet a where

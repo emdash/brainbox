@@ -20,19 +20,18 @@ module JSONParser (
 
 import Data.Ratio
 import Text.JSON
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.Time.Clock
 import Data.Time.Calendar
 import Data.Time.Format.ISO8601
 import Data.Time.LocalTime
-import Text.Parse
 
 import Interval (DateTime, TimeDelta)
-import qualified Interval as Interval
+import Interval qualified as Interval
 import DateSet
-import qualified Parser
+import Parser qualified
 import Util()
 
 -- | A simpler JSON representation for easier pattern matching.
