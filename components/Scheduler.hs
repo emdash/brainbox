@@ -12,18 +12,15 @@ module Scheduler (
   completionGraph
 ) where
 
-import Control.Monad
+-- import Control.Monad
 import Data.Foldable
 import Data.Functor
 import System.IO
-import System.Environment
-import Debug.Trace(trace)
+--import Debug.Trace(trace)
 
 import Data.Either.Extra
-import Text.Parse
 import Data.Time.Calendar
 import Data.Time.Calendar.Month
-import Data.Time.Clock
 import Data.Tuple.Utils
 import Data.Time.Format
 
@@ -41,11 +38,6 @@ validateDS encoded = case JP.fromString encoded of
 pErr :: String -> IO ()
 pErr err = hPutStrLn stderr err
 
-fromFile :: String -> IO [DateSet]
-fromFile path = do
-  contents <- readFile path
-  return $ fromRight' <$> JP.fromString <$> lines contents
-
 reverseVideo :: String -> String
 reverseVideo s = "\x1b[7m" ++ s ++ "\x1b[m"
 
@@ -62,6 +54,7 @@ showMonth  9 = "September"
 showMonth 10 = "October"
 showMonth 11 = "November"
 showMonth 12 = "December"
+showMonth xx  = error $ "Month out of range: " ++ show xx
 
 formatDay :: Day -> String
 formatDay d =
@@ -117,10 +110,11 @@ preview mode window expr =
     "list"  -> for_ (intervals expr' w) $ putStrLn . show
     "month" -> previewMonth expr' w
     "week"  -> previewWeek  expr' w
+    bad     -> error $ "invalid mode" ++ bad
 
 completionGraph :: DateSet -> [DateTime] -> TimePeriod -> String
 completionGraph self history window = do
-  (completions self history window) <&> \(i, complete) ->
+  (completions self history window) <&> \(_, complete) ->
     if complete
       then '|'
       else '.'
