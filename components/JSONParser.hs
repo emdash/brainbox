@@ -33,6 +33,7 @@ import Interval (DateTime, TimeDelta)
 import qualified Interval as Interval
 import DateSet
 import qualified Parser
+import Util()
 
 -- | A simpler JSON representation for easier pattern matching.
 --
@@ -64,14 +65,10 @@ simplify (JSObject v) = O $ mapField <$> fromJSObject v
   where
     mapField (key, value) = (key, simplify value)
 
--- XXX: This is an orphan instance, but hey it seems to work.
-instance MonadFail (Either String) where
-  fail = Left
-
 -- | Parse a snippet of JSON into a time delta, using our custom
 -- notation and allowing for addition and subtraction of time intervals.
 parseDuration :: JExpr -> Either String TimeDelta
-parseDuration (S d) = fst $ runParser Parser.parseDuration d
+parseDuration (S d) = Parser.run Parser.parseDuration d
 parseDuration (A [S "+", a, b]) = do
   a <- parseDuration a
   b <- parseDuration b
@@ -87,7 +84,7 @@ parseDuration e     = Left $ "Invalid duration: " ++ show e
 -- XXX: Python weekdays set monday as 0, whereas the `time` package
 -- sets monday at 1. Watch out!!
 parseDay :: JExpr -> Either String DayOfWeek
-parseDay (S day) = fst $ runParser Parser.parseDay day
+parseDay (S day) = Parser.run Parser.parseDay day
 parseDay (I day) = if 0 <= day && day <= 6
                     then return $ toEnum $ mod (day + 1) 7
                     else Left $ "Invalid weekday: " ++ show day
@@ -95,7 +92,7 @@ parseDay err     = Left $ "Invalid weekday: " ++ show err
 
 -- | Parse a month abbreviation from a string.
 parseMonth :: JExpr -> Either String MonthOfYear
-parseMonth (S mon) = fst $ runParser Parser.parseMonth mon
+parseMonth (S mon) = Parser.run Parser.parseMonth mon
 parseMonth (I mon) = if 1 <= mon && mon <= 12
   then return $ mon
   else Left $ "Invalid month: " ++ show mon
@@ -105,14 +102,14 @@ parseDT :: JExpr -> Either String DateTime
 parseDT (S date) = case iso8601ParseM date of
   Left _ -> case iso8601ParseM date :: Either String Day of
     Right day -> Right $ UTCTime day (fromInteger 0)
-    Left _ -> fst $ runParser Parser.parseDateTime date
+    Left _ -> Parser.run Parser.parseDateTime date
   success -> success
 parseDT e = Left $ "Invalid datetime: " ++ show e
 
 parseTime :: JExpr -> Either String TimeOfDay
 parseTime (S time) = do
   case iso8601ParseM time of
-    Left _ -> fst $ runParser Parser.parseTimeOfDay time
+    Left _ -> Parser.run Parser.parseTimeOfDay time
     success -> success
 parseTime (I hour) = if 0 <= hour && hour <= 23
   then Right $ TimeOfDay hour 0 0

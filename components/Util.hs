@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Util (
   getEnvStr,
   getEnvBool,
@@ -8,6 +10,7 @@ module Util (
 ) where
 
 import Data.Maybe
+import Data.String
 import System.Environment
 
 pad :: Int -> Char -> String -> String
@@ -44,3 +47,7 @@ between lower x upper = lower <= x && x <= upper
 infixl 8 -$
 (-$) :: (a -> b -> c) -> b -> a -> c
 (-$) f = flip f
+
+-- XXX: This is an orphan instance, but hey it seems to work.
+instance IsString a => MonadFail (Either a) where
+  fail = Left . fromString

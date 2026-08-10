@@ -112,9 +112,7 @@ preview mode window expr =
   let expr' = case JP.fromString expr of
         Left err -> error err
         Right e -> e
-      w = case runParser parseTimePeriod window of
-        (Right w, _) -> w
-        _ -> error "invalid interval"
+      w = fromRight' $ Parser.run parseTimePeriod window
   in case mode of
     "list"  -> for_ (intervals expr' w) $ putStrLn . show
     "month" -> previewMonth expr' w

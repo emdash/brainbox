@@ -61,9 +61,6 @@ import Data.GraphViz.Printing
 import Data.String.Utils
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.IO qualified as TIO
-import Data.Time.Format
-import Data.Time.Format.ISO8601
-import Text.Parse qualified as TP
 
 -- standard lib imports
 import Control.Monad
@@ -829,7 +826,7 @@ taskSchedule = withFirstLine (eitherToMaybe . JP.fromString) (Datum "schedule")
 -- | Get the task completion history if it exists
 taskHistory :: Env -> Id -> IO [I.DateTime]
 taskHistory env id =
-  P.toListM $ readDatum env (Datum "completed") id >-> P.mapM (Pa.run Pa.parseDateTime)
+  P.toListM $ readDatum env (Datum "completed") id >-> P.mapM (Pa.runM Pa.parseDateTime)
 
 -------------------------------------------------------------------------------
 
@@ -925,9 +922,9 @@ dispatch env = impl
         output False = render @Id    env selection'
 
     completed :: Env -> String -> Cmd
-    completed env window = case TP.runParser Pa.parseTimePeriod window of
-      (Left err, _) -> Error  $ "Invalid time period: " ++ err
-      (Right w,  _) -> Eff $ runEffect $ for (readIds stdin) $ \id -> do
+    completed env window = case Pa.run Pa.parseTimePeriod window of
+      Left err -> Error  $ "Invalid time period: " ++ err
+      Right w -> Eff $ runEffect $ for (readIds stdin) $ \id -> do
         sched <- lift $ taskSchedule env id
         hist  <- lift $ taskHistory  env id
         case sched of

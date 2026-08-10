@@ -21,7 +21,8 @@ module Parser (
   parseDateTime,
   parseTimePeriod,
   parseDuration,
-  run
+  run,
+  runM
 ) where
 
 import Control.Monad
@@ -35,7 +36,7 @@ import Data.Time.Calendar
 import Data.Time.LocalTime
 import Text.Parse
 
--- import Util
+import Util()
 import Interval ({-Interval(..),-} DateTime, TimeDelta, TimePeriod(..), (|+))
 import qualified Interval as Interval
 -- import DateSet
@@ -136,6 +137,7 @@ parseDateTime = do
               [h]    -> return $ hoursToTimeZone (-h)
               [h, m] -> return $ TimeZone (-(h * 60 + m)) False ""
               _      -> failBad $ "invalid tz"
+          _ -> failBad "Unpossible"
 
       tryParseTime = do
         _ <- literal "T"
@@ -171,7 +173,10 @@ parseDays = oneOf [dayRange, dayList]
       return $ Explicit $ Set.fromList days
 -}
 
-run :: (Monad m, MonadFail m) => TextParser a -> String -> m a
-run parser input = case runParser parser input of
-  (Left err, _) -> fail err
-  (Right val, _) -> return val
+run :: TextParser a -> String -> Either String a
+run parser = fst . (runParser parser)
+
+runM :: (Monad m, MonadFail m) => TextParser a -> String -> m a
+runM parser input = case run parser input of
+  Left  err -> fail err
+  Right val -> return val
