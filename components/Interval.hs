@@ -30,6 +30,8 @@ module Interval (
   fromDay,
   startOfDay,
   endOfDay,
+  startOfAgendaDay,
+  endOfAgendaDay,
   weekday,
   nextMonth,
   prevMonth,
@@ -128,6 +130,12 @@ startOfDay (UTCTime day _) = fromDay day
 
 endOfDay :: DateTime -> DateTime
 endOfDay day = startOfDay day |+ nominalDay
+
+startOfAgendaDay :: DateTime -> DateTime
+startOfAgendaDay (UTCTime day _) = fromDay day |+ 8 * hour
+
+endOfAgendaDay :: DateTime -> DateTime
+endOfAgendaDay (UTCTime day _) = fromDay day |+ 23 * hour
 
 today :: IO DateTime
 today = startOfDay <$> now

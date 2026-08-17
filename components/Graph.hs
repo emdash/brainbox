@@ -876,9 +876,6 @@ isFucked l x u = case compare x l of
 agenda :: Env -> Set Id -> IO ()
 agenda env selection = do
   let dt = env.now
-  let interval     = 15 * I.minute -- xxx: add to env
-  let start_of_day =  8 * I.hour   -- xxx: add to env
-  let end_of_day   = 22 * I.hour   -- xxx: add to env
   todo            <- newIORef []
   scheduled       <- newIORef Map.empty
   glosses         <- newIORef Map.empty
@@ -902,22 +899,26 @@ agenda env selection = do
 
   let ad = S.agendaDay env.now $ Map.toList scheduled'
 
-  for_ ad.allDay $ putStrLn . show . (Map.lookup -$ glossen)
+  for_ ad.allDay $ putStrLn . (fromMaybe "[No contents]") . (Map.lookup -$ glossen)
 
-  renderSlow 200 287 $ plot glossen <$> ad.scheduled
-  -- renderSlow 80 24 $ [("foo", 2, 2, 5, 5), ("bar", 10, 5, 5, 7), ("quux", 12, 7, 5, 7)]
+  let plotted = plot glossen <$> ad.scheduled
+  for_ plotted $ putStrLn . show
+
+  renderSlow (ad.hwm * (20 + 2) + 6) (4 * (22 - 8))  $ plot glossen <$> ad.scheduled
   where
     row :: I.DateTime -> Int
-    row (UTCTime _ time) = (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` 5
+    row dt =
+      let (UTCTime _ time) = dt
+      in  (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` 15
 
     col :: Int -> Int
     col slot = (width + 2) * slot
 
     height :: I.TimeDelta -> Int
-    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` 5
+    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` 15
 
     width :: Int
-    width = 20
+    width = 15
 
     rect label x y w h = (label, x, y, w, h)
 
@@ -930,19 +931,19 @@ agenda env selection = do
         width
         (height $ e I.|-| s)
 
-    shadeRect y x (label, rx, ry, w, h) =
-      let lx = x - rx
-          ly = y - ry
+    shadeRect iy ix (label, rx, ry, w, h) =
+      let lx = ix - rx
+          ly = iy - ry
       in case (isFucked 0 lx w, isFucked 0 ly h) of
-        (BBorder, BBorder) -> Just '+'
-        (ABorder, BBorder) -> Just '+'
-        (BBorder, ABorder) -> Just '+'
-        (ABorder, ABorder) -> Just '+'
-        (BBorder, Inside _) -> Just '|'
-        (ABorder, Inside _) -> Just '|'
-        (Inside _, BBorder) -> Just '-'
-        (Inside _, ABorder) -> Just '-'
-        (Inside x, Inside y) -> label !? (x + y * (w - 1))
+        (BBorder, BBorder) -> Just '\x256D'
+        (ABorder, BBorder) -> Just '\x256E'
+        (BBorder, ABorder) -> Just '\x2570'
+        (ABorder, ABorder) -> Just '\x256F'
+        (BBorder, Inside _) -> Just '\x2502'
+        (ABorder, Inside _) -> Just '\x2502'
+        (Inside _, BBorder) -> Just '\x2500'
+        (Inside _, ABorder) -> Just '\x2500'
+        (Inside x, Inside y) -> label !? (x + (if iy == 32 then 0 else (y * (w - 1))))
         (Inside _, Inside _) -> Just ' '
         _ -> Nothing
 
@@ -953,17 +954,15 @@ agenda env selection = do
 
     yToTime :: Int -> Int -> String
     yToTime w y =
-      let elapsed = 5 * y
+      let elapsed = 15 * y + 8 * 60
           (hours, minutes) = divMod elapsed 60
           timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
-      in if minutes == 0
-         then (replicate w '-') ++ ('\n' : timestr)
-         else timestr
+      in timestr
 
     renderSlow :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
     renderSlow w h recs = for_ ((divMod -$ w) <$> [0..w * h]) $ \(y, x) -> do
       when (x == 0) $ putStr $ '\n' : yToTime w y
-      putChar $ fromMaybe ' ' $ foldl' takeLast Nothing $ (shadeRect y x) <$> recs
+      putChar $ fromMaybe ' ' $ foldl' takeLast Nothing $ (shadeRect (y + 4 * 8) x) <$> recs
 
 
 
