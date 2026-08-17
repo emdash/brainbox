@@ -902,9 +902,7 @@ agenda env selection = do
   for_ ad.allDay $ putStrLn . (fromMaybe "[No contents]") . (Map.lookup -$ glossen)
 
   let plotted = plot glossen <$> ad.scheduled
-  for_ plotted $ putStrLn . show
-
-  renderSlow (ad.hwm * (20 + 2) + 6) (4 * (22 - 8))  $ plot glossen <$> ad.scheduled
+  renderSlow (ad.hwm * (20 + 2) + 6) (4 * 24)  $ plot glossen <$> ad.scheduled
   where
     row :: I.DateTime -> Int
     row dt =
@@ -932,9 +930,7 @@ agenda env selection = do
         (height $ e I.|-| s)
 
     shadeRect iy ix (label, rx, ry, w, h) =
-      let lx = ix - rx
-          ly = iy - ry
-      in case (isFucked 0 lx w, isFucked 0 ly h) of
+      case (isFucked 0 (ix - rx) w, isFucked 0 (iy - ry) h) of
         (BBorder, BBorder) -> Just '\x256D'
         (ABorder, BBorder) -> Just '\x256E'
         (BBorder, ABorder) -> Just '\x2570'
@@ -943,8 +939,7 @@ agenda env selection = do
         (ABorder, Inside _) -> Just '\x2502'
         (Inside _, BBorder) -> Just '\x2500'
         (Inside _, ABorder) -> Just '\x2500'
-        (Inside x, Inside y) -> label !? (x + (if iy == 32 then 0 else (y * (w - 1))))
-        (Inside _, Inside _) -> Just ' '
+        (Inside x, Inside y) -> takeLast (Just ' ') $ label !? (x + (if iy == 32 then 0 else (y * (w - 1))))
         _ -> Nothing
 
     takeLast :: Maybe Char -> Maybe Char -> Maybe Char
@@ -952,17 +947,39 @@ agenda env selection = do
     takeLast x Nothing = x
     takeLast x y = y
 
-    yToTime :: Int -> Int -> String
-    yToTime w y =
-      let elapsed = 15 * y + 8 * 60
+    yToTime :: Int -> String
+    yToTime y =
+      let elapsed = 15 * y
           (hours, minutes) = divMod elapsed 60
           timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
       in timestr
 
+    indices :: Int -> Int -> [[(Int, Int)]]
+    indices w h = cols <$> [0..h]
+      where
+        cols y = ((,) y) <$> [0..w]
+
+    backGrid :: Int -> Int -> Char
+    backGrid y x | x < 5          = fromMaybe ' ' $ yToTime y !? x
+    backGrid y _ | y `mod` 4 == 0 = '\x2504'
+    backGrid _ _                   = ' '
+
+    doCell recs (y, x) = foldl' takeLast Nothing
+      $ (shadeRect y (x - 6))
+      <$> recs
+
+    pairwise :: (a -> b) -> b -> [a] -> [(a, b, b)]
+    pairwise f _    []         = []
+    pairwise f last (x : rest) = let x' = f x in (x, x', last) : pairwise f x' rest
+
     renderSlow :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
-    renderSlow w h recs = for_ ((divMod -$ w) <$> [0..w * h]) $ \(y, x) -> do
-      when (x == 0) $ putStr $ '\n' : yToTime w y
-      putChar $ fromMaybe ' ' $ foldl' takeLast Nothing $ (shadeRect (y + 4 * 8) x) <$> recs
+    renderSlow w h recs = do
+      putStrLn $ replicate (w + 1) '\x2550'
+      for_ (pairwise (doCell recs <$>) [] $ indices w h) $ \(row, cur, prev) -> do
+        let bg = uncurry backGrid <$> row
+        if cur == prev
+          then pure ()
+          else putStrLn $ uncurry fromMaybe <$> zip bg cur
 
 
 
