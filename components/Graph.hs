@@ -902,18 +902,18 @@ agenda env selection = do
   for_ ad.allDay $ putStrLn . (fromMaybe "[No contents]") . (Map.lookup -$ glossen)
 
   let plotted = plot glossen <$> ad.scheduled
-  renderSlow (ad.hwm * (20 + 2) + 6) (4 * 24)  $ plot glossen <$> ad.scheduled
+  renderSlow (ad.hwm * (20 + 2) + 6) (12 * 24)  $ plot glossen <$> ad.scheduled
   where
     row :: I.DateTime -> Int
     row dt =
       let (UTCTime _ time) = dt
-      in  (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` 15
+      in  (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` 5
 
     col :: Int -> Int
     col slot = (width + 2) * slot
 
     height :: I.TimeDelta -> Int
-    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` 15
+    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` 5
 
     width :: Int
     width = 15
@@ -939,7 +939,7 @@ agenda env selection = do
         (ABorder, Inside _) -> Just '\x2502'
         (Inside _, BBorder) -> Just '\x2500'
         (Inside _, ABorder) -> Just '\x2500'
-        (Inside x, Inside y) -> takeLast (Just ' ') $ label !? (x + (if iy == 32 then 0 else (y * (w - 1))))
+        (Inside x, Inside y) -> takeLast (Just ' ') $ label !? (x + (y * (w - 1)))
         _ -> Nothing
 
     takeLast :: Maybe Char -> Maybe Char -> Maybe Char
@@ -949,7 +949,7 @@ agenda env selection = do
 
     yToTime :: Int -> String
     yToTime y =
-      let elapsed = 15 * y
+      let elapsed = 5 * y
           (hours, minutes) = divMod elapsed 60
           timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
       in timestr
