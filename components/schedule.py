@@ -1372,23 +1372,6 @@ def in_progress(dt, id):
   except BaseException:
     debug(f"Invalid Schedule Expr: {id}")
 
-def is_upcoming(window, id):
-  """True if an activity will become active within the given window.
-
-  The default window is the current day, but arbitrary intervals are
-  accepted. If a duration is given instead, then it is relative to the
-  current time.
-  """
-  raise NotImplemented
-
-def is_due(window, tasks):
-  """True if a task or habit's completion window will end within the
-  given window.
-
-  Defaults and arguments are the same as for `is_upcoming`.
-  """
-  raise NotImplemented
-
 def parse_datetime(args):
   """Parse a list of strings into a date time.
 
@@ -1510,17 +1493,13 @@ def foreach(f, *args):
 
 if __name__ == "__main__":
   match sys.argv[1:]:
-    case ["is_upcoming", *args]:   filter_window(is_upcoming, *args)
     case ["is_complete", *args]:   filter_window(is_complete, *args)
     case ["is_incomplete", *args]: filter_window(is_incomplete, *args)
     case ["is_scheduled"]:         graph.filter_nodes(is_scheduled)
     case ["is_unscheduled"]:       graph.filter_nodes(is_unscheduled)
     case ["in_progress", *args]:   filter_datetime(in_progress, *args)
-    case ["is_due", *args]:        filter_window(is_due,      *args)
-    case ["complete", *args]:      complete(*args)
     case ["completed", *args]:     foreach(completed, window_args(*args))
     case ["schedule"]:             foreach(read_date_set, 'schedule')
-    case ["deadline"]:             foreach(read_date_set, 'deadline')
     case ["classify"]:             foreach(classify_node)
     case ["preview", *args]:       preview_dateset(*args)
     case ["validate"]:             print(fromJSON(json.load(sys.stdin)))

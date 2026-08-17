@@ -3502,6 +3502,7 @@ function compile {
         -XGHC2021 \
         -Wall \
         -Wno-name-shadowing \
+        -threaded \
         -main-is "Brainbox.${module}.${main}" \
         -i"${GTD_DIR}/components" \
         -o "${binary}" \

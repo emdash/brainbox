@@ -43,7 +43,7 @@ import Interval((|-))
 import DateSet qualified as DS
 import JSONParser qualified as JP
 import Parser qualified as Pa
-import Scheduler
+import Scheduler qualified as S
 import Util
 
 -- 3rd party
@@ -54,19 +54,22 @@ import Data.GraphViz.Types.Monadic
 import Data.GraphViz.Attributes
 import Data.GraphViz.Attributes.Complete qualified as C
 import Data.GraphViz.Attributes.Colors qualified as Colors
-import Data.List.Extra (upper)
 import Data.GraphViz.Parsing
-import Pipes
-import Pipes.Prelude qualified as P
 import Data.GraphViz.Printing
+import Data.List.Extra (upper)
 import Data.String.Utils
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.IO qualified as TIO
 import Data.Time.Clock
+import Graphics.Vty qualified as Vty
+import Graphics.Vty.Platform.Unix(mkVty)
+import Pipes
+import Pipes.Prelude qualified as P
 
 -- standard lib imports
 import Control.Monad
 import Control.Exception
+import Data.IORef
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -646,6 +649,9 @@ invert pred graph env id = do
   res <- pred graph env id
   return $ not res
 
+invert' :: Predicate idT -> Predicate idT
+invert' f env id = not <$> (f env id)
+
 -- | True if the the given node is a next-action node.
 isNext :: Graph Id -> Predicate Id
 isNext g env id = do
@@ -832,6 +838,135 @@ taskHistory :: Env -> Id -> IO [I.DateTime]
 taskHistory env id =
   P.toListM $ readDatum env (Datum "completed") id >-> P.mapM (Pa.runM Pa.parseDateTime)
 
+-- | Parse window args and construct command with the resulting value.
+withWindow :: Env -> [String] -> (I.TimePeriod -> Cmd) -> Cmd
+withWindow env w f = case S.windowArgs env.now w of
+  Left err -> Error err
+  Right w  -> f w
+
+-- Scheduler classification
+data Classification = Unscheduled | Event | Habit
+
+-- | Classify node according to data
+classifyNode :: Env -> Id -> IO Classification
+classifyNode env id = do
+  schedule <- has (Datum "schedule") env id
+  if schedule
+    then do
+      completed <- has (Datum "completed") env id
+      if completed
+        then return Habit
+        else return Event
+    else return $ Unscheduled
+
+data Fucked a  = Below | BBorder | Inside a | ABorder | Above
+
+isFucked :: Int -> Int -> Int -> Fucked Int
+isFucked l x u = case compare x l of
+  LT -> Below
+  EQ -> BBorder
+  GT -> case compare x u of
+    LT -> Inside $ x - l - 1
+    EQ -> ABorder
+    GT -> Above
+
+-- | Print agenda view for the given window.
+--
+-- This will show scheduled and nscheduled activity for the given input set.
+agenda :: Env -> Set Id -> IO ()
+agenda env selection = do
+  let dt = env.now
+  let interval     = 15 * I.minute -- xxx: add to env
+  let start_of_day =  8 * I.hour   -- xxx: add to env
+  let end_of_day   = 22 * I.hour   -- xxx: add to env
+  todo            <- newIORef []
+  scheduled       <- newIORef Map.empty
+  glosses         <- newIORef Map.empty
+  runEffect $ for (readIds stdin) $ \id -> do
+    klass <- lift $ classifyNode env id
+    gloss <- lift $ taskGloss env id
+    case gloss of
+      Nothing -> pure ()
+      Just gloss -> lift $ modifyIORef glosses (Map.insert id gloss)
+    case klass of
+      Unscheduled -> lift $ modifyIORef todo (id :)
+      Event -> lift $ do
+        ds <- taskSchedule env id
+        modifyIORef scheduled $ Map.insert id $ fromJust ds
+      Habit -> lift $ do
+        ds <- taskSchedule env id
+        modifyIORef scheduled $ Map.insert id $ fromJust ds
+
+  scheduled' <- readIORef scheduled
+  glossen <- readIORef glosses
+
+  let ad = S.agendaDay env.now $ Map.toList scheduled'
+
+  for_ ad.allDay $ putStrLn . show . (Map.lookup -$ glossen)
+
+  renderSlow 200 287 $ plot glossen <$> ad.scheduled
+  -- renderSlow 80 24 $ [("foo", 2, 2, 5, 5), ("bar", 10, 5, 5, 7), ("quux", 12, 7, 5, 7)]
+  where
+    row :: I.DateTime -> Int
+    row (UTCTime _ time) = (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` 5
+
+    col :: Int -> Int
+    col slot = (width + 2) * slot
+
+    height :: I.TimeDelta -> Int
+    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` 5
+
+    width :: Int
+    width = 20
+
+    rect label x y w h = (label, x, y, w, h)
+
+    plot :: Map Id String -> (Id, (I.TimePeriod, Int)) -> (String, Int, Int, Int, Int)
+    plot glossen (id, (I.TimePeriod s e, slot)) =
+      rect
+        (fromJust $ Map.lookup id glossen)
+        (col slot)
+        (row s)
+        width
+        (height $ e I.|-| s)
+
+    shadeRect y x (label, rx, ry, w, h) =
+      let lx = x - rx
+          ly = y - ry
+      in case (isFucked 0 lx w, isFucked 0 ly h) of
+        (BBorder, BBorder) -> Just '+'
+        (ABorder, BBorder) -> Just '+'
+        (BBorder, ABorder) -> Just '+'
+        (ABorder, ABorder) -> Just '+'
+        (BBorder, Inside _) -> Just '|'
+        (ABorder, Inside _) -> Just '|'
+        (Inside _, BBorder) -> Just '-'
+        (Inside _, ABorder) -> Just '-'
+        (Inside x, Inside y) -> label !? (x + y * (w - 1))
+        (Inside _, Inside _) -> Just ' '
+        _ -> Nothing
+
+    takeLast :: Maybe Char -> Maybe Char -> Maybe Char
+    takeLast Nothing x = x
+    takeLast x Nothing = x
+    takeLast x y = y
+
+    yToTime :: Int -> Int -> String
+    yToTime w y =
+      let elapsed = 5 * y
+          (hours, minutes) = divMod elapsed 60
+          timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
+      in if minutes == 0
+         then (replicate w '-') ++ ('\n' : timestr)
+         else timestr
+
+    renderSlow :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
+    renderSlow w h recs = for_ ((divMod -$ w) <$> [0..w * h]) $ \(y, x) -> do
+      when (x == 0) $ putStr $ '\n' : yToTime w y
+      putChar $ fromMaybe ' ' $ foldl' takeLast Nothing $ (shadeRect y x) <$> recs
+
+
+
 -------------------------------------------------------------------------------
 
 -- | Result of dispatching on command arguments.
@@ -879,11 +1014,20 @@ dispatch env = impl
     impl ["summary"]          = Eff $ printSummary env Nothing
     impl ["summary", "-d", d] = Eff $ printSummary env $ Just d
     -- scheduler commands
-    impl ["validate"]         = Eff $ forLines stdin validateDS
-    impl ("completed" : rest) = completed env $ windowArgs env.now rest
-    impl ("preview" : m : w)  = case  (windowArgs env.now w) of
-                                  Left err -> Error err
-                                  Right w -> Eff $ forLines stdin $ preview m w
+    impl ("is_complete" : w)  = withWindow env w $ isComplete env
+    impl ("is_incomplete": w) = withWindow env w isIncomplete
+    impl ("is_scheduled": w)  = Filter $ has (Datum "schedule")
+    impl ("is_unscheduled" : w) = Filter $ invert' $ has (Datum "schedule")
+    impl ["in_progress"]      = Filter $ inProgress
+    impl ("completed" : w)    = withWindow env w $ completed env
+    impl ["classify"]         = undefined -- XXX
+    impl ("preview" : m : w)  = withWindow env w $ \w -> Eff $ forLines stdin (S.preview m w)
+    impl ["validate"]         = Eff $ forLines stdin S.validateDS
+    impl ("agenda" : sel)     = Eff $ agenda env $ Set.fromList $ Id <$> sel
+
+    -- testing
+    impl ["vtest"]            = Eff vtyMain
+
     -- default
     impl bad                  = Error $ "not implemented: " ++ unwords bad
 
@@ -927,15 +1071,36 @@ dispatch env = impl
         output True  = render @INode env selection'
         output False = render @Id    env selection'
 
-    completed :: Env -> Either String I.TimePeriod -> Cmd
-    completed env window = case window of
-      Left err -> Error  $ "Invalid time period: " ++ err
-      Right w -> Eff $ runEffect $ for (readIds stdin) $ \id -> do
-        sched <- lift $ taskSchedule env id
-        hist  <- lift $ taskHistory  env id
-        case sched of
-          Nothing -> pure ()
-          Just sched -> lift $ putStrLn $ completionGraph sched hist w
+    inProgress :: Predicate Id
+    inProgress env id = do
+      sched <- taskSchedule env id
+      case sched of
+        Nothing -> return True
+        Just sched  -> return $ DS.within sched env.now
+
+    isComplete :: Env -> I.TimePeriod -> Cmd
+    isComplete env window = Filter $ \env id -> do
+      sched <- taskSchedule env id
+      hist  <- taskHistory  env id
+      case sched of
+        Nothing -> return $ not $ null hist
+        Just sched -> return $ DS.isComplete sched hist window
+
+    isIncomplete :: I.TimePeriod -> Cmd
+    isIncomplete window = Filter $ \env id -> do
+      sched <- taskSchedule env id
+      hist  <- taskHistory  env id
+      case sched of
+        Nothing -> return $ null hist
+        Just sched -> return $ not $ DS.isComplete sched hist window
+
+    completed :: Env -> I.TimePeriod -> Cmd
+    completed env window = Eff $ runEffect $ for (readIds stdin) $ \id -> do
+      sched <- lift $ taskSchedule env id
+      hist  <- lift $ taskHistory  env id
+      case sched of
+        Nothing -> pure ()
+        Just sched -> lift $ putStrLn $ S.completionGraph sched hist window
 
 -- | Abstract common code for streams of nodes.
 runStream :: Producer Id IO () -> IO ()
@@ -951,6 +1116,18 @@ runEdgeFilter :: Env -> EdgeSet -> Direction -> EdgePredicate Id -> IO ()
 runEdgeFilter env edges direction predicate = do
   edges <- readGraph env edges direction
   runFilter env (predicate edges)
+
+vtyMain :: IO ()
+vtyMain = do
+  vty <- mkVty Vty.defaultConfig
+  let line0 = Vty.string (Vty.defAttr `Vty.withForeColor` Vty.green) "first line"
+      line1 = Vty.string (Vty.defAttr `Vty.withBackColor` Vty.blue) "second line"
+      img   = line0 Vty.<-> line1
+      pic   = Vty.picForImage img
+  Vty.update vty pic
+  e <- Vty.nextEvent vty
+  Vty.shutdown vty
+  print ("Last event was: " ++ show e)
 
 -- | Main entry point.
 main :: IO ()

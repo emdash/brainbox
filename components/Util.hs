@@ -9,6 +9,7 @@ module Util (
   (-$)
 ) where
 
+import Data.List
 import Data.Maybe
 import Data.String
 import System.Environment
@@ -51,3 +52,27 @@ infixl 8 -$
 -- XXX: This is an orphan instance, but hey it seems to work.
 instance IsString a => MonadFail (Either a) where
   fail = Left . fromString
+
+padLeft :: Int -> String -> String
+padLeft i s = case i - (length s) of
+  0 -> s
+  x | x > 0 -> replicate x ' ' ++ s
+  _ -> error "negative length"
+
+padRight :: Int -> String -> String
+padRight i s = case i - (length s) of
+  0 -> s
+  x | x > 0 -> s ++ replicate x ' '
+
+padCol :: Int -> [String] -> [String]
+padCol i c = padRight i <$> c
+
+tabulate :: Char -> String -> [[String]] -> String
+tabulate rowsep colsep rows = intercalate ('\n' : replicate maxwidth rowsep ++ "\n") $ separated
+  where
+    cols = transpose rows
+    widths = (foldl max 0) <$> (length <$>) <$> cols
+    padCell (w, c) = padRight w <$> c
+    padded = padCell <$> zip widths cols
+    separated = intercalate colsep <$> transpose padded
+    maxwidth = foldl max 0 $ length <$> separated

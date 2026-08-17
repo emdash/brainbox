@@ -10,18 +10,30 @@ module Scheduler (
   validateDS,
   preview,
   completionGraph,
-  windowArgs
+  windowArgs,
+  agendaDay,
+  Agenda(..)
 ) where
 
+
+import Debug.Trace
 -- import Control.Monad
+import Data.Bits
 import Data.Foldable
 import Data.Functor
+import Data.Word
 import System.IO
+
 --import Debug.Trace(trace)
 
 import Data.Either.Extra
+import Data.Map(Map)
+import Data.Map qualified as Map
+import Data.Set(Set)
+import Data.Set qualified as Set
 import Data.Time.Calendar
 import Data.Time.Calendar.Month
+import Data.Time.Clock
 import Data.Tuple.Utils
 import Data.Time.Format
 
@@ -119,14 +131,14 @@ previewWeek ds w = do
     putStrLn ""
 
 preview :: String -> TimePeriod -> String -> IO ()
-preview mode w expr =
+preview mode window expr =
   let expr' = case JP.fromString expr of
         Left err -> error err
         Right e -> e
   in case mode of
-    "list"  -> for_ (intervals expr' w) $ putStrLn . show
-    "month" -> previewMonth expr' w
-    "week"  -> previewWeek  expr' w
+    "list"  -> for_ (intervals expr' window) $ putStrLn . show
+    "month" -> previewMonth expr' window
+    "week"  -> previewWeek  expr' window
     bad     -> error $ "invalid mode" ++ bad
 
 completionGraph :: DateSet -> [DateTime] -> TimePeriod -> String
@@ -135,3 +147,107 @@ completionGraph self history window = do
     if complete
       then '|'
       else '.'
+
+data Boundary
+  = NInf
+  | Start DateTime
+  | End DateTime
+  deriving (Eq, Show)
+
+instance Ord Boundary where
+  compare NInf _ = LT
+  compare _ NInf = GT
+  compare (Start l) (Start r) = compare l r
+  compare (Start l) (End r) = case compare l r of
+    EQ -> LT
+    x  -> x
+  compare (End l) (Start r) = case compare l r of
+    EQ -> GT
+    x  -> x
+  compare (End l) (End r) = compare l r
+
+data Agenda idT = Agenda {
+  scheduled :: [(idT, (TimePeriod, Int))],
+  allDay :: Set idT,
+  live :: Map idT (DateTime, Int),
+  stack :: Word8,
+  hwm :: Int
+} deriving Show
+
+firstSlot :: Word8 -> Int
+firstSlot w = go True (w .&. 0x0F)
+  where
+    go _     0b0000 = 0
+    go _     0b0001 = 1
+    go _     0b0010 = 0
+    go _     0b0011 = 2
+    go _     0b0100 = 0
+    go _     0b0101 = 1
+    go _     0b0110 = 0
+    go _     0b0111 = 3
+    go _     0b1000 = 0
+    go _     0b1001 = 1
+    go _     0b1010 = 0
+    go _     0b1011 = 2
+    go _     0b1100 = 0
+    go _     0b1101 = 1
+    go _     0b1110 = 0
+    go True  _      = (go False (shiftR w 4)) + 4
+    go False 0b1111 = error "you have too much shit going on"
+    go y     x      = error $ "wtf" ++ show x ++ show y
+
+blank :: Agenda a
+blank = Agenda [] Set.empty Map.empty 0 0
+
+punt :: Ord idT => idT -> Agenda idT -> Agenda idT
+punt i self = self { allDay = Set.insert i self.allDay }
+
+push :: Ord idT => idT -> DateTime -> Agenda idT -> Agenda idT
+push i start self =
+  let
+    slot = firstSlot self.stack
+  in self {
+    live  = Map.insert i (start, slot) self.live,
+    stack = setBit self.stack slot,
+    hwm   = max self.hwm slot
+  }
+
+pop :: Ord idT => idT -> DateTime -> Agenda idT -> Agenda idT
+pop i e self = case Map.lookup i self.live of
+  Nothing -> error "End without start"
+  Just (s, slot) -> self {
+    scheduled = (i, ((TimePeriod s e), slot)) : self.scheduled,
+    live = Map.delete i self.live,
+    stack = clearBit self.stack slot
+  }
+
+toBoundaries :: Ord idT => [(idT, I.Interval)] -> (Set (Boundary, idT), Set idT)
+toBoundaries intervals = let x = foldl byCases (Set.empty, Set.empty) intervals in x
+  where
+    byCases (b, ad) (i, I.Open)        = (Set.insert (NInf, i) b, ad)
+    byCases ret     (_, I.Empty )      = ret
+    byCases (b, ad) (i, I.LeftOpen e)  = (Set.insert (End e, i) $ Set.insert (NInf, i) b, ad)
+    byCases (b, ad) (i, I.RightOpen s) = (b, Set.insert i ad)
+    byCases (b, ad) (i, I.Closed s e)  =
+      if e I.|-| s < (I.day - 5 * I.minute)
+      then (Set.insert (End e, i) $ Set.insert (Start s, i) b, ad)
+      else (b, Set.insert i ad)
+
+agendaDay :: Ord idT => DateTime -> [(idT, DateSet)] -> Agenda idT
+agendaDay day sched =
+  let (boundaries, ad) = toBoundaries intervals
+  in foldl update (blank {allDay = ad}) $ Set.toAscList $ boundaries
+  where
+    collectIntervals horizon ret (i, ds) =
+      foldl (\acc interval -> (i, interval) : acc) ret $
+        DateSet.intervals ds horizon
+
+    horizon :: I.TimePeriod
+    horizon = TimePeriod (I.startOfDay day) (I.endOfDay day)
+
+    -- intervals :: [(idT, I.Interval)]
+    intervals = foldl (collectIntervals horizon) [] $ sched
+
+    update ret (NInf, i)    = punt i   ret
+    update ret (Start s, i) = push i s ret
+    update ret (End e, i)   = pop  i e ret
