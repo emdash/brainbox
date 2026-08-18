@@ -912,21 +912,21 @@ agenda env selection = do
         ds <- taskSchedule env id
         hist <- taskHistory env id
         modifyIORef scheduled $ Map.insert id $ fromJust ds
-        modifyIORef habits    $ Map.insert id $ (fromJust ds, hist)
+        modifyIORef habits $ Map.insert id $ (fromJust ds, hist)
 
   scheduled' <- readIORef scheduled
   glossen <- readIORef glosses
   habits' <- readIORef habits
 
+  let width = env.cols - 1
   let ad = S.agendaDay env.now $ Map.toList scheduled'
-  let plotted = plot glossen <$> ad.scheduled
+  let plotted = plot ((width - gutter) `div` (ad.hwm + 1)) glossen <$> ad.scheduled
   let week = I.TimePeriod (I.startOfWeek env.now) (I.endOfWeek env.now)
+  let hrule = replicate env.cols '\x2550'
 
-  printCondensedSchedule
-    (((1 + ad.hwm) * (slotWidth + margin) + gutter))
-    ((60 `div` mpl) * 24)
-    $ plot glossen <$> ad.scheduled
-  putStrLn ""
+  putStrLn hrule
+  printCondensedSchedule width (lph * 24) plotted
+  putStrLn hrule
 
   putStrLn "All Day"
   for_ ad.allDay $ \id -> putStrLn $ (' ' : ' ' : (fromMaybe "[No contents]" $ Map.lookup id glossen))
@@ -936,18 +936,18 @@ agenda env selection = do
   putStrLn $ tabulate " | " $ habitTable week glossen $ Map.toList habits'
 
   where
-    -- | Width of each calendar lane
-    -- XXX: pull from environment.
-    slotWidth :: Int
-    slotWidth = 15
-
     -- | Time per line in in minutes
     mpl :: Int
     mpl = 5
 
+    lph = 60 `div` mpl
+
     -- | horizontal space between items
     margin :: Int
     margin = 2
+
+    marginH :: Int
+    marginH = margin `div` 2
 
     -- | Width of left gutter
     gutter :: Int
@@ -966,8 +966,8 @@ agenda env selection = do
       in  (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` mpl
 
     -- | Calculate the x column position of the left edge of the given slot index.
-    col :: Int -> Int
-    col slot = (slotWidth + margin) * slot
+    col :: Int -> Int -> Int
+    col slotWidth slot = slotWidth * slot
 
     -- | Calculate the height of a rectangle for a given TimeDelta.
     height :: I.TimeDelta -> Int
@@ -977,13 +977,13 @@ agenda env selection = do
     rect label x y w h = (label, x, y, w, h)
 
     -- | Convert schedule data to a list of labeled rectangles for drawing.
-    plot :: Map Id String -> (Id, (I.TimePeriod, Int)) -> (String, Int, Int, Int, Int)
-    plot glossen (id, (I.TimePeriod s e, slot)) =
+    plot :: Int -> Map Id String -> (Id, (I.TimePeriod, Int)) -> (String, Int, Int, Int, Int)
+    plot slotWidth glossen (id, (I.TimePeriod s e, slot)) =
       rect
         (fromJust $ Map.lookup id glossen)
-        (col slot)
+        (col slotWidth slot)
         (row s)
-        slotWidth
+        (slotWidth - margin)
         (height $ e I.|-| s)
 
     -- | Render a labeled box implicitly via round rectangles.
@@ -1017,7 +1017,7 @@ agenda env selection = do
     -- | Render background grid and left-side gutter
     backGrid :: Int -> Int -> Char
     backGrid y x | x < (gutter - 1) = fromMaybe ' ' $ yToTime y !? x
-    backGrid y _ | y `mod` 4 == 0   = '\x2504'
+    backGrid y _ | y `mod` lph == 0 = '\x2504'
     backGrid _ _                    = ' '
 
     -- | Merge the given rectangles into a single implicit function.
@@ -1035,16 +1035,28 @@ agenda env selection = do
     pairwise f _    []         = []
     pairwise f last (x : rest) = let x' = f x in (x, x', last) : pairwise f x' rest
 
+
+    -- | Render the daily agenda view via inefficient implicit functions.
+    --
+    -- This method doesn't require any special terminal escape
+    -- sequences, but does emit unicode.
+    --
+    -- This will print the full 24h schedule with now elisions.
+    printFullSchedule :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
+    printFullSchedule w h recs = for_ (indices w h) $ \row -> do
+      let cur = combineRects recs <$> row
+      let bg  = uncurry backGrid <$> row
+      putStrLn $ uncurry fromMaybe <$> zip bg cur
+
     -- | Render the daily agenda view via inefficient implicit functions.
     --
     -- This method doesn't require any special terminal escape
     -- sequences, but does emit unicode.
     --
     -- This algorithm will try to compress the schedule vertically by
-    -- skipping runs of lines which are "the same".
+    -- eliding runs of lines which are "the same".
     printCondensedSchedule :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
     printCondensedSchedule w h recs = do
-      putStrLn $ replicate (w + 1) '\x2550'
       for_ (pairwise (combineRects recs <$>) [] $ indices w h) $ \(row, cur, prev) -> do
         let bg = uncurry backGrid <$> row
         -- if the previous row is "the same as" the current row (ignoring the background),
