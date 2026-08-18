@@ -6,7 +6,9 @@ module Util (
   pad,
   validate,
   between,
-  (-$)
+  (-$),
+  takeLast,
+  tabulate
 ) where
 
 import Data.List
@@ -67,8 +69,8 @@ padRight i s = case i - (length s) of
 padCol :: Int -> [String] -> [String]
 padCol i c = padRight i <$> c
 
-tabulate :: Char -> String -> [[String]] -> String
-tabulate rowsep colsep rows = intercalate ('\n' : replicate maxwidth rowsep ++ "\n") $ separated
+tabulate :: String -> [[String]] -> String
+tabulate colsep rows = intercalate "\n" $ separated
   where
     cols = transpose rows
     widths = (foldl max 0) <$> (length <$>) <$> cols
@@ -76,3 +78,10 @@ tabulate rowsep colsep rows = intercalate ('\n' : replicate maxwidth rowsep ++ "
     padded = padCell <$> zip widths cols
     separated = intercalate colsep <$> transpose padded
     maxwidth = foldl max 0 $ length <$> separated
+
+-- | Given two maybes, take the last non-nothing value
+-- XXX: feels like a library function that already exists
+takeLast :: Maybe Char -> Maybe Char -> Maybe Char
+takeLast Nothing x = x
+takeLast x Nothing = x
+takeLast x y = y

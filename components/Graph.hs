@@ -859,10 +859,12 @@ classifyNode env id = do
         else return Event
     else return $ Unscheduled
 
-data Fucked a  = Below | BBorder | Inside a | ABorder | Above
+-- The result of a evaluating an implicit function in 1 dimension
+data ImplicitResult a  = Below | BBorder | Inside a | ABorder | Above
 
-isFucked :: Int -> Int -> Int -> Fucked Int
-isFucked l x u = case compare x l of
+-- Implicit function which renders a 1-D rectangle.
+implicitRect :: Int -> Int -> Int -> ImplicitResult Int
+implicitRect l x u = case compare x l of
   LT -> Below
   EQ -> BBorder
   GT -> case compare x u of
@@ -870,7 +872,7 @@ isFucked l x u = case compare x l of
     EQ -> ABorder
     GT -> Above
 
--- | Print agenda view for the given window.
+-- | Print agenda view for the current day.
 --
 -- This will show scheduled and nscheduled activity for the given input set.
 agenda :: Env -> Set Id -> IO ()
@@ -878,6 +880,7 @@ agenda env selection = do
   let dt = env.now
   todo            <- newIORef []
   scheduled       <- newIORef Map.empty
+  habits          <- newIORef Map.empty
   glosses         <- newIORef Map.empty
   runEffect $ for (readIds stdin) $ \id -> do
     klass <- lift $ classifyNode env id
@@ -892,45 +895,85 @@ agenda env selection = do
         modifyIORef scheduled $ Map.insert id $ fromJust ds
       Habit -> lift $ do
         ds <- taskSchedule env id
+        hist <- taskHistory env id
         modifyIORef scheduled $ Map.insert id $ fromJust ds
+        modifyIORef habits    $ Map.insert id $ (fromJust ds, hist)
 
   scheduled' <- readIORef scheduled
   glossen <- readIORef glosses
+  habits' <- readIORef habits
 
   let ad = S.agendaDay env.now $ Map.toList scheduled'
-
-  for_ ad.allDay $ putStrLn . (fromMaybe "[No contents]") . (Map.lookup -$ glossen)
-
   let plotted = plot glossen <$> ad.scheduled
-  renderSlow (ad.hwm * (20 + 2) + 6) (12 * 24)  $ plot glossen <$> ad.scheduled
+  let week = I.TimePeriod (I.startOfWeek env.now) (I.endOfWeek env.now)
+
+  printCondensedSchedule
+    (((1 + ad.hwm) * (slotWidth + margin) + gutter))
+    ((60 `div` mpl) * 24)
+    $ plot glossen <$> ad.scheduled
+  putStrLn ""
+
+  putStrLn "All Day"
+  for_ ad.allDay $ \id -> putStrLn $ (' ' : ' ' : (fromMaybe "[No contents]" $ Map.lookup id glossen))
+  putStrLn ""
+
+  putStrLn "Habits"
+  putStrLn $ tabulate " | " $ habitTable week glossen $ Map.toList habits'
+
   where
+    -- | Width of each calendar lane
+    -- XXX: pull from environment.
+    slotWidth :: Int
+    slotWidth = 15
+
+    -- | Time per line in in minutes
+    mpl :: Int
+    mpl = 5
+
+    -- | horizontal space between items
+    margin :: Int
+    margin = 2
+
+    -- | Width of left gutter
+    gutter :: Int
+    gutter = 6
+
+    habitTable week glossen habits = habitRow week glossen <$> habits
+
+    habitRow week glossen (id, (ds, hist)) = [
+      (' ' : ' ' : (fromMaybe "[No Contents]" $ Map.lookup id glossen)),
+      (S.completionGraph ds hist week)]
+
+    -- | Calculate the y position for the given timestamp.
     row :: I.DateTime -> Int
     row dt =
       let (UTCTime _ time) = dt
-      in  (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` 5
+      in  (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` mpl
 
+    -- | Calculate the x column position of the left edge of the given slot index.
     col :: Int -> Int
-    col slot = (width + 2) * slot
+    col slot = (slotWidth + margin) * slot
 
+    -- | Calculate the height of a rectangle for a given TimeDelta.
     height :: I.TimeDelta -> Int
-    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` 5
+    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` mpl
 
-    width :: Int
-    width = 15
-
+    -- | Construct a single labeled rectangle.
     rect label x y w h = (label, x, y, w, h)
 
+    -- | Convert schedule data to a list of labeled rectangles for drawing.
     plot :: Map Id String -> (Id, (I.TimePeriod, Int)) -> (String, Int, Int, Int, Int)
     plot glossen (id, (I.TimePeriod s e, slot)) =
       rect
         (fromJust $ Map.lookup id glossen)
         (col slot)
         (row s)
-        width
+        slotWidth
         (height $ e I.|-| s)
 
+    -- | Render a labeled box implicitly via round rectangles.
     shadeRect iy ix (label, rx, ry, w, h) =
-      case (isFucked 0 (ix - rx) w, isFucked 0 (iy - ry) h) of
+      case (implicitRect 0 (ix - rx) w, implicitRect 0 (iy - ry) h) of
         (BBorder, BBorder) -> Just '\x256D'
         (ABorder, BBorder) -> Just '\x256E'
         (BBorder, ABorder) -> Just '\x2570'
@@ -942,46 +985,59 @@ agenda env selection = do
         (Inside x, Inside y) -> takeLast (Just ' ') $ label !? (x + (y * (w - 1)))
         _ -> Nothing
 
-    takeLast :: Maybe Char -> Maybe Char -> Maybe Char
-    takeLast Nothing x = x
-    takeLast x Nothing = x
-    takeLast x y = y
-
+    -- | Get the time string for a given y index.
     yToTime :: Int -> String
     yToTime y =
-      let elapsed = 5 * y
+      let elapsed = mpl * y
           (hours, minutes) = divMod elapsed 60
           timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
       in timestr
 
+    -- | Calculate the sequence of indices for each row
     indices :: Int -> Int -> [[(Int, Int)]]
     indices w h = cols <$> [0..h]
       where
         cols y = ((,) y) <$> [0..w]
 
+    -- | Render background grid and left-side gutter
     backGrid :: Int -> Int -> Char
-    backGrid y x | x < 5          = fromMaybe ' ' $ yToTime y !? x
-    backGrid y _ | y `mod` 4 == 0 = '\x2504'
-    backGrid _ _                   = ' '
+    backGrid y x | x < (gutter - 1) = fromMaybe ' ' $ yToTime y !? x
+    backGrid y _ | y `mod` 4 == 0   = '\x2504'
+    backGrid _ _                    = ' '
 
-    doCell recs (y, x) = foldl' takeLast Nothing
-      $ (shadeRect y (x - 6))
-      <$> recs
+    -- | Merge the given rectangles into a single implicit function.
+    --
+    -- The last rectangle is considered top-most.
+    --
+    -- This is offset by the gutter width to the right, so there's room for the y axis labels.
+    combineRects recs (y, x) = foldl' takeLast Nothing $ (shadeRect y (x - gutter)) <$> recs
 
+    -- | Step through the given list. For each value, yield the following tripple:
+    -- - raw x value
+    -- - f applied to x
+    -- - f applied to previous value of x
     pairwise :: (a -> b) -> b -> [a] -> [(a, b, b)]
     pairwise f _    []         = []
     pairwise f last (x : rest) = let x' = f x in (x, x', last) : pairwise f x' rest
 
-    renderSlow :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
-    renderSlow w h recs = do
+    -- | Render the daily agenda view via inefficient implicit functions.
+    --
+    -- This method doesn't require any special terminal escape
+    -- sequences, but does emit unicode.
+    --
+    -- This algorithm will try to compress the schedule vertically by
+    -- skipping runs of lines which are "the same".
+    printCondensedSchedule :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
+    printCondensedSchedule w h recs = do
       putStrLn $ replicate (w + 1) '\x2550'
-      for_ (pairwise (doCell recs <$>) [] $ indices w h) $ \(row, cur, prev) -> do
+      for_ (pairwise (combineRects recs <$>) [] $ indices w h) $ \(row, cur, prev) -> do
         let bg = uncurry backGrid <$> row
+        -- if the previous row is "the same as" the current row (ignoring the background),
+        -- skip the line.
         if cur == prev
           then pure ()
+          -- merge the background and foreground layers
           else putStrLn $ uncurry fromMaybe <$> zip bg cur
-
-
 
 -------------------------------------------------------------------------------
 
