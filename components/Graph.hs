@@ -65,6 +65,7 @@ import Graphics.Vty qualified as Vty
 import Graphics.Vty.Platform.Unix(mkVty)
 import Pipes
 import Pipes.Prelude qualified as P
+import Text.Parse
 
 -- standard lib imports
 import Control.Monad
@@ -93,7 +94,9 @@ data Env = Env {
   show_subtasks :: Bool,
   show_deps     :: Bool,
   debug_edges   :: Bool,
-  now           :: I.DateTime
+  now           :: I.DateTime,
+  linez         :: Int,
+  cols          :: Int
 }
 
 -- | A node datum identifier.
@@ -226,6 +229,14 @@ getEnvDot var def = do
   val <- lookupEnv var
   return $ pdot $ fromMaybe def val
 
+getEnvInt :: String -> Int -> IO Int
+getEnvInt var def = do
+  val <- lookupEnv var
+  return $ case Pa.run parseDec <$> val of
+    Nothing          -> def
+    Just (Left _)    -> def
+    Just (Right val) -> val
+
 -- | Pull in our state from the environment
 getEnvState :: IO Env
 getEnvState = do
@@ -240,7 +251,11 @@ getEnvState = do
   show_virtual  <- getEnvBool "GTD_GRAPH_SHOW_VIRTUAL"  True
   show_subtasks <- getEnvBool "GTD_GRAPH_SHOW_SUBTASKS" True
   debug_edges   <- getEnvBool "GTD_GRAPH_DEBUG_EDGES"   False
-  now           <- getCurrentTime
+  -- XXX: ☣ ☣ ☣ ☣ HACK ALERT!!! ☣ ☣ ☣ ☣
+  now           <- (I.|- 8 * I.hour) <$> getCurrentTime
+  -- XXX: ☣ ☣ ☣ ☣ HACK ALERT!!! ☣ ☣ ☣ ☣
+  linez         <- getEnvInt  "LINES"                   24
+  cols          <- getEnvInt  "COLUMNS"                 80
   return Env{..}
 
 -- | True if the given node Id has the given datum
