@@ -43,6 +43,7 @@ import Interval((|-))
 import DateSet qualified as DS
 import JSONParser qualified as JP
 import Parser qualified as Pa
+import Render qualified as R
 import Scheduler qualified as S
 import Util
 
@@ -60,6 +61,7 @@ import Data.List.Extra (upper)
 import Data.String.Utils
 import Data.Text.Lazy qualified as T
 import Data.Text.Lazy.IO qualified as TIO
+import Data.Tuple.Extra(both)
 import Data.Time.Clock
 import Graphics.Vty qualified as Vty
 import Graphics.Vty.Platform.Unix(mkVty)
@@ -70,6 +72,7 @@ import Text.Parse
 -- standard lib imports
 import Control.Monad
 import Control.Exception
+import Data.Char(intToDigit)
 import Data.IORef
 import Data.List
 import Data.Map (Map)
@@ -884,60 +887,6 @@ classifyNode env id = do
 
 -------------------------------------------------------------------------------
 
--- | A labeled box to be printed on the screen in ANSI glory.
-type LabledRect = (String, Int, Int, Int, Int)
-
--- | The result of a evaluating an implicit function on an ordered set.
---
--- A value is either inside, outside, or on the boundary.
-data Implicit a  = LowerBound | Inside a | UpperBound | Outside
-
--- | Type of implicit functions in two dimensions
-type ImplicitFn a = (Int, Int) -> a
-
--- | An implicit 1D bounded range or interval.
-irange :: Int -> Int -> Int -> Implicit Int
-irange l x u = case compare x l of
-  LT -> Outside
-  EQ -> LowerBound
-  GT -> case compare x u of
-    LT -> Inside $ x - l - 1
-    EQ -> UpperBound
-    GT -> Outside
-
--- | An implicit function to render a labeled box with round corners.
-implicitLabledRoundRect :: LabledRect -> ImplicitFn (Maybe Char)
-implicitLabledRoundRect (label, rx, ry, w, h) (y, x) =
-  case (irange 0 (x - rx) w, irange 0 (y - ry) h) of
-    (LowerBound, LowerBound)  -> Just '\x256D' -- top left
-    (UpperBound, LowerBound)  -> Just '\x256E' -- top right
-    (LowerBound, UpperBound)  -> Just '\x2570' -- bottom left
-    (UpperBound, UpperBound)  -> Just '\x256F' -- bottom right
-    (LowerBound, Inside _)    -> Just '\x2502' -- left side
-    (UpperBound, Inside _)    -> Just '\x2502' -- right side
-    (Inside _,   LowerBound)  -> Just '\x2500' -- top side
-    (Inside _,   UpperBound)  -> Just '\x2500' -- bottom side
-    (Inside x,   Inside y)    -> takeLast (Just ' ') $ label !? (x + (y * (w - 1)))
-    _                         -> Nothing
-
--- | Translate an implicit function by the given amount.
-translate :: Int -> Int -> ImplicitFn a -> ImplicitFn a
-translate oy ox f (y, x) = f (y - oy, x - ox)
-
--- | Combine the given partial implicit functions into a single function.
---
--- Right-most is top-most.
---
--- This is offset by the gutter width to the right, so there's room for the y axis labels.
-combinePartial :: [ImplicitFn (Maybe a)] -> ImplicitFn (Maybe a)
-combinePartial []        _  = Nothing
-combinePartial (f : fs) pt = takeLast (f pt) $ combinePartial fs pt
-
--- | Combine the given partial implicit function with a total one that
--- is used as the bottom layer.
-combineTotal :: ImplicitFn a -> ImplicitFn (Maybe a) -> ImplicitFn a
-combineTotal total partial pt = fromMaybe (total pt) $ partial pt
-
 -- | Print agenda view for the current day.
 --
 -- This will show scheduled and nscheduled activity for the given input set.
@@ -969,7 +918,7 @@ agenda env selection = do
   glossen <- readIORef glosses
   habits' <- readIORef habits
 
-  let width = env.cols - 1
+  let width = env.cols
   let ad = S.agendaDay env.now $ Map.toList scheduled'
   let plotted = plot ((width - gutter) `div` (ad.hwm + 1)) glossen <$> ad.scheduled
   let week = I.TimePeriod (I.startOfWeek env.now) (I.endOfWeek env.now)
@@ -1024,42 +973,49 @@ agenda env selection = do
     height :: I.TimeDelta -> Int
     height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` mpl
 
-    -- | Construct a single labeled rectangle.
-    rect label x y w h = (label, x, y, w, h)
-
     -- | Convert schedule data to a list of labeled rectangles for drawing.
-    plot :: Int -> Map Id String -> (Id, (I.TimePeriod, Int)) -> LabledRect
+    plot :: Int -> Map Id String -> (Id, (I.TimePeriod, Int)) -> R.LabledRect
     plot slotWidth glossen (id, (I.TimePeriod s e, slot)) =
-      rect
+      R.rect
         (fromJust $ Map.lookup id glossen)
         (col slotWidth slot)
         (row s)
         (slotWidth - margin)
         (height $ e I.|-| s)
 
-    -- | Get the time string for a given y index.
-    yToTime :: Int -> String
-    yToTime y =
+    -- | Render the y-axis labels
+    timeLabels :: R.Layer Char
+    timeLabels (y, x) =
       let elapsed = mpl * y
-          (hours, minutes) = divMod elapsed 60
-          timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
-      in timestr
+      in if elapsed `mod` 15 == 0
+         then
+           let (hours, minutes) = divMod elapsed 60
+               (h0, h1)         = both intToDigit $ divMod hours 10
+               (m0, m1)         = both intToDigit $ divMod minutes 10
+               timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
+           in case x of
+             0 -> Just h0
+             1 -> Just h1
+             2 -> Just ':'
+             3 -> Just m0
+             4 -> Just m1
+             _ -> Nothing
+         else if x == 2 then Just '\x2502' else Nothing
 
-    -- | Calculate the sequence of indices for each row
-    indices :: Int -> Int -> [[(Int, Int)]]
-    indices w h = cols <$> [0..h]
-      where
-        cols y = (y,) <$> [0..w]
+    timeGrid :: R.Image
+    timeGrid (y, _) = case y `mod` lph of
+      0 -> '\x2504'
+      6 -> '\x2504'
+      _ -> ' '
 
     -- | Render background grid and left-side gutter
-    backGrid :: (Int, Int) -> Char
-    backGrid (y, x) | x < (gutter - 1) = fromMaybe ' ' $ yToTime y !? x
-    backGrid (y, _) | y `mod` lph == 0 = '\x2504'
-    backGrid _                         = ' '
+    backGrid :: R.Image
+    backGrid = R.overlay timeGrid timeLabels
 
     -- | Render the schedule items later
-    schedule :: [LabledRect] -> ImplicitFn (Maybe Char)
-    schedule rects = translate 0 gutter $ combinePartial $ implicitLabledRoundRect <$> rects
+    schedule :: [R.LabledRect] -> R.Layer Char
+    schedule []           = R.text "Schedule is Empty"
+    schedule (bot : rest) = R.translate 0 gutter $ R.composite (R.roundBox ' ' bot) $ R.roundBox ' ' <$> rest
 
     -- | Render the daily agenda view via inefficient implicit functions.
     --
@@ -1067,17 +1023,10 @@ agenda env selection = do
     -- sequences, but does emit unicode.
     --
     -- This will print the full 24h schedule with now elisions.
-    printFullSchedule :: Int -> Int -> [LabledRect] -> IO ()
-    printFullSchedule w h items = for_ (indices w h) $ \row -> do
-      putStrLn $ combineTotal backGrid (schedule items) <$> row
-
-    -- | Step through the given list. For each value, yield the following tripple:
-    -- - raw value
-    -- - f applied
-    -- - f applied to previous value of x
-    pairwise :: (a -> b) -> b -> [a] -> [(a, b, b)]
-    pairwise f _    []         = []
-    pairwise f last (x : xs) = let x' = f x in (x, x', last) : pairwise f x' xs
+    printFullSchedule :: Int -> Int -> [R.LabledRect] -> IO ()
+    printFullSchedule w h items = for_
+      (R.render w h $ R.overlay backGrid $ schedule items)
+      putStrLn
 
     -- | Print a condensed schedule
     --
@@ -1086,16 +1035,10 @@ agenda env selection = do
     --
     -- In pathological cases, will be equivalent to
     -- `printFullSchedule`.
-    printCondensedSchedule :: Int -> Int -> [LabledRect] -> IO ()
-    printCondensedSchedule w h items = do
-      for_ (pairwise (schedule items <$>) [] $ indices w h) $ \(row, cur, prev) -> do
-        let bg = backGrid <$> row
-        -- if the previous row is "the same as" the current row (ignoring the background),
-        -- skip the line.
-        if cur == prev
-          then pure ()
-          -- merge the background and foreground layers
-          else putStrLn $ uncurry fromMaybe <$> zip bg cur
+    printCondensedSchedule :: Int -> Int -> [R.LabledRect] -> IO ()
+    printCondensedSchedule w h items = for_
+      (R.renderCondensed w h backGrid $ schedule items)
+      putStrLn
 
 -------------------------------------------------------------------------------
 
@@ -1146,8 +1089,8 @@ dispatch env = impl
     -- scheduler commands
     impl ("is_complete" : w)  = withWindow env w $ isComplete env
     impl ("is_incomplete": w) = withWindow env w isIncomplete
-    impl ("is_scheduled": w)  = Filter $ has (Datum "schedule")
-    impl ("is_unscheduled" : w) = Filter $ invert' $ has (Datum "schedule")
+    impl ["is_scheduled"]     = Filter $ has (Datum "schedule")
+    impl ["is_unscheduled"]   = Filter $ invert' $ has (Datum "schedule")
     impl ["in_progress"]      = Filter $ inProgress
     impl ("completed" : w)    = withWindow env w $ completed env
     impl ["classify"]         = undefined -- XXX

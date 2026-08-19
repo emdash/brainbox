@@ -8,7 +8,8 @@ module Util (
   between,
   (-$),
   takeLast,
-  tabulate
+  tabulate,
+  applyPairwise
 ) where
 
 import Data.List
@@ -83,6 +84,19 @@ tabulate colsep rows = intercalate "\n" $ separated
 --
 -- XXX: feels like a library function that already exists
 takeLast :: Maybe a -> Maybe a -> Maybe a
-takeLast Nothing x        = x
-takeLast x        Nothing = x
-takeLast x        y       = y
+takeLast Nothing x       = x
+takeLast x       Nothing = x
+takeLast _       y       = y
+
+-- | Step through the given list. For each value, yield the following triple:
+--   0. raw value
+--   1. f applied to value
+--   2. f applied to previous value of x
+--
+-- This is to allow doing some calculations over previous history,
+-- in pure code, avoiding duplication of work.
+applyPairwise :: (a -> b) -> b -> [a] -> [(a, b, b)]
+applyPairwise _ _    []       = []
+applyPairwise f last (x : xs) =
+  let x' = f x
+  in (x, x', last) : applyPairwise f x' xs
