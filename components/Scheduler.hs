@@ -130,12 +130,19 @@ previewWeek ds w = do
       putStrLn ""
     putStrLn ""
 
+previewDefault :: DateSet -> TimePeriod -> IO ()
+previewDefault expr' window = case previewHint expr' of
+  L -> for_ (intervals expr' window) $ putStrLn . show
+  W -> previewWeek  expr' window
+  M -> previewMonth expr' window
+
 preview :: String -> TimePeriod -> String -> IO ()
 preview mode window expr =
   let expr' = case JP.fromString expr of
         Left err -> error err
         Right e -> e
   in case mode of
+    "default" -> previewDefault expr' window
     "list"  -> for_ (intervals expr' window) $ putStrLn . show
     "month" -> previewMonth expr' window
     "week"  -> previewWeek  expr' window

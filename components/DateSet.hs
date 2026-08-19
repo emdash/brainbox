@@ -8,6 +8,7 @@
 
 
 module DateSet (
+  PreviewHint(..),
   DateSet,
   IDateSet(..),
   _intervals,
@@ -53,6 +54,9 @@ import Interval (
   toInterval)
 import Interval qualified as Interval
 
+data PreviewHint = W | M | L
+  deriving (Ord, Eq, Show)
+
 -- | The methods that are supported by DateSet
 class Show a => IDateSet a where
   -- | Return the smallest interval spanning the entire set.
@@ -80,6 +84,9 @@ class Show a => IDateSet a where
   _dur :: a -> TimeDelta
   _dur _ = 1 * Interval.minute
 
+  previewHint :: a -> PreviewHint
+  previewHint _ = L
+
 -- | Represents when an event can happen.
 --
 -- We can ask a date set whether or not an arbitrary interval
@@ -100,6 +107,7 @@ instance IDateSet DateSet where
   span (DateSet ds) = DateSet.span ds
   largestIntervalContaining (DateSet ds) = largestIntervalContaining ds
   invert (DateSet ds) = invert ds
+  previewHint (DateSet ds) = previewHint ds
 
 instance IWithin DateSet where
   -- | True if the DateSet contains the given instant.
@@ -183,6 +191,8 @@ instance IDateSet Union where
 
   _dur (Union subsets) = foldl min Interval.day $ _dur <$> subsets
 
+  previewHint (Union subsets) = foldl max L $ previewHint <$> subsets
+
 union :: [DateSet] -> DateSet
 union = DateSet . Union
 
@@ -208,6 +218,8 @@ instance IDateSet Intersection where
     where go acc i = Interval.intersection acc (largestIntervalContaining i dt)
 
   _dur (Intersection subsets) = foldl min Interval.day $ _dur <$> subsets
+
+  previewHint (Intersection subsets) = foldl min L $ previewHint <$> subsets
 
 intersection :: [DateSet] -> DateSet
 intersection = DateSet . Intersection
@@ -245,6 +257,10 @@ instance IDateSet Periodic where
 
   _dur self = min self.phase $ self.duration - self.phase
 
+  previewHint self | self.period <= Interval.day  = W
+  previewHint self | self.period <= Interval.week = M
+  previewHint _                                   = L
+
 -- | A DateSet which repeats over a fixed period, for the given
 -- duration, offset by an optional phase.
 periodic :: TimeDelta -> TimeDelta -> Maybe TimeDelta -> DateSet
@@ -274,6 +290,8 @@ instance IDateSet Weekly where
   invert self = DateSet $ Weekly $ Bits.complement self.which
 
   _dur _ = Interval.day
+
+  previewHint _ = M
 
 toWord8 :: Set DayOfWeek -> Word8
 toWord8 days = foldl insert_ 0 days
@@ -305,6 +323,8 @@ instance IDateSet Monthly where
   invert self = DateSet $ Monthly $ Map.map Bits.complement self.months
 
   _dur _ = Interval.day
+
+  previewHint _ = M
 
 fromWord32 :: Word32 -> [DayOfMonth]
 fromWord32 days = filter (Bits.testBit days) [1..31]
@@ -362,6 +382,8 @@ instance IDateSet NthWeekday where
 
   _dur _ = Interval.day
 
+  previewHint _ = M
+
 firstWeekday :: DayOfWeek -> Month -> Day
 firstWeekday d m = go $ periodFirstDay m
   where
@@ -400,6 +422,8 @@ instance IDateSet Shift where
     largestIntervalContaining self.subset $ (dt |- self.offset) |+ self.offset
 
   invert self = shift self.offset $ invert self.subset
+
+  previewHint self = previewHint self.subset
 
 shift :: TimeDelta -> DateSet -> DateSet
 shift td ds = DateSet $ Shift td ds

@@ -79,9 +79,10 @@ tabulate colsep rows = intercalate "\n" $ separated
     separated = intercalate colsep <$> transpose padded
     maxwidth = foldl max 0 $ length <$> separated
 
--- | Given two maybes, take the last non-nothing value
+-- | Given two maybes, take the right-most non-nothing value
+--
 -- XXX: feels like a library function that already exists
-takeLast :: Maybe Char -> Maybe Char -> Maybe Char
-takeLast Nothing x = x
-takeLast x Nothing = x
-takeLast x y = y
+takeLast :: Maybe a -> Maybe a -> Maybe a
+takeLast Nothing x        = x
+takeLast x        Nothing = x
+takeLast x        y       = y

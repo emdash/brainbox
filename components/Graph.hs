@@ -251,9 +251,8 @@ getEnvState = do
   show_virtual  <- getEnvBool "GTD_GRAPH_SHOW_VIRTUAL"  True
   show_subtasks <- getEnvBool "GTD_GRAPH_SHOW_SUBTASKS" True
   debug_edges   <- getEnvBool "GTD_GRAPH_DEBUG_EDGES"   False
-  -- XXX: ☣ ☣ ☣ ☣ HACK ALERT!!! ☣ ☣ ☣ ☣
+  -- XXX: ☣ ☣ ☣ ☣ HACK ALERT!!! Hard-coding UTC offset! ☣ ☣ ☣ ☣
   now           <- (I.|- 8 * I.hour) <$> getCurrentTime
-  -- XXX: ☣ ☣ ☣ ☣ HACK ALERT!!! ☣ ☣ ☣ ☣
   linez         <- getEnvInt  "LINES"                   24
   cols          <- getEnvInt  "COLUMNS"                 80
   return Env{..}
@@ -344,6 +343,14 @@ readDatum env datum id = do
   handle <- lift $ openFile (datumPath env datum id) ReadMode
   P.fromHandle handle
   lift $ hClose handle
+
+-- | Helper function to parse the value from the first line of a task datum.
+withContents :: (String -> Either String a) -> Datum -> Env -> Id -> IO (Either String a)
+withContents parser datum env id = do
+  contents :: Either IOException String <- try $ readFile (datumPath env datum id)
+  case contents of
+    Left  err -> return $ Left $ show err
+    Right val -> return $ parser val
 
 -- | Helper function to parse the value from the first line of a task datum.
 withFirstLine :: (String -> Maybe a) -> Datum -> Env -> Id -> IO (Maybe a)
@@ -846,7 +853,8 @@ render env selection =
 -- | Get the task schedule if it exists
 -- XXX: would prefer either here so I could get error messges
 taskSchedule :: Env -> Id -> IO (Maybe DS.DateSet)
-taskSchedule = withFirstLine (eitherToMaybe . JP.fromString) (Datum "schedule")
+taskSchedule env id = eitherToMaybe
+  <$> withContents JP.fromString (Datum "schedule") env id
 
 -- | Get the task completion history if it exists
 taskHistory :: Env -> Id -> IO [I.DateTime]
@@ -874,18 +882,61 @@ classifyNode env id = do
         else return Event
     else return $ Unscheduled
 
--- The result of a evaluating an implicit function in 1 dimension
-data ImplicitResult a  = Below | BBorder | Inside a | ABorder | Above
+-------------------------------------------------------------------------------
 
--- Implicit function which renders a 1-D rectangle.
-implicitRect :: Int -> Int -> Int -> ImplicitResult Int
-implicitRect l x u = case compare x l of
-  LT -> Below
-  EQ -> BBorder
+-- | A labeled box to be printed on the screen in ANSI glory.
+type LabledRect = (String, Int, Int, Int, Int)
+
+-- | The result of a evaluating an implicit function on an ordered set.
+--
+-- A value is either inside, outside, or on the boundary.
+data Implicit a  = LowerBound | Inside a | UpperBound | Outside
+
+-- | Type of implicit functions in two dimensions
+type ImplicitFn a = (Int, Int) -> a
+
+-- | An implicit 1D bounded range or interval.
+irange :: Int -> Int -> Int -> Implicit Int
+irange l x u = case compare x l of
+  LT -> Outside
+  EQ -> LowerBound
   GT -> case compare x u of
     LT -> Inside $ x - l - 1
-    EQ -> ABorder
-    GT -> Above
+    EQ -> UpperBound
+    GT -> Outside
+
+-- | An implicit function to render a labeled box with round corners.
+implicitLabledRoundRect :: LabledRect -> ImplicitFn (Maybe Char)
+implicitLabledRoundRect (label, rx, ry, w, h) (y, x) =
+  case (irange 0 (x - rx) w, irange 0 (y - ry) h) of
+    (LowerBound, LowerBound)  -> Just '\x256D' -- top left
+    (UpperBound, LowerBound)  -> Just '\x256E' -- top right
+    (LowerBound, UpperBound)  -> Just '\x2570' -- bottom left
+    (UpperBound, UpperBound)  -> Just '\x256F' -- bottom right
+    (LowerBound, Inside _)    -> Just '\x2502' -- left side
+    (UpperBound, Inside _)    -> Just '\x2502' -- right side
+    (Inside _,   LowerBound)  -> Just '\x2500' -- top side
+    (Inside _,   UpperBound)  -> Just '\x2500' -- bottom side
+    (Inside x,   Inside y)    -> takeLast (Just ' ') $ label !? (x + (y * (w - 1)))
+    _                         -> Nothing
+
+-- | Translate an implicit function by the given amount.
+translate :: Int -> Int -> ImplicitFn a -> ImplicitFn a
+translate oy ox f (y, x) = f (y - oy, x - ox)
+
+-- | Combine the given partial implicit functions into a single function.
+--
+-- Right-most is top-most.
+--
+-- This is offset by the gutter width to the right, so there's room for the y axis labels.
+combinePartial :: [ImplicitFn (Maybe a)] -> ImplicitFn (Maybe a)
+combinePartial []        _  = Nothing
+combinePartial (f : fs) pt = takeLast (f pt) $ combinePartial fs pt
+
+-- | Combine the given partial implicit function with a total one that
+-- is used as the bottom layer.
+combineTotal :: ImplicitFn a -> ImplicitFn (Maybe a) -> ImplicitFn a
+combineTotal total partial pt = fromMaybe (total pt) $ partial pt
 
 -- | Print agenda view for the current day.
 --
@@ -977,7 +1028,7 @@ agenda env selection = do
     rect label x y w h = (label, x, y, w, h)
 
     -- | Convert schedule data to a list of labeled rectangles for drawing.
-    plot :: Int -> Map Id String -> (Id, (I.TimePeriod, Int)) -> (String, Int, Int, Int, Int)
+    plot :: Int -> Map Id String -> (Id, (I.TimePeriod, Int)) -> LabledRect
     plot slotWidth glossen (id, (I.TimePeriod s e, slot)) =
       rect
         (fromJust $ Map.lookup id glossen)
@@ -985,20 +1036,6 @@ agenda env selection = do
         (row s)
         (slotWidth - margin)
         (height $ e I.|-| s)
-
-    -- | Render a labeled box implicitly via round rectangles.
-    shadeRect iy ix (label, rx, ry, w, h) =
-      case (implicitRect 0 (ix - rx) w, implicitRect 0 (iy - ry) h) of
-        (BBorder, BBorder) -> Just '\x256D'
-        (ABorder, BBorder) -> Just '\x256E'
-        (BBorder, ABorder) -> Just '\x2570'
-        (ABorder, ABorder) -> Just '\x256F'
-        (BBorder, Inside _) -> Just '\x2502'
-        (ABorder, Inside _) -> Just '\x2502'
-        (Inside _, BBorder) -> Just '\x2500'
-        (Inside _, ABorder) -> Just '\x2500'
-        (Inside x, Inside y) -> takeLast (Just ' ') $ label !? (x + (y * (w - 1)))
-        _ -> Nothing
 
     -- | Get the time string for a given y index.
     yToTime :: Int -> String
@@ -1012,29 +1049,17 @@ agenda env selection = do
     indices :: Int -> Int -> [[(Int, Int)]]
     indices w h = cols <$> [0..h]
       where
-        cols y = ((,) y) <$> [0..w]
+        cols y = (y,) <$> [0..w]
 
     -- | Render background grid and left-side gutter
-    backGrid :: Int -> Int -> Char
-    backGrid y x | x < (gutter - 1) = fromMaybe ' ' $ yToTime y !? x
-    backGrid y _ | y `mod` lph == 0 = '\x2504'
-    backGrid _ _                    = ' '
+    backGrid :: (Int, Int) -> Char
+    backGrid (y, x) | x < (gutter - 1) = fromMaybe ' ' $ yToTime y !? x
+    backGrid (y, _) | y `mod` lph == 0 = '\x2504'
+    backGrid _                         = ' '
 
-    -- | Merge the given rectangles into a single implicit function.
-    --
-    -- The last rectangle is considered top-most.
-    --
-    -- This is offset by the gutter width to the right, so there's room for the y axis labels.
-    combineRects recs (y, x) = foldl' takeLast Nothing $ (shadeRect y (x - gutter)) <$> recs
-
-    -- | Step through the given list. For each value, yield the following tripple:
-    -- - raw x value
-    -- - f applied to x
-    -- - f applied to previous value of x
-    pairwise :: (a -> b) -> b -> [a] -> [(a, b, b)]
-    pairwise f _    []         = []
-    pairwise f last (x : rest) = let x' = f x in (x, x', last) : pairwise f x' rest
-
+    -- | Render the schedule items later
+    schedule :: [LabledRect] -> ImplicitFn (Maybe Char)
+    schedule rects = translate 0 gutter $ combinePartial $ implicitLabledRoundRect <$> rects
 
     -- | Render the daily agenda view via inefficient implicit functions.
     --
@@ -1042,23 +1067,29 @@ agenda env selection = do
     -- sequences, but does emit unicode.
     --
     -- This will print the full 24h schedule with now elisions.
-    printFullSchedule :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
-    printFullSchedule w h recs = for_ (indices w h) $ \row -> do
-      let cur = combineRects recs <$> row
-      let bg  = uncurry backGrid <$> row
-      putStrLn $ uncurry fromMaybe <$> zip bg cur
+    printFullSchedule :: Int -> Int -> [LabledRect] -> IO ()
+    printFullSchedule w h items = for_ (indices w h) $ \row -> do
+      putStrLn $ combineTotal backGrid (schedule items) <$> row
 
-    -- | Render the daily agenda view via inefficient implicit functions.
+    -- | Step through the given list. For each value, yield the following tripple:
+    -- - raw value
+    -- - f applied
+    -- - f applied to previous value of x
+    pairwise :: (a -> b) -> b -> [a] -> [(a, b, b)]
+    pairwise f _    []         = []
+    pairwise f last (x : xs) = let x' = f x in (x, x', last) : pairwise f x' xs
+
+    -- | Print a condensed schedule
     --
-    -- This method doesn't require any special terminal escape
-    -- sequences, but does emit unicode.
+    -- This will try to skip empty / repeating areas of the schedule,
+    -- so that typical dialy schedules are *much* smaller.
     --
-    -- This algorithm will try to compress the schedule vertically by
-    -- eliding runs of lines which are "the same".
-    printCondensedSchedule :: Int -> Int -> [(String, Int, Int, Int, Int)] -> IO ()
-    printCondensedSchedule w h recs = do
-      for_ (pairwise (combineRects recs <$>) [] $ indices w h) $ \(row, cur, prev) -> do
-        let bg = uncurry backGrid <$> row
+    -- In pathological cases, will be equivalent to
+    -- `printFullSchedule`.
+    printCondensedSchedule :: Int -> Int -> [LabledRect] -> IO ()
+    printCondensedSchedule w h items = do
+      for_ (pairwise (schedule items <$>) [] $ indices w h) $ \(row, cur, prev) -> do
+        let bg = backGrid <$> row
         -- if the previous row is "the same as" the current row (ignoring the background),
         -- skip the line.
         if cur == prev
@@ -1121,7 +1152,8 @@ dispatch env = impl
     impl ("completed" : w)    = withWindow env w $ completed env
     impl ["classify"]         = undefined -- XXX
     impl ("preview" : m : w)  = withWindow env w $ \w -> Eff $ forLines stdin (S.preview m w)
-    impl ["validate"]         = Eff $ forLines stdin S.validateDS
+    impl ["preview"]          = withWindow env [] $ \w -> Eff $ forLines stdin (S.preview "default" w)
+    impl ["validate"]         = Eff $ forLines stdin $ validateDS
     impl ("agenda" : sel)     = Eff $ agenda env $ Set.fromList $ Id <$> sel
 
     -- testing
@@ -1129,6 +1161,12 @@ dispatch env = impl
 
     -- default
     impl bad                  = Error $ "not implemented: " ++ unwords bad
+
+    validateDS id = do
+      result <- withContents JP.fromString (Datum "schedule") env (Id id)
+      case result of
+        Right ds -> putStrLn $ id ++ ('|' : show ds)
+        Left err -> putStrLn $ id ++ ('|' : err)
 
     handleAdjacent e d = case parseEdgeSet e of
       Nothing -> Error $ "Invalid edge set: " ++ e
