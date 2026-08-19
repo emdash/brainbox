@@ -3497,6 +3497,22 @@ function compile {
     local -r source_file="${GTD_DIR}/components/${module}.hs"
     local -r binary="${GTD_DIR}/components/${component}"
 
+    # find will complain if the binary doesn't actually exist.
+    if test -e "${binary}"
+    then
+        # find command exits non-zero if any source file is newer than the binary.
+        if find "${GTD_DIR}/components" -name '*.hs' -newer "${binary}" -exec false {} +
+        then
+            # if we got here, the binary is up-to-date, so return
+            # early.  this save 0.2s 0.3s each time we `rebuild`, so
+            # is an essential optimization.
+            return 0
+        fi
+    fi
+
+    # ghc is responsible for doing its own dependency tracking, via
+    # the `--make` flag. we only need to specify the binary we are
+    # building.
     ghc \
         --make \
         -XGHC2021 \
