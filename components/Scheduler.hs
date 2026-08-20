@@ -11,16 +11,19 @@ module Scheduler (
   preview,
   completionGraph,
   windowArgs,
-  agendaDay,
-  Agenda(..)
+  Agenda(..),
+  agenda,
+  printAgenda,
 ) where
 
 
 import Debug.Trace
 -- import Control.Monad
 import Data.Bits
+import Data.Char(intToDigit)
 import Data.Foldable
 import Data.Functor
+import Data.Maybe
 import Data.Word
 import System.IO
 
@@ -34,7 +37,7 @@ import Data.Set qualified as Set
 import Data.Time.Calendar
 import Data.Time.Calendar.Month
 import Data.Time.Clock
-import Data.Tuple.Utils
+import Data.Tuple.Extra
 import Data.Time.Format
 
 import DateSet
@@ -42,6 +45,7 @@ import Interval qualified as I
 import Interval(DateTime, TimePeriod(..), (|+), (|-))
 import JSONParser qualified as JP
 import Parser
+import Render qualified as R
 import Util
 
 -- | Parse a list of strings into a TimePeriod, taking into account current time.
@@ -173,6 +177,12 @@ instance Ord Boundary where
     x  -> x
   compare (End l) (End r) = compare l r
 
+-- | The information required to display the daily / weekly agenda.
+--
+-- XXX: the only reason this is parametric in the idT type is that,
+-- due to some build system limitations, Scheduler.hs cannot import
+-- the `Graph` module, happens to be the current entry point for the
+-- whole haskell monolith. This is where `Id` is defined.
 data Agenda idT = Agenda {
   scheduled :: [(idT, (TimePeriod, Int))],
   allDay :: Set idT,
@@ -181,6 +191,7 @@ data Agenda idT = Agenda {
   hwm :: Int
 } deriving Show
 
+-- | Return the first available slot in the agenda.
 firstSlot :: Word8 -> Int
 firstSlot w = go True (w .&. 0x0F)
   where
@@ -203,12 +214,15 @@ firstSlot w = go True (w .&. 0x0F)
     go False 0b1111 = error "you have too much shit going on"
     go y     x      = error $ "wtf" ++ show x ++ show y
 
+-- | Construct a blank agenda.
 blank :: Agenda a
 blank = Agenda [] Set.empty Map.empty 0 0
 
+-- | Punt the given task from the daily schedule to the weekly.
 punt :: Ord idT => idT -> Agenda idT -> Agenda idT
 punt i self = self { allDay = Set.insert i self.allDay }
 
+-- | Log the start of a new task while constructing an agenda.
 push :: Ord idT => idT -> DateTime -> Agenda idT -> Agenda idT
 push i start self =
   let
@@ -219,6 +233,7 @@ push i start self =
     hwm   = max self.hwm slot
   }
 
+-- | Log the end of an existing task while constructing an agenda.
 pop :: Ord idT => idT -> DateTime -> Agenda idT -> Agenda idT
 pop i e self = case Map.lookup i self.live of
   Nothing -> error "End without start"
@@ -228,6 +243,7 @@ pop i e self = case Map.lookup i self.live of
     stack = clearBit self.stack slot
   }
 
+-- | Explode the given list of intervals to an ordered set of boundaries.
 toBoundaries :: Ord idT => [(idT, I.Interval)] -> (Set (Boundary, idT), Set idT)
 toBoundaries intervals = let x = foldl byCases (Set.empty, Set.empty) intervals in x
   where
@@ -240,8 +256,9 @@ toBoundaries intervals = let x = foldl byCases (Set.empty, Set.empty) intervals 
       then (Set.insert (End e, i) $ Set.insert (Start s, i) b, ad)
       else (b, Set.insert i ad)
 
-agendaDay :: Ord idT => DateTime -> [(idT, DateSet)] -> Agenda idT
-agendaDay day sched =
+-- | Construct an agenda view for the given input timestamp and task set.
+agenda :: Ord idT => DateTime -> [(idT, DateSet)] -> Agenda idT
+agenda day sched =
   let (boundaries, ad) = toBoundaries intervals
   in foldl update (blank {allDay = ad}) $ Set.toAscList $ boundaries
   where
@@ -258,3 +275,134 @@ agendaDay day sched =
     update ret (NInf, i)    = punt i   ret
     update ret (Start s, i) = push i s ret
     update ret (End e, i)   = pop  i e ret
+
+{-
+  putStrLn "All Day"
+  for_ ad.allDay $ \id -> putStrLn $ (' ' : ' ' : (fromMaybe "[No contents]" $ Map.lookup id glossen))
+  putStrLn ""
+
+  putStrLn "Habits"
+  putStrLn $ tabulate " | " $ habitTable week glossen $ Map.toList habits'
+  where
+    habitTable week glossen habits = habitRow week glossen <$> habits
+
+    habitRow week glossen (id, (ds, hist)) = [
+      (' ' : ' ' : (fromMaybe "[No Contents]" $ Map.lookup id glossen)),
+      (S.completionGraph ds hist week)]
+
+  let ad =
+  let week =
+-}
+
+-- | Print the agenda to stdout.
+printAgenda
+  :: Ord idT
+  => Int
+  -> Map idT String
+  -> Agenda idT
+  -> I.TimePeriod
+  -> IO ()
+printAgenda w glossen ad week = do
+  let hrule = replicate w '\x2550'
+  putStrLn hrule
+  printCondensedSchedule
+    w
+    (lph * 24)
+    $ plot ((w - gutter) `div` (ad.hwm + 1)) glossen <$> ad.scheduled
+  putStrLn hrule
+  where
+    -- | Time per line in in minutes
+    mpl = 5
+
+    -- | Lines per hour
+    lph = 60 `div` mpl
+
+    -- | Horizontal space between items
+    margin = 2
+
+    -- | Half the margin.
+    marginH = margin `div` 2
+
+    -- | Width of left gutter
+    gutter = 6
+
+    -- | Calculate the y position for the given timestamp.
+    row :: I.DateTime -> Int
+    row dt =
+      let (UTCTime _ time) = dt
+      in  (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` mpl
+
+    -- | Calculate the x column position of the left edge of the given slot index.
+    col :: Int -> Int -> Int
+    col slotWidth slot = slotWidth * slot
+
+    -- | Calculate the height of a rectangle for a given TimeDelta.
+    height :: I.TimeDelta -> Int
+    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` mpl
+
+    -- | Convert schedule data to a list of labeled rectangles for drawing.
+    plot :: Ord idT => Int -> Map idT String -> (idT, (I.TimePeriod, Int)) -> R.LabledRect
+    plot slotWidth glossen (id, (I.TimePeriod s e, slot)) =
+      R.rect
+        (fromJust $ Map.lookup id glossen)
+        (col slotWidth slot)
+        (row s)
+        (slotWidth - margin)
+        (height $ e I.|-| s)
+
+    -- | Render the y-axis labels
+    timeLabels :: R.Layer Char
+    timeLabels (y, x) =
+      let elapsed = mpl * y
+      in if elapsed `mod` 15 == 0
+         then
+           let (hours, minutes) = divMod elapsed 60
+               (h0, h1)         = both intToDigit $ divMod hours 10
+               (m0, m1)         = both intToDigit $ divMod minutes 10
+               timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
+           in case x of
+             0 -> Just h0
+             1 -> Just h1
+             2 -> Just ':'
+             3 -> Just m0
+             4 -> Just m1
+             _ -> Nothing
+         else if x == 2 then Just '\x2502' else Nothing
+
+    timeGrid :: R.Image
+    timeGrid (y, _) = case y `mod` lph of
+      0 -> '\x2504'
+      6 -> '\x2504'
+      _ -> ' '
+
+    -- | Render background grid and left-side gutter
+    backGrid :: R.Image
+    backGrid = R.overlay timeGrid timeLabels
+
+    -- | Render the schedule items layer
+    schedule :: [R.LabledRect] -> R.Layer Char
+    schedule []           = R.text "Schedule is Empty"
+    schedule (bot : rest) = R.translate 0 gutter $ R.composite (R.roundBox ' ' bot) $ R.roundBox ' ' <$> rest
+
+    -- | Render the daily agenda view via inefficient implicit functions.
+    --
+    -- This method doesn't require any special terminal escape
+    -- sequences, but does emit unicode.
+    --
+    -- This will print the full 24h schedule with now elisions.
+    printFullSchedule :: Int -> Int -> [R.LabledRect] -> IO ()
+    printFullSchedule w h items = for_
+      (R.render w h $ R.overlay backGrid $ schedule items)
+      putStrLn
+
+    -- | Print a condensed schedule
+    --
+    -- This will try to skip empty / repeating areas of the schedule,
+    -- so that typical dialy schedules are *much* smaller.
+    --
+    -- In pathological cases, will be equivalent to
+    -- `printFullSchedule`.
+    printCondensedSchedule :: Int -> Int -> [R.LabledRect] -> IO ()
+    printCondensedSchedule w h items = for_
+      (R.renderCondensed w h backGrid $ schedule items)
+      putStrLn

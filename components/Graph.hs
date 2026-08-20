@@ -72,7 +72,6 @@ import Text.Parse
 -- standard lib imports
 import Control.Monad
 import Control.Exception
-import Data.Char(intToDigit)
 import Data.IORef
 import Data.List
 import Data.Map (Map)
@@ -887,158 +886,44 @@ classifyNode env id = do
 
 -------------------------------------------------------------------------------
 
--- | Print agenda view for the current day.
+-- | Construct and print the agenda view for the environment's current time.
 --
--- This will show scheduled and nscheduled activity for the given input set.
-agenda :: Env -> Set Id -> IO ()
-agenda env selection = do
+-- This will show scheduled and unscheduled activity for the given input set.
+printAgenda :: Env -> Set Id -> IO ()
+printAgenda env selection = do
   let dt = env.now
+
   todo            <- newIORef []
   scheduled       <- newIORef Map.empty
   habits          <- newIORef Map.empty
   glosses         <- newIORef Map.empty
-  runEffect $ for (readIds stdin) $ \id -> do
-    klass <- lift $ classifyNode env id
-    gloss <- lift $ taskGloss env id
+
+  runEffect $ for (readIds stdin) $ \id -> lift $ do
+    klass <- classifyNode env id
+    gloss <- taskGloss env id
     case gloss of
       Nothing -> pure ()
-      Just gloss -> lift $ modifyIORef glosses (Map.insert id gloss)
+      Just gloss -> glosses $= Map.insert id gloss
     case klass of
-      Unscheduled -> lift $ modifyIORef todo (id :)
-      Event -> lift $ do
-        ds <- taskSchedule env id
-        modifyIORef scheduled $ Map.insert id $ fromJust ds
-      Habit -> lift $ do
-        ds <- taskSchedule env id
-        hist <- taskHistory env id
-        modifyIORef scheduled $ Map.insert id $ fromJust ds
-        modifyIORef habits $ Map.insert id $ (fromJust ds, hist)
+      Unscheduled -> todo $= (id :)
+      Event -> do
+        ds        <- taskSchedule env id
+        scheduled $= Map.insert id $ fromJust ds
+      Habit -> do
+        ds        <- taskSchedule env id
+        hist      <- taskHistory env id
+        scheduled $= Map.insert id $ fromJust ds
+        habits    $= Map.insert id $ (fromJust ds, hist)
 
   scheduled' <- readIORef scheduled
-  glossen <- readIORef glosses
-  habits' <- readIORef habits
+  glossen    <- readIORef glosses
+  habits'    <- readIORef habits
 
-  let width = env.cols
-  let ad = S.agendaDay env.now $ Map.toList scheduled'
-  let plotted = plot ((width - gutter) `div` (ad.hwm + 1)) glossen <$> ad.scheduled
-  let week = I.TimePeriod (I.startOfWeek env.now) (I.endOfWeek env.now)
-  let hrule = replicate env.cols '\x2550'
-
-  putStrLn hrule
-  printCondensedSchedule width (lph * 24) plotted
-  putStrLn hrule
-
-  putStrLn "All Day"
-  for_ ad.allDay $ \id -> putStrLn $ (' ' : ' ' : (fromMaybe "[No contents]" $ Map.lookup id glossen))
-  putStrLn ""
-
-  putStrLn "Habits"
-  putStrLn $ tabulate " | " $ habitTable week glossen $ Map.toList habits'
-
-  where
-    -- | Time per line in in minutes
-    mpl :: Int
-    mpl = 5
-
-    lph = 60 `div` mpl
-
-    -- | horizontal space between items
-    margin :: Int
-    margin = 2
-
-    marginH :: Int
-    marginH = margin `div` 2
-
-    -- | Width of left gutter
-    gutter :: Int
-    gutter = 6
-
-    habitTable week glossen habits = habitRow week glossen <$> habits
-
-    habitRow week glossen (id, (ds, hist)) = [
-      (' ' : ' ' : (fromMaybe "[No Contents]" $ Map.lookup id glossen)),
-      (S.completionGraph ds hist week)]
-
-    -- | Calculate the y position for the given timestamp.
-    row :: I.DateTime -> Int
-    row dt =
-      let (UTCTime _ time) = dt
-      in  (fromEnum time) `div` 1_000_000_000_000 `div` 60 `div` mpl
-
-    -- | Calculate the x column position of the left edge of the given slot index.
-    col :: Int -> Int -> Int
-    col slotWidth slot = slotWidth * slot
-
-    -- | Calculate the height of a rectangle for a given TimeDelta.
-    height :: I.TimeDelta -> Int
-    height td = (fromEnum td) `div` 1_000_000_000_000 `div` 60 `div` mpl
-
-    -- | Convert schedule data to a list of labeled rectangles for drawing.
-    plot :: Int -> Map Id String -> (Id, (I.TimePeriod, Int)) -> R.LabledRect
-    plot slotWidth glossen (id, (I.TimePeriod s e, slot)) =
-      R.rect
-        (fromJust $ Map.lookup id glossen)
-        (col slotWidth slot)
-        (row s)
-        (slotWidth - margin)
-        (height $ e I.|-| s)
-
-    -- | Render the y-axis labels
-    timeLabels :: R.Layer Char
-    timeLabels (y, x) =
-      let elapsed = mpl * y
-      in if elapsed `mod` 15 == 0
-         then
-           let (hours, minutes) = divMod elapsed 60
-               (h0, h1)         = both intToDigit $ divMod hours 10
-               (m0, m1)         = both intToDigit $ divMod minutes 10
-               timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
-           in case x of
-             0 -> Just h0
-             1 -> Just h1
-             2 -> Just ':'
-             3 -> Just m0
-             4 -> Just m1
-             _ -> Nothing
-         else if x == 2 then Just '\x2502' else Nothing
-
-    timeGrid :: R.Image
-    timeGrid (y, _) = case y `mod` lph of
-      0 -> '\x2504'
-      6 -> '\x2504'
-      _ -> ' '
-
-    -- | Render background grid and left-side gutter
-    backGrid :: R.Image
-    backGrid = R.overlay timeGrid timeLabels
-
-    -- | Render the schedule items later
-    schedule :: [R.LabledRect] -> R.Layer Char
-    schedule []           = R.text "Schedule is Empty"
-    schedule (bot : rest) = R.translate 0 gutter $ R.composite (R.roundBox ' ' bot) $ R.roundBox ' ' <$> rest
-
-    -- | Render the daily agenda view via inefficient implicit functions.
-    --
-    -- This method doesn't require any special terminal escape
-    -- sequences, but does emit unicode.
-    --
-    -- This will print the full 24h schedule with now elisions.
-    printFullSchedule :: Int -> Int -> [R.LabledRect] -> IO ()
-    printFullSchedule w h items = for_
-      (R.render w h $ R.overlay backGrid $ schedule items)
-      putStrLn
-
-    -- | Print a condensed schedule
-    --
-    -- This will try to skip empty / repeating areas of the schedule,
-    -- so that typical dialy schedules are *much* smaller.
-    --
-    -- In pathological cases, will be equivalent to
-    -- `printFullSchedule`.
-    printCondensedSchedule :: Int -> Int -> [R.LabledRect] -> IO ()
-    printCondensedSchedule w h items = for_
-      (R.renderCondensed w h backGrid $ schedule items)
-      putStrLn
+  S.printAgenda
+    env.cols
+    glossen
+    (S.agenda env.now $ Map.toList scheduled')
+    (I.TimePeriod (I.startOfWeek env.now) (I.endOfWeek env.now))
 
 -------------------------------------------------------------------------------
 
@@ -1097,7 +982,7 @@ dispatch env = impl
     impl ("preview" : m : w)  = withWindow env w $ \w -> Eff $ forLines stdin (S.preview m w)
     impl ["preview"]          = withWindow env [] $ \w -> Eff $ forLines stdin (S.preview "default" w)
     impl ["validate"]         = Eff $ forLines stdin $ validateDS
-    impl ("agenda" : sel)     = Eff $ agenda env $ Set.fromList $ Id <$> sel
+    impl ("agenda" : sel)     = Eff $ printAgenda env $ Set.fromList $ Id <$> sel
 
     -- testing
     impl ["vtest"]            = Eff vtyMain

@@ -7,11 +7,13 @@ module Util (
   validate,
   between,
   (-$),
+  ($=),
   takeLast,
   tabulate,
   applyPairwise
 ) where
 
+import Data.IORef
 import Data.List
 import Data.Maybe
 import Data.String
@@ -100,3 +102,13 @@ applyPairwise _ _    []       = []
 applyPairwise f last (x : xs) =
   let x' = f x
   in (x, x', last) : applyPairwise f x' xs
+
+-- | Fun alias for `modifyIORef`
+infixr 0 $=
+($=) :: IORef a -> (a -> a) -> IO ()
+($=) = modifyIORef
+
+-- | Fun alias for `writeIORef`
+infixr 0 =:
+(=:) :: IORef a -> a -> IO ()
+(=:) = writeIORef
