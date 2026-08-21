@@ -1,16 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Util (
-  getEnvStr,
+  applyPairwise,
   getEnvBool,
+  getEnvStr,
+  indent,
   pad,
-  validate,
+  padRight,
+  prefix,
   between,
-  (-$),
-  ($=),
   takeLast,
   tabulate,
-  applyPairwise
+  validate,
+  (-$),
+  ($=),
+  (=:),
 ) where
 
 import Data.IORef
@@ -19,14 +23,13 @@ import Data.Maybe
 import Data.String
 import System.Environment
 
-pad :: Int -> Char -> String -> String
-pad n c str = replicate (n - length str) c ++ str
-
+-- | Get env-var from environment as a string, with a default value.
 getEnvStr :: String -> String -> IO String
 getEnvStr var def = do
   var <- lookupEnv var
   return $ fromMaybe def $ var
 
+-- | Get env-var from enivronment, and try to parse as a bool, with default.
 getEnvBool :: String -> Bool -> IO Bool
 getEnvBool var def = do
   val <- lookupEnv var
@@ -36,6 +39,7 @@ getEnvBool var def = do
     Just "0" -> pure $ False
     Just invalid -> error $ "Invalid Bool: " ++ invalid
 
+-- XXX: is this used?
 validate :: [a] -> (a -> Maybe b) -> (a -> e) -> Either e [b]
 validate [] _ _ = Right []
 validate (x : xs) f onErr = case validate xs f onErr of
@@ -44,6 +48,7 @@ validate (x : xs) f onErr = case validate xs f onErr of
     Nothing -> Left $ onErr x
     Just x  -> Right $ x : xs
 
+-- | Return true if a value is between an upper and lower bound.
 between :: Ord a => a -> a -> a -> Bool
 between lower x upper = lower <= x && x <= upper
 
@@ -58,20 +63,36 @@ infixl 8 -$
 instance IsString a => MonadFail (Either a) where
   fail = Left . fromString
 
-padLeft :: Int -> String -> String
-padLeft i s = case i - (length s) of
-  0 -> s
-  x | x > 0 -> replicate x ' ' ++ s
-  _ -> error "negative length"
+-- | Return the given string prefixed with n occurences of c.
+--
+-- This will cons to the start of the string, so it's optimal compared
+-- to `replictate ' ' ++ s`.
+prefix :: Int -> Char -> String -> String
+prefix x c s | x <= 0 = s
+prefix x c s          = ' ' : prefix (x - 1) c s
 
+-- | Return the given string indented by n spaces.
+--
+-- This will cons to the start of the string, so it's optimal compared
+-- to `replictate ' ' ++ s`.
+indent :: Int ->  String -> String
+indent x = prefix x ' '
+
+-- | Pad the given string with the given char.
+pad :: Int -> Char -> String -> String
+pad n c str = prefix (n - length str) c str
+
+-- | Like pad, but applies trailing chars.
 padRight :: Int -> String -> String
 padRight i s = case i - (length s) of
   0 -> s
   x | x > 0 -> s ++ replicate x ' '
 
+-- | Pad an entire column to the given with.
 padCol :: Int -> [String] -> [String]
 padCol i c = padRight i <$> c
 
+-- | Format the given data into a table.
 tabulate :: String -> [[String]] -> String
 tabulate colsep rows = intercalate "\n" $ separated
   where
