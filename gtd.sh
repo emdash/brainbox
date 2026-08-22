@@ -3514,6 +3514,8 @@ function compile {
     # the `--make` flag. we only need to specify the binary we are
     # building.
     ghc \
+        -prof \
+        -fprof-auto \
         --make \
         -XGHC2021 \
         -Wall \
@@ -3545,6 +3547,12 @@ function hshell {
         -Wno-name-shadowing \
         -i"${GTD_DIR}/components" \
         "${@}"
+}
+
+function clean {
+    find "${GTD_DIR}/components" -name '*.o' -delete
+    find "${GTD_DIR}/components" -name '*.hi' -delete
+    rm "${GTD_DIR}/components/graph"
 }
 
 # Syntax-directed completion **************************************************

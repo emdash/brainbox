@@ -25,6 +25,8 @@ module Parser (
   runM
 ) where
 
+import Debug.Trace
+
 import Control.Monad
 --import Data.Set ()
 --import qualified Data.Set as Set
@@ -68,7 +70,7 @@ parseTimeOfDay =
     tod :: Int -> Int -> Int -> TextParser TimeOfDay
     tod h m s = do
       unless ((0 <= h) && (h <= 23)) $ failBad $ "Hour out of range: " ++ show h
-      unless ((0 <= m) && (m <= 59)) $ failBad $ "Min out of range: " ++ show m
+      unless ((0 <= m) && (m <= 59)) $ failBad $ "Minute out of range: " ++ show m
       unless ((0 <= s) && (s <= 60)) $ failBad $ "Seconds out of range: " ++ show s
       return $ TimeOfDay h m (fromIntegral s)
 
@@ -178,5 +180,5 @@ run parser = fst . (runParser parser)
 
 runM :: (Monad m, MonadFail m) => TextParser a -> String -> m a
 runM parser input = case run parser input of
-  Left  err -> fail err
+  Left  err -> fail $ traceStack "OMGWTF" $ input ++ ":" ++ err
   Right val -> return val

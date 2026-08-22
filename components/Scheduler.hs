@@ -5,29 +5,35 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Scheduler (
   validateDS,
   preview,
   completionGraph,
   windowArgs,
-  Agenda(..),
+  Agenda,
   agenda,
   printAgenda,
+  generateIntervals,
+  Intervals(..),
+  assignSlots,
+  toBoundaries,
+  Boundary(..),
+  Schedule(..)
 ) where
 
-
 import Debug.Trace
--- import Control.Monad
+
+import Control.Monad.ST
 import Data.Bits
 import Data.Char(intToDigit)
 import Data.Foldable
 import Data.Functor
 import Data.Maybe
+import Data.STRef
 import Data.Word
 import System.IO
-
---import Debug.Trace(trace)
 
 import Data.Either.Extra
 import Data.Map(Map)
@@ -159,6 +165,14 @@ completionGraph self history window = do
       then '|'
       else '.'
 
+-- | Return the first available slot in the agenda.
+firstSlot :: FiniteBits a => a -> Int
+firstSlot w = go 0 where
+  go :: Int -> Int
+  go b | b >= bitSize w = error "you have too much shit going on"
+  go b | testBit w b  = go $ b + 1
+  go b = b
+
 data Boundary
   = NInf
   | Start DateTime
@@ -177,6 +191,16 @@ instance Ord Boundary where
     x  -> x
   compare (End l) (End r) = compare l r
 
+data Schedule idT = Schedule {
+  items  :: ![(idT, (TimePeriod, Int))],
+  live   :: !(Map idT (DateTime, Int)),
+  stack  :: !(Word64),
+  hwm    :: !Int
+} deriving (Show)
+
+clear :: Schedule idT
+clear = Schedule [] Map.empty 0 0
+
 -- | The information required to display the daily / weekly agenda.
 --
 -- XXX: the only reason this is parametric in the idT type is that,
@@ -184,102 +208,127 @@ instance Ord Boundary where
 -- the `Graph` module, happens to be the current entry point for the
 -- whole haskell monolith. This is where `Id` is defined.
 data Agenda idT = Agenda {
-  scheduled :: [(idT, (TimePeriod, Int))],
-  allDay :: Set idT,
-  live :: Map idT (DateTime, Int),
-  stack :: Word8,
-  hwm :: Int
-} deriving Show
+  glossen     :: !(Map idT String),
+  history     :: !(Map idT [I.DateTime]),
+  daily       :: !(Schedule idT),
+  weekly      :: !(Schedule idT),
+  unscheduled :: !(Set idT)
+} deriving (Show)
 
--- | Return the first available slot in the agenda.
-firstSlot :: Word8 -> Int
-firstSlot w = go True (w .&. 0x0F)
-  where
-    go _     0b0000 = 0
-    go _     0b0001 = 1
-    go _     0b0010 = 0
-    go _     0b0011 = 2
-    go _     0b0100 = 0
-    go _     0b0101 = 1
-    go _     0b0110 = 0
-    go _     0b0111 = 3
-    go _     0b1000 = 0
-    go _     0b1001 = 1
-    go _     0b1010 = 0
-    go _     0b1011 = 2
-    go _     0b1100 = 0
-    go _     0b1101 = 1
-    go _     0b1110 = 0
-    go True  _      = (go False (shiftR w 4)) + 4
-    go False 0b1111 = error "you have too much shit going on"
-    go y     x      = error $ "wtf" ++ show x ++ show y
+-- XXX: it is important for this algorithm that we compare the
+-- boundary before the id. If all intervals with the same ID are
+-- grouped together, we will get perfect interleaving and every Id
+-- gets assigned to the first stack slot.
+toBoundaries :: Ord idT => Set (idT, I.Interval) -> Set (Boundary, idT)
+toBoundaries intervals = foldl' update Set.empty $ Set.toAscList intervals where
+  update ret (id', interval) = case interval of
+    I.Open        -> Set.insert (NInf, id') ret
+    I.Empty       -> ret
+    I.LeftOpen  e -> Set.insert (End   e, id') $ Set.insert (NInf, id') ret
+    I.RightOpen s -> Set.insert (Start s, id') ret
+    I.Closed  s e -> Set.insert (Start s, id') $ Set.insert (End e, id') ret
 
--- | Construct a blank agenda.
-blank :: Agenda a
-blank = Agenda [] Set.empty Map.empty 0 0
+assignSlots :: Ord idT => Set (Boundary, idT) -> Schedule idT
+assignSlots bs = foldl' update init bs where
+  init :: Schedule idT
+  init = Schedule [] Map.empty 0 0
 
--- | Punt the given task from the daily schedule to the weekly.
-punt :: Ord idT => idT -> Agenda idT -> Agenda idT
-punt i self = self { allDay = Set.insert i self.allDay }
+  update :: Ord idT => Schedule idT -> (Boundary, idT) -> Schedule idT
+  update ret (boundary, id') = case boundary of
+    NInf -> error "unpossible"
+    Start s -> let slot = firstSlot ret.stack in Schedule {
+      items = ret.items,
+      live  = Map.insert id' (s, slot) ret.live,
+      stack = setBit ret.stack slot,
+      hwm   = max slot ret.hwm
+      }
+    End e -> case Map.lookup id' ret.live of
+      Nothing -> error "unpossible"
+      Just (s, slot) -> Schedule {
+        items = (id', ((TimePeriod s e), slot)) : ret.items,
+        live      = Map.delete id' ret.live,
+        stack     = clearBit ret.stack slot,
+        hwm       = ret.hwm
+        }
 
--- | Log the start of a new task while constructing an agenda.
-push :: Ord idT => idT -> DateTime -> Agenda idT -> Agenda idT
-push i start self =
-  let
-    slot = firstSlot self.stack
-  in self {
-    live  = Map.insert i (start, slot) self.live,
-    stack = setBit self.stack slot,
-    hwm   = max self.hwm slot
+data Intervals idT = Intervals {
+  forDay  :: !(Set (idT, I.Interval)),
+  forWeek :: !(Set (idT, I.Interval)),
+  todo    :: !(Set idT)
+  } deriving Show
+
+init' :: Intervals idT
+init' = Intervals {
+  forDay  = Set.empty,
+  forWeek = Set.empty,
+  todo    = Set.empty
   }
 
--- | Log the end of an existing task while constructing an agenda.
-pop :: Ord idT => idT -> DateTime -> Agenda idT -> Agenda idT
-pop i e self = case Map.lookup i self.live of
-  Nothing -> error "End without start"
-  Just (s, slot) -> self {
-    scheduled = (i, ((TimePeriod s e), slot)) : self.scheduled,
-    live = Map.delete i self.live,
-    stack = clearBit self.stack slot
-  }
-
--- | Explode the given list of intervals to an ordered set of boundaries.
-toBoundaries :: Ord idT => [(idT, I.Interval)] -> (Set (Boundary, idT), Set idT)
-toBoundaries intervals = let x = foldl byCases (Set.empty, Set.empty) intervals in x
+generateIntervals
+  :: (Show idT, Ord idT)
+  => DateTime
+  -> Map idT [DateTime]
+  -> [(idT, DateSet)]
+  -> Intervals idT
+generateIntervals dt hists stuff =
+  let allOfThem = foldl expand Set.empty stuff
+      (events', habits') = Set.partition ((Map.member -$ hists) . fst) allOfThem
+      (forDay, next)  = Set.partition ((I.contains day') . snd) $ events'
+      (forWeek, todo) = Set.partition ((I.contains week') . snd) next
+  in Intervals forDay forWeek $ Set.map fst todo
   where
-    byCases (b, ad) (i, I.Open)        = (Set.insert (NInf, i) b, ad)
-    byCases ret     (_, I.Empty )      = ret
-    byCases (b, ad) (i, I.LeftOpen e)  = (Set.insert (End e, i) $ Set.insert (NInf, i) b, ad)
-    byCases (b, ad) (i, I.RightOpen s) = (b, Set.insert i ad)
-    byCases (b, ad) (i, I.Closed s e)  =
-      if e I.|-| s < (I.day - 5 * I.minute)
-      then (Set.insert (End e, i) $ Set.insert (Start s, i) b, ad)
-      else (b, Set.insert i ad)
+    day  = I.TimePeriod (I.startOfDay dt)  (I.endOfDay dt |- 5 * I.minute)
+    week = I.TimePeriod (I.startOfWeek dt) (I.endOfWeek dt)
+
+    day'  = I.toInterval day
+    week' = I.toInterval week
+
+    smoosh :: Ord idT => idT -> Set (idT, I.Interval) -> I.Interval -> Set (idT, I.Interval)
+    smoosh id' ret i = Set.insert (id', i) ret
+
+    expand :: Ord idT => Set (idT, I.Interval) -> (idT, DateSet) -> Set (idT, I.Interval)
+    expand ret (id', sch) = foldl' (smoosh id') ret $ DateSet.intervals sch week
 
 -- | Construct an agenda view for the given input timestamp and task set.
-agenda :: Ord idT => DateTime -> [(idT, DateSet)] -> Agenda idT
-agenda day sched =
-  let (boundaries, ad) = toBoundaries intervals
-  in foldl update (blank {allDay = ad}) $ Set.toAscList $ boundaries
-  where
-    collectIntervals horizon ret (i, ds) =
-      foldl (\acc interval -> (i, interval) : acc) ret $
-        DateSet.intervals ds horizon
+agenda
+  :: (Show idT, Ord idT)
+  => DateTime
+  -> Map idT String
+  -> Map idT [DateTime]
+  -> [(idT, DateSet)]
+  -> Agenda idT
+agenda dt glossen hist tasks = Agenda {
+    glossen     = glossen,
+    history     = hist,
+    daily       = assignSlots $ toBoundaries intervals''.forDay,
+    weekly      = assignSlots $ toBoundaries intervals''.forWeek,
+    unscheduled = intervals''.todo
+  } where
+    intervals'' = generateIntervals dt hist tasks
 
-    horizon :: I.TimePeriod
-    horizon = TimePeriod (I.startOfDay day) (I.endOfDay day)
+-- | Print the agenda to stdout.
+printAgenda
+  :: (Show idT, Ord idT)
+  => Int
+  -> Agenda idT
+  -> IO ()
+printAgenda w agenda' = do
+  let hrule = replicate w '\x2550'
+  putStrLn hrule
 
-    -- intervals :: [(idT, I.Interval)]
-    intervals = foldl (collectIntervals horizon) [] $ sched
+  printCondensedSchedule
+    w
+    (lph * 24)
+    $ plot ((w - gutter) `div` (agenda'.daily.hwm + 1)) agenda'.glossen <$> agenda'.daily.items
+  putStrLn hrule
 
-    update ret (NInf, i)    = punt i   ret
-    update ret (Start s, i) = push i s ret
-    update ret (End e, i)   = pop  i e ret
+  {-
+  for_ agenda'.weekly.items $ \(id, interval) -> do
+    putStrLn $ (show id) ++ ":" ++ show interval
 
-{-
-  putStrLn "All Day"
-  for_ ad.allDay $ \id -> putStrLn $ (' ' : ' ' : (fromMaybe "[No contents]" $ Map.lookup id glossen))
-  putStrLn ""
+  putStrLn hrule
+  for_ agenda'.unscheduled $ \id -> do
+    putStrLn $ show $ Map.lookup id agenda'.glossen
 
   putStrLn "Habits"
   putStrLn $ tabulate " | " $ habitTable week glossen $ Map.toList habits'
@@ -289,32 +338,13 @@ agenda day sched =
     habitRow week glossen (id, (ds, hist)) = [
       (' ' : ' ' : (fromMaybe "[No Contents]" $ Map.lookup id glossen)),
       (S.completionGraph ds hist week)]
-
-  let ad =
-  let week =
 -}
 
--- | Print the agenda to stdout.
-printAgenda
-  :: Ord idT
-  => Int
-  -> Map idT String
-  -> Agenda idT
-  -> I.TimePeriod
-  -> IO ()
-printAgenda w glossen ad week = do
-  let hrule = replicate w '\x2550'
-  putStrLn hrule
-  printCondensedSchedule
-    w
-    (lph * 24)
-    $ plot ((w - gutter) `div` (ad.hwm + 1)) glossen <$> ad.scheduled
-  putStrLn hrule
   where
     -- | Time per line in in minutes
     mpl = 5
 
-    -- | Lines per hour
+    -- | Lines per hourd
     lph = 60 `div` mpl
 
     -- | Horizontal space between items
@@ -359,7 +389,6 @@ printAgenda w glossen ad week = do
            let (hours, minutes) = divMod elapsed 60
                (h0, h1)         = both intToDigit $ divMod hours 10
                (m0, m1)         = both intToDigit $ divMod minutes 10
-               timestr = (pad 2 '0' $ show hours) ++ (':' : (pad 2 '0' $ show minutes)) ++ " "
            in case x of
              0 -> Just h0
              1 -> Just h1

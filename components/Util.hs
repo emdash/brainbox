@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# language OverloadedStrings #-}
 
 module Util (
   applyPairwise,
@@ -15,12 +15,16 @@ module Util (
   (-$),
   ($=),
   (=:),
+  ($=|),
+  (=:|),
 ) where
 
+import Control.Monad.ST
 import Data.IORef
 import Data.List
 import Data.Maybe
 import Data.String
+import Data.STRef
 import System.Environment
 
 -- | Get env-var from environment as a string, with a default value.
@@ -126,6 +130,7 @@ applyPairwise f last (x : xs) =
 
 -- | Fun alias for `modifyIORef`
 infixr 0 $=
+
 ($=) :: IORef a -> (a -> a) -> IO ()
 ($=) = modifyIORef
 
@@ -133,3 +138,11 @@ infixr 0 $=
 infixr 0 =:
 (=:) :: IORef a -> a -> IO ()
 (=:) = writeIORef
+
+infixr 0 $=|
+($=|) :: STRef s a -> (a -> a) -> ST s ()
+($=|) = modifySTRef
+
+infixr 0 =:|
+(=:|) :: STRef s a -> a -> ST s ()
+(=:|) = writeSTRef

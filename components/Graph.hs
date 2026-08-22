@@ -893,37 +893,29 @@ printAgenda :: Env -> Set Id -> IO ()
 printAgenda env selection = do
   let dt = env.now
 
-  todo            <- newIORef []
-  scheduled       <- newIORef Map.empty
-  habits          <- newIORef Map.empty
-  glosses         <- newIORef Map.empty
+  todo      <- newIORef Set.empty
+  scheduled <- newIORef Map.empty
+  hists     <- newIORef Map.empty
+  glosses   <- newIORef Map.empty
 
   runEffect $ for (readIds stdin) $ \id -> lift $ do
-    klass <- classifyNode env id
-    gloss <- taskGloss env id
-    case gloss of
-      Nothing -> pure ()
-      Just gloss -> glosses $= Map.insert id gloss
-    case klass of
-      Unscheduled -> todo $= (id :)
-      Event -> do
-        ds        <- taskSchedule env id
-        scheduled $= Map.insert id $ fromJust ds
-      Habit -> do
-        ds        <- taskSchedule env id
-        hist      <- taskHistory env id
-        scheduled $= Map.insert id $ fromJust ds
-        habits    $= Map.insert id $ (fromJust ds, hist)
+    gloss   <- taskGloss env id
+    ds      <- taskSchedule env id
+    hasHist <- has (Datum "completed") env id
+    glosses $= Map.insert id $ fromMaybe "[no contents]" gloss
+
+    case ds of
+      Nothing -> todo      $= Set.insert id
+      Just ds -> scheduled $= Map.insert id ds
+
+    when hasHist $ taskHistory env id >>= \h -> (hists $= Map.insert id h)
+
 
   scheduled' <- readIORef scheduled
   glossen    <- readIORef glosses
-  habits'    <- readIORef habits
+  hists'     <- readIORef hists
 
-  S.printAgenda
-    env.cols
-    glossen
-    (S.agenda env.now $ Map.toList scheduled')
-    (I.TimePeriod (I.startOfWeek env.now) (I.endOfWeek env.now))
+  S.printAgenda env.cols $ S.agenda env.now glossen hists' $ Map.toList scheduled'
 
 -------------------------------------------------------------------------------
 
