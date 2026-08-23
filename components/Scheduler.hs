@@ -30,6 +30,7 @@ import Data.Bits
 import Data.Char(intToDigit)
 import Data.Foldable
 import Data.Functor
+import Data.List qualified as L
 import Data.Maybe
 import Data.STRef
 import Data.Word
@@ -46,7 +47,7 @@ import Data.Time.Clock
 import Data.Tuple.Extra
 import Data.Time.Format
 
-import DateSet
+import DateSet qualified as DS
 import Interval qualified as I
 import Interval(DateTime, TimePeriod(..), (|+), (|-))
 import JSONParser qualified as JP
@@ -103,16 +104,16 @@ formatDay d =
      then " " ++ show day
      else show day
 
-printDay :: DateSet -> Day -> IO ()
+printDay :: DS.DateSet -> Day -> IO ()
 printDay ds day = do
-  if DateSet.within ds (I.fromDay day)
+  if DS.within ds (I.fromDay day)
     then putStr $ reverseVideo $ formatDay day
     else putStr $ formatDay day
   case dayOfWeek day of
     Saturday -> putStrLn ""
     _      -> putStr " "
 
-previewMonth :: DateSet -> TimePeriod -> IO ()
+previewMonth :: DS.DateSet -> TimePeriod -> IO ()
 previewMonth ds w = for_ (I.sequenceMonths w) $ \month -> do
   let (YearMonth y m) = month
   let (first : days) = periodAllDays month
@@ -123,7 +124,7 @@ previewMonth ds w = for_ (I.sequenceMonths w) $ \month -> do
   for_ days (printDay ds)
   putStr "\n\n"
 
-previewWeek :: DateSet -> TimePeriod -> IO ()
+previewWeek :: DS.DateSet -> TimePeriod -> IO ()
 previewWeek ds w = do
   for_ (I.sequenceWeeks w) $ \week -> do
     putStrLn $ formatTime defaultTimeLocale "%Y-%m-%d" (head week)
@@ -134,17 +135,17 @@ previewWeek ds w = do
           (I.minute * 30)) $ \time -> do
       putStr $ formatTime defaultTimeLocale "%0H:%0M" time ++ " "
       for_ week $ \day -> do
-        if DateSet.within ds $ (I.fromDay day) |+ time
+        if DS.within ds $ (I.fromDay day) |+ time
           then putStr $ "|" ++ reverseVideo "    "
           else putStr   "|    "
       putStrLn ""
     putStrLn ""
 
-previewDefault :: DateSet -> TimePeriod -> IO ()
-previewDefault expr' window = case previewHint expr' of
-  L -> for_ (intervals expr' window) $ putStrLn . show
-  W -> previewWeek  expr' window
-  M -> previewMonth expr' window
+previewDefault :: DS.DateSet -> TimePeriod -> IO ()
+previewDefault expr' window = case DS.previewHint expr' of
+  DS.L -> for_ (DS.intervals expr' window) $ putStrLn . show
+  DS.W -> previewWeek  expr' window
+  DS.M -> previewMonth expr' window
 
 preview :: String -> TimePeriod -> String -> IO ()
 preview mode window expr =
@@ -153,14 +154,14 @@ preview mode window expr =
         Right e -> e
   in case mode of
     "default" -> previewDefault expr' window
-    "list"  -> for_ (intervals expr' window) $ putStrLn . show
+    "list"  -> for_ (DS.intervals expr' window) $ putStrLn . show
     "month" -> previewMonth expr' window
     "week"  -> previewWeek  expr' window
     bad     -> error $ "invalid mode" ++ bad
 
-completionGraph :: DateSet -> [DateTime] -> TimePeriod -> String
+completionGraph :: DS.DateSet -> [DateTime] -> TimePeriod -> String
 completionGraph self history window = do
-  (completions self history window) <&> \(_, complete) ->
+  (DS.completions self history window) <&> \(_, complete) ->
     if complete
       then '|'
       else '.'
@@ -268,12 +269,12 @@ generateIntervals
   :: (Show idT, Ord idT)
   => DateTime
   -> Map idT [DateTime]
-  -> [(idT, DateSet)]
+  -> [(idT, DS.DateSet)]
   -> Intervals idT
 generateIntervals dt hists stuff =
   let allOfThem = foldl expand Set.empty stuff
-      (events', habits') = Set.partition ((Map.member -$ hists) . fst) allOfThem
-      (forDay, next)  = Set.partition ((I.contains day') . snd) $ events'
+      -- (events', habits') = Set.partition ((Map.member -$ hists) . fst) allOfThem
+      (forDay, next)  = Set.partition ((I.contains day') . snd) $ allOfThem --events'
       (forWeek, todo) = Set.partition ((I.contains week') . snd) next
   in Intervals forDay forWeek $ Set.map fst todo
   where
@@ -286,8 +287,8 @@ generateIntervals dt hists stuff =
     smoosh :: Ord idT => idT -> Set (idT, I.Interval) -> I.Interval -> Set (idT, I.Interval)
     smoosh id' ret i = Set.insert (id', i) ret
 
-    expand :: Ord idT => Set (idT, I.Interval) -> (idT, DateSet) -> Set (idT, I.Interval)
-    expand ret (id', sch) = foldl' (smoosh id') ret $ DateSet.intervals sch week
+    expand :: Ord idT => Set (idT, I.Interval) -> (idT, DS.DateSet) -> Set (idT, I.Interval)
+    expand ret (id', sch) = foldl' (smoosh id') ret $ DS.intervals sch week
 
 -- | Construct an agenda view for the given input timestamp and task set.
 agenda
@@ -295,7 +296,7 @@ agenda
   => DateTime
   -> Map idT String
   -> Map idT [DateTime]
-  -> [(idT, DateSet)]
+  -> [(idT, DS.DateSet)]
   -> Agenda idT
 agenda dt glossen hist tasks = Agenda {
     glossen     = glossen,
@@ -314,17 +315,14 @@ printAgenda
   -> IO ()
 printAgenda w agenda' = do
   let hrule = replicate w '\x2550'
-  putStrLn hrule
 
-  printCondensedSchedule
-    w
-    (lph * 24)
-    $ plot ((w - gutter) `div` (agenda'.daily.hwm + 1)) agenda'.glossen <$> agenda'.daily.items
   putStrLn hrule
+  printDailySchedule w agenda'
+
+  putStrLn hrule
+  printWeeklySchedule w agenda'
 
   {-
-  for_ agenda'.weekly.items $ \(id, interval) -> do
-    putStrLn $ (show id) ++ ":" ++ show interval
 
   putStrLn hrule
   for_ agenda'.unscheduled $ \id -> do
@@ -340,6 +338,12 @@ printAgenda w agenda' = do
       (S.completionGraph ds hist week)]
 -}
 
+printDailySchedule :: Ord idT => Int -> Agenda idT -> IO ()
+printDailySchedule w agenda' =
+  condensed
+    w
+    (lph * 24)
+    $ plot ((w - gutter) `div` (agenda'.daily.hwm + 1)) agenda'.glossen <$> agenda'.daily.items
   where
     -- | Time per line in in minutes
     mpl = 5
@@ -349,9 +353,6 @@ printAgenda w agenda' = do
 
     -- | Horizontal space between items
     margin = 2
-
-    -- | Half the margin.
-    marginH = margin `div` 2
 
     -- | Width of left gutter
     gutter = 6
@@ -419,8 +420,8 @@ printAgenda w agenda' = do
     -- sequences, but does emit unicode.
     --
     -- This will print the full 24h schedule with now elisions.
-    printFullSchedule :: Int -> Int -> [R.LabledRect] -> IO ()
-    printFullSchedule w h items = for_
+    full :: Int -> Int -> [R.LabledRect] -> IO ()
+    full w h items = for_
       (R.render w h $ R.overlay backGrid $ schedule items)
       putStrLn
 
@@ -431,7 +432,76 @@ printAgenda w agenda' = do
     --
     -- In pathological cases, will be equivalent to
     -- `printFullSchedule`.
-    printCondensedSchedule :: Int -> Int -> [R.LabledRect] -> IO ()
-    printCondensedSchedule w h items = for_
+    condensed :: Int -> Int -> [R.LabledRect] -> IO ()
+    condensed w h items = for_
       (R.renderCondensed w h backGrid $ schedule items)
+      putStrLn
+
+printWeeklySchedule :: Ord idT => Int -> Agenda idT -> IO ()
+printWeeklySchedule w agenda' =
+  full w ((agenda'.weekly.hwm + 1) * slotHeight)
+    $ plot agenda'.glossen <$> agenda'.weekly.items
+  where
+    -- | Time per line in in minutes
+    colsPerDay = w `div` 7
+
+    -- | Horizontal space between items
+    margin = 2
+
+    -- | Width of left gutter
+    gutter = 3
+
+    -- | Slot Height
+    slotHeight = 5
+
+    -- | Calculate the x position for the item, based on calendar day.
+    col :: I.DateTime -> Int
+    col dt = colsPerDay * ((fromEnum $ dayOfWeek $ utctDay dt) - 1) + 1
+
+    -- | Calculate the y position for the item, based on slot.
+    row :: Int -> Int
+    row slot = slotHeight * slot
+
+    -- | Calculate the height of a rectangle for a given TimeDelta.
+    width :: Day -> Day -> Int
+    width s e = (colsPerDay * (max 1 $ ((fromEnum e) - (fromEnum s)))) - 2
+
+    -- | Convert schedule data to a list of labeled rectangles for drawing.
+    plot :: Ord idT => Map idT String -> (idT, (I.TimePeriod, Int)) -> R.LabledRect
+    plot glossen (id, (I.TimePeriod s e, slot)) =
+      R.rect
+        (fromJust $ Map.lookup id glossen)
+        (col s)
+        (row slot)
+        (width (utctDay s) (utctDay e))
+        (slotHeight - margin)
+
+    -- | Render the y-axis labels
+    dayLabels :: R.Layer Char
+    dayLabels = R.text ('\x2502' : (L.intercalate "\x2502" $ padRight (colsPerDay - 1) <$> show <$> enumFromTo Sunday Saturday))
+
+    dayGrid :: R.Image
+    dayGrid (y, _) | y == 1 = '\x2501'
+    dayGrid (y, x) = case x `mod` colsPerDay of
+      0 -> '\x2506'
+      _ -> ' '
+
+    -- | Render background grid and left-side gutter
+    backGrid :: R.Image
+    backGrid = R.overlay dayGrid dayLabels
+
+    -- | Render the schedule items layer
+    schedule :: [R.LabledRect] -> R.Layer Char
+    schedule []           = R.text "Schedule is Empty"
+    schedule (bot : rest) = R.translate 2 0 $ R.composite (R.roundBox ' ' bot) $ R.roundBox ' ' <$> rest
+
+    -- | Render the daily agenda view via inefficient implicit functions.
+    --
+    -- This method doesn't require any special terminal escape
+    -- sequences, but does emit unicode.
+    --
+    -- This will print the full 24h schedule with now elisions.
+    full :: Int -> Int -> [R.LabledRect] -> IO ()
+    full w h items = for_
+      (R.render w h $ R.overlay backGrid $ schedule items)
       putStrLn

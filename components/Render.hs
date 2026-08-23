@@ -181,7 +181,8 @@ wrap w s (y, x) = s !? (x + (y * w))
 
 -- | Render a string on a single line.
 text :: String -> Layer Char
-text s (y, x) = s !? x
+text s (y, x) | y == 0 = s !? x
+text _ _               = Nothing
 
 -- Rendering ------------------------------------------------------------------
 
@@ -191,7 +192,7 @@ renderRow w f y = f <$> (y,) <$> [0..(w - 1)]
 
 -- | Render implict fn to a list of rows.
 render :: Int -> Int -> ImplicitFn a -> [[a]]
-render w h f = renderRow w f <$> [0..(h - 1)]
+render w h f = renderRow w f <$> [0..h]
 
 -- | Render with condensation
 --
