@@ -253,15 +253,17 @@ assignSlots bs = foldl' update init bs where
         }
 
 data Intervals idT = Intervals {
-  forDay  :: !(Set (idT, I.Interval)),
-  forWeek :: !(Set (idT, I.Interval)),
-  todo    :: !(Set idT)
+  forDay   :: !(Set (idT, I.Interval)),
+  forWeek  :: !(Set (idT, I.Interval)),
+  habitual :: !(Set (idT, I.Interval)),
+  todo     :: !(Set idT)
   } deriving Show
 
 init' :: Intervals idT
 init' = Intervals {
   forDay  = Set.empty,
   forWeek = Set.empty,
+  habitual = Set.empty,
   todo    = Set.empty
   }
 
@@ -273,10 +275,10 @@ generateIntervals
   -> Intervals idT
 generateIntervals dt hists stuff =
   let allOfThem = foldl expand Set.empty stuff
-      -- (events', habits') = Set.partition ((Map.member -$ hists) . fst) allOfThem
-      (forDay, next)  = Set.partition ((I.contains day') . snd) $ allOfThem --events'
-      (forWeek, todo) = Set.partition ((I.contains week') . snd) next
-  in Intervals forDay forWeek $ Set.map fst todo
+      (events', habits') = Set.partition ((Map.member -$ hists) . fst) allOfThem
+      (forDay, forWeek)  = Set.partition ((I.contains day') . snd) $ events'
+      -- (forWeek, todo) = Set.partition ((I.contains week') . snd) next
+  in Intervals forDay forWeek habits' $ Set.empty -- <-- XXX
   where
     day  = I.TimePeriod (I.startOfDay dt)  (I.endOfDay dt |- 5 * I.minute)
     week = I.TimePeriod (I.startOfWeek dt) (I.endOfWeek dt)
@@ -439,20 +441,17 @@ printDailySchedule w agenda' =
 
 printWeeklySchedule :: Ord idT => Int -> Agenda idT -> IO ()
 printWeeklySchedule w agenda' =
-  full w ((agenda'.weekly.hwm + 1) * slotHeight)
+  full w ((agenda'.weekly.hwm + 1) * slotHeight + 3)
     $ plot agenda'.glossen <$> agenda'.weekly.items
   where
     -- | Time per line in in minutes
     colsPerDay = w `div` 7
 
     -- | Horizontal space between items
-    margin = 2
-
-    -- | Width of left gutter
-    gutter = 3
+    margin = 1
 
     -- | Slot Height
-    slotHeight = 5
+    slotHeight = 3
 
     -- | Calculate the x position for the item, based on calendar day.
     col :: I.DateTime -> Int
@@ -478,11 +477,13 @@ printWeeklySchedule w agenda' =
 
     -- | Render the y-axis labels
     dayLabels :: R.Layer Char
-    dayLabels = R.text ('\x2502' : (L.intercalate "\x2502" $ padRight (colsPerDay - 1) <$> show <$> enumFromTo Sunday Saturday))
+    dayLabels = R.text ('\x2502' : (L.intercalate "\x2502" $ padRight (colsPerDay - 1) <$> show <$> enumFromTo Monday Sunday))
 
     dayGrid :: R.Image
-    dayGrid (y, _) | y == 1 = '\x2501'
-    dayGrid (y, x) = case x `mod` colsPerDay of
+    dayGrid (1, x) = case x `mod` colsPerDay of
+      0 -> '\x2534'
+      _ -> '\x2500'
+    dayGrid (_, x) = case x `mod` colsPerDay of
       0 -> '\x2506'
       _ -> ' '
 

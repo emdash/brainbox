@@ -170,12 +170,12 @@ nextMonth (UTCTime day time) =
 startOfWeek :: DateTime -> DateTime
 startOfWeek (UTCTime day _) =
   let (y, w, _) = toWeekDate day
-  in (UTCTime (fromWeekDate y (w - 1) 7) (fromInteger 0))
+  in (UTCTime (fromWeekDate y w 0) (fromInteger 0))
 
 endOfWeek :: DateTime -> DateTime
 endOfWeek (UTCTime day _ ) =
   let (y, w, _) = toWeekDate day
-  in UTCTime (fromWeekDate y w 7) (fromInteger 0)
+  in UTCTime (fromWeekDate y (w + 1) 0) (fromInteger 0)
 
 startOfMonth :: DateTime -> DateTime
 startOfMonth (UTCTime day _) =

@@ -54,7 +54,7 @@ validate (x : xs) f onErr = case validate xs f onErr of
 
 -- | Return true if a value is between an upper and lower bound.
 between :: Ord a => a -> a -> a -> Bool
-between lower x upper = lower <= x && x <= upper
+between lower x upper = lower <= x && x < upper
 
 -- XXX: this is from Control.Composition, but basically just doing it
 -- here to avoid having to chase down the dependency right this

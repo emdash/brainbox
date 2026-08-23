@@ -37,6 +37,8 @@
 -- - graphviz
 module Brainbox.Graph where
 
+import Debug.Trace
+
 -- local imports
 import Interval qualified as I
 import Interval((|-))
@@ -908,8 +910,8 @@ printAgenda env selection = do
       Nothing -> todo      $= Set.insert id
       Just ds -> scheduled $= Map.insert id ds
 
-    when hasHist $ taskHistory env id >>= \h -> (hists $= Map.insert id h)
-
+    when hasHist $ do
+      taskHistory env id >>= \h -> (hists $= Map.insert id h)
 
   scheduled' <- readIORef scheduled
   glossen    <- readIORef glosses
