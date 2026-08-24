@@ -17,12 +17,19 @@ module Util (
   (=:),
   ($=|),
   (=:|),
+  SetMap,
+  collectSM,
+  insertSM
 ) where
 
 import Control.Monad.ST
 import Data.IORef
 import Data.List
+import Data.Map(Map)
+import Data.Map qualified as Map
 import Data.Maybe
+import Data.Set(Set)
+import Data.Set qualified as Set
 import Data.String
 import Data.STRef
 import System.Environment
@@ -146,3 +153,16 @@ infixr 0 $=|
 infixr 0 =:|
 (=:|) :: STRef s a -> a -> ST s ()
 (=:|) = writeSTRef
+
+-- | A map where the values are sets.
+--
+-- XXX: use in more places
+type SetMap k v = Map k (Set v)
+
+insertSM :: (Ord k, Ord v) => k -> v -> SetMap k v -> SetMap k v
+insertSM x y = Map.alter ins x where
+  ins Nothing  = Just $ Set.singleton y
+  ins (Just s) = Just $ Set.insert y s
+
+collectSM :: (Ord k, Ord v) => [(k, v)] -> SetMap k v
+collectSM xs = foldl' (flip $ uncurry insertSM) Map.empty xs

@@ -30,18 +30,25 @@ module Render (
   splitH',
   splitV,
   splitV',
+  vertically,
   rect,
   roundBox,
   wrap,
   text,
   renderRow,
   render,
-  renderCondensed
+  renderCondensed,
+  putH
 ) where
 
+import Debug.Trace
+
 -- | Stdlib imports
+import Data.Foldable
 import Data.List
 import Data.Maybe
+import System.IO
+
 
 -- | Local imports
 import Util
@@ -84,12 +91,14 @@ overlay :: Image -> Layer Char -> Image
 overlay background foreground = compose fromMaybe background foreground
 
 -- | Combine multiple layers, producing a layer. Right occludes left.
-composite :: Layer a -> [Layer a] -> Layer a
-composite = foldl combine
+composite :: [Layer a] -> Layer a
+composite []        = const Nothing
+composite [x]       = x
+composite (x : xs) = foldl combine x xs
 
 -- | Combine foreground layers with a background layer to produce a complete image.
 scene :: Image -> [Layer Char] -> Image
-scene bg = overlay bg . composite (fill Nothing)
+scene bg fg = overlay bg $ composite fg
 
 -- | Divide an image horizontally between two functions.
 splitH :: Int -> Maybe a -> ImplicitFn a -> ImplicitFn a -> ImplicitFn a
@@ -120,6 +129,11 @@ splitV' atRow (Just sep) top bottom pt@(y, x) = case compare x atRow of
   LT -> top pt
   EQ -> sep
   GT -> bottom pt
+
+vertically :: Int -> [Layer a] -> Layer a
+vertically spacing layers = composite $ adjust <$> zip [0..] layers
+  where
+    adjust (y, l) = translate (y * spacing) 0 l
 
 -- Primitives -----------------------------------------------------------------
 -- TBD: other primitives.
@@ -192,7 +206,7 @@ renderRow w f y = f <$> (y,) <$> [0..(w - 1)]
 
 -- | Render implict fn to a list of rows.
 render :: Int -> Int -> ImplicitFn a -> [[a]]
-render w h f = renderRow w f <$> [0..h]
+render w h f = renderRow w f <$> [0..(h - 1)]
 
 -- | Render with condensation
 --
@@ -210,3 +224,6 @@ renderCondensed w h background foreground =
       if cur == prev
         then Nothing
         else Just $ uncurry fromMaybe <$> zip (renderRow w background y) cur
+
+putH :: Handle -> Int -> Int -> Image -> IO ()
+putH hdl w h image = for_ (render (traceShowId w) h image) $ hPutStrLn hdl

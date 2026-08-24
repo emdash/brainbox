@@ -212,7 +212,7 @@ data Agenda idT = Agenda {
   glossen     :: !(Map idT String),
   history     :: !(Map idT [I.DateTime]),
   daily       :: !(Schedule idT),
-  weekly      :: !(Schedule idT),
+  weekly      :: !(Map idT (Set I.Interval)),
   unscheduled :: !(Set idT)
 } deriving (Show)
 
@@ -253,18 +253,14 @@ assignSlots bs = foldl' update init bs where
         }
 
 data Intervals idT = Intervals {
-  forDay   :: !(Set (idT, I.Interval)),
-  forWeek  :: !(Set (idT, I.Interval)),
-  habitual :: !(Set (idT, I.Interval)),
-  todo     :: !(Set idT)
+  forDay  :: !(Set (idT, I.Interval)),
+  forWeek :: !(SetMap idT I.Interval)
   } deriving Show
 
 init' :: Intervals idT
 init' = Intervals {
   forDay  = Set.empty,
-  forWeek = Set.empty,
-  habitual = Set.empty,
-  todo    = Set.empty
+  forWeek = Map.empty
   }
 
 generateIntervals
@@ -278,7 +274,7 @@ generateIntervals dt hists stuff =
       (events', habits') = Set.partition ((Map.member -$ hists) . fst) allOfThem
       (forDay, forWeek)  = Set.partition ((I.contains day') . snd) $ events'
       -- (forWeek, todo) = Set.partition ((I.contains week') . snd) next
-  in Intervals forDay forWeek habits' $ Set.empty -- <-- XXX
+  in Intervals forDay (collectSM $ Set.toList forWeek)
   where
     day  = I.TimePeriod (I.startOfDay dt)  (I.endOfDay dt |- 5 * I.minute)
     week = I.TimePeriod (I.startOfWeek dt) (I.endOfWeek dt)
@@ -304,8 +300,8 @@ agenda dt glossen hist tasks = Agenda {
     glossen     = glossen,
     history     = hist,
     daily       = assignSlots $ toBoundaries intervals''.forDay,
-    weekly      = assignSlots $ toBoundaries intervals''.forWeek,
-    unscheduled = intervals''.todo
+    weekly      = intervals''.forWeek,
+    unscheduled = Set.empty -- intervals''.todo
   } where
     intervals'' = generateIntervals dt hist tasks
 
@@ -413,8 +409,8 @@ printDailySchedule w agenda' =
 
     -- | Render the schedule items layer
     schedule :: [R.LabledRect] -> R.Layer Char
-    schedule []           = R.text "Schedule is Empty"
-    schedule (bot : rest) = R.translate 0 gutter $ R.composite (R.roundBox ' ' bot) $ R.roundBox ' ' <$> rest
+    schedule []    = R.text "Schedule is Empty"
+    schedule rects = R.translate 0 gutter $ R.composite $ R.roundBox ' ' <$> rects
 
     -- | Render the daily agenda view via inefficient implicit functions.
     --
@@ -440,69 +436,71 @@ printDailySchedule w agenda' =
       putStrLn
 
 printWeeklySchedule :: Ord idT => Int -> Agenda idT -> IO ()
-printWeeklySchedule w agenda' =
-  full w ((agenda'.weekly.hwm + 1) * slotHeight + 3)
-    $ plot agenda'.glossen <$> agenda'.weekly.items
+printWeeklySchedule w agenda' = do
+  let vals = process <$> Map.toAscList agenda'.weekly
+  let img = R.overlay backGrid $ R.translate 2 0 $ R.vertically slotHeight $ item <$> vals
+
+  R.putH stdout w ((Map.size agenda'.weekly) * slotHeight + 3) img
+  putStrLn ""
   where
     -- | Time per line in in minutes
-    colsPerDay = w `div` 7
-
-    -- | Horizontal space between items
+    gutter = 20
+    colsPerDay = (w - gutter) `div` 7
     margin = 1
-
-    -- | Slot Height
-    slotHeight = 3
+    slotHeight = 1
 
     -- | Calculate the x position for the item, based on calendar day.
     col :: I.DateTime -> Int
-    col dt = colsPerDay * ((fromEnum $ dayOfWeek $ utctDay dt) - 1) + 1
-
-    -- | Calculate the y position for the item, based on slot.
-    row :: Int -> Int
-    row slot = slotHeight * slot
+    col dt = (colsPerDay * (fromEnum (dayOfWeek $ utctDay dt) - 1)) + ((colsPerDay * (fromEnum $ dt I.|-| I.startOfDay dt)) `div` (fromEnum nominalDay))
 
     -- | Calculate the height of a rectangle for a given TimeDelta.
-    width :: Day -> Day -> Int
-    width s e = (colsPerDay * (max 1 $ ((fromEnum e) - (fromEnum s)))) - 2
+    width :: DateTime -> DateTime -> Int
+    width s e = colsPerDay * ((fromEnum (e I.|-| s)) `div` (fromEnum nominalDay))
+
+    checkInterval id' i = fromMaybe False $ (any $ I.within i) <$> Map.lookup id' agenda'.history
+
+    completed id' i = (i, checkInterval id' i)
+
+    getCompleted id' = fromJust $ Map.lookup id' agenda'.glossen
+
+    process (id', is) = (getCompleted id', (completed id') <$> Set.toAscList is)
 
     -- | Convert schedule data to a list of labeled rectangles for drawing.
-    plot :: Ord idT => Map idT String -> (idT, (I.TimePeriod, Int)) -> R.LabledRect
-    plot glossen (id, (I.TimePeriod s e, slot)) =
-      R.rect
-        (fromJust $ Map.lookup id glossen)
-        (col s)
-        (row slot)
-        (width (utctDay s) (utctDay e))
-        (slotHeight - margin)
+    item (gloss, intervals) = R.splitH
+      gutter
+      (Just $ Just '\x2503')
+      (R.translate 0 0 $ R.text gloss)
+      (R.composite $ uncurry plot <$> intervals)
+
+    occurrence :: Int -> Int -> Bool -> R.Layer Char
+    occurrence x1 x2 True  (0, x) = if between x1 x x2 then Just '\x2588' else Nothing
+    occurrence x1 x2 False (0, x) = if between x1 x x2 then Just '\x2592' else Nothing
+    occurrence _  _  _    _      = Nothing
+
+    plot :: I.Interval -> Bool -> R.Layer Char
+    plot (I.Empty      ) completed _ = Nothing
+    plot (I.Open       ) completed _ = Nothing -- Just 'X'
+    plot (I.LeftOpen  e) completed _ = Nothing -- Just 'X'
+    plot (I.RightOpen s) completed _ = Nothing -- Just 'X'
+    plot (I.Closed  s e) completed p = occurrence (col s) (col e) completed p
+    plot _               completed _ = Nothing
 
     -- | Render the y-axis labels
     dayLabels :: R.Layer Char
-    dayLabels = R.text ('\x2502' : (L.intercalate "\x2502" $ padRight (colsPerDay - 1) <$> show <$> enumFromTo Monday Sunday))
+    dayLabels = R.translate 0 (gutter + 1) $ R.text $ ' ' : (L.intercalate "\x2502" $ padRight (colsPerDay - 1) <$> take 2 <$> show <$> enumFromTo Monday Sunday)
 
     dayGrid :: R.Image
-    dayGrid (1, x) = case x `mod` colsPerDay of
+    dayGrid (1, x) | x > gutter + 1 = case (x - gutter - 1) `mod` colsPerDay of
       0 -> '\x2534'
       _ -> '\x2500'
-    dayGrid (_, x) = case x `mod` colsPerDay of
+    dayGrid (1, x) | x <= gutter + 1 = '\x2500'
+    dayGrid (_, x) | x > (gutter + 1) = case (x - gutter - 1) `mod` colsPerDay of
       0 -> '\x2506'
       _ -> ' '
+
+    dayGrid (y, x) | y `mod` slotHeight == 1 && x < gutter = '\x2500'
+    dayGrid _ = ' '
 
     -- | Render background grid and left-side gutter
     backGrid :: R.Image
     backGrid = R.overlay dayGrid dayLabels
-
-    -- | Render the schedule items layer
-    schedule :: [R.LabledRect] -> R.Layer Char
-    schedule []           = R.text "Schedule is Empty"
-    schedule (bot : rest) = R.translate 2 0 $ R.composite (R.roundBox ' ' bot) $ R.roundBox ' ' <$> rest
-
-    -- | Render the daily agenda view via inefficient implicit functions.
-    --
-    -- This method doesn't require any special terminal escape
-    -- sequences, but does emit unicode.
-    --
-    -- This will print the full 24h schedule with now elisions.
-    full :: Int -> Int -> [R.LabledRect] -> IO ()
-    full w h items = for_
-      (R.render w h $ R.overlay backGrid $ schedule items)
-      putStrLn
