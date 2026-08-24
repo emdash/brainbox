@@ -271,8 +271,8 @@ generateIntervals
   -> Intervals idT
 generateIntervals dt hists stuff =
   let allOfThem = foldl expand Set.empty stuff
-      (events', habits') = Set.partition ((Map.member -$ hists) . fst) allOfThem
-      (forDay, forWeek)  = Set.partition ((I.contains day') . snd) $ events'
+      -- (events', habits') = Set.partition ((not . (Map.member -$ hists)) . fst) allOfThem
+      (forDay, forWeek)  = Set.partition ((I.contains day') . snd) $ allOfThem
       -- (forWeek, todo) = Set.partition ((I.contains week') . snd) next
   in Intervals forDay (collectSM $ Set.toList forWeek)
   where
@@ -457,7 +457,7 @@ printWeeklySchedule w agenda' = do
     width :: DateTime -> DateTime -> Int
     width s e = colsPerDay * ((fromEnum (e I.|-| s)) `div` (fromEnum nominalDay))
 
-    checkInterval id' i = fromMaybe False $ (any $ I.within i) <$> Map.lookup id' agenda'.history
+    checkInterval id' i = (any $ I.within i) <$> Map.lookup id' agenda'.history
 
     completed id' i = (i, checkInterval id' i)
 
@@ -472,12 +472,14 @@ printWeeklySchedule w agenda' = do
       (R.translate 0 0 $ R.text gloss)
       (R.composite $ uncurry plot <$> intervals)
 
-    occurrence :: Int -> Int -> Bool -> R.Layer Char
-    occurrence x1 x2 True  (0, x) = if between x1 x x2 then Just '\x2588' else Nothing
-    occurrence x1 x2 False (0, x) = if between x1 x x2 then Just '\x2592' else Nothing
+    occurrence :: Int -> Int -> Maybe Bool -> R.Layer Char
+    occurrence x1 x2 comp (0, x) | between x1 x x2 = case comp of
+      Just True  -> Just '\x2588'
+      Just False -> Just '\x2592'
+      Nothing    -> Just '\x254c'
     occurrence _  _  _    _      = Nothing
 
-    plot :: I.Interval -> Bool -> R.Layer Char
+    plot :: I.Interval -> Maybe Bool -> R.Layer Char
     plot (I.Empty      ) completed _ = Nothing
     plot (I.Open       ) completed _ = Nothing -- Just 'X'
     plot (I.LeftOpen  e) completed _ = Nothing -- Just 'X'

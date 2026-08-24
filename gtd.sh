@@ -2574,7 +2574,7 @@ function __agenda_preview {
     fi | paste -sd ' '
     echo
 
-    __agenda_items | cut -d '|' -f 1 | _schedule agenda "${@}"
+    __agenda_items | cut -d '|' -f 1 | graph agenda "${@}"
 }
 
 function __agenda_items {

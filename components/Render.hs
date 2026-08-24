@@ -226,4 +226,4 @@ renderCondensed w h background foreground =
         else Just $ uncurry fromMaybe <$> zip (renderRow w background y) cur
 
 putH :: Handle -> Int -> Int -> Image -> IO ()
-putH hdl w h image = for_ (render (traceShowId w) h image) $ hPutStrLn hdl
+putH hdl w h image = for_ (render w h image) $ hPutStrLn hdl
